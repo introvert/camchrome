@@ -55,6 +55,11 @@ Clearcote's scripts skip ungoogled's domain-substitution step; so do ours.
   `config/args.mac.gn` is written from ungoogled-chromium-macos's `flags.macos.gn` and untested.
   `config/args.win.gn` needs Clearcote's xwin cross-compile setup (not ported).
 
+## What to cover
+
+See `COVERAGE.md`: the audit we test against, which patch covers which check group, the gaps,
+and other repos to pull from (patchright, rebrowser-patches, ghost-cursor, Brave, browserforge).
+
 ## Open work, in order
 
 1. On the build machine:
@@ -65,7 +70,10 @@ Clearcote's scripts skip ungoogled's domain-substitution step; so do ours.
 3. Update `PATCHES_BASE` in `UPSTREAM` to `157.0.8103.78`.
 4. `scripts/01-apply-patches.sh && scripts/02-build.sh`, then smoke-test
    `build/src/out/Default/chrome` against a fingerprinting test page.
-5. Later: macOS (wait for a 157 overlay or pin 156), Windows cross-build, CI.
+5. Run the full audit (`COVERAGE.md`) against the build and record failures.
+6. Close the gaps in `COVERAGE.md`: driver (patchright), Chrome-branding checks, input events.
+7. Vendor Clearcote's `assets/fonts/` if we spoof another OS's fonts.
+8. Later: macOS (wait for a 157 overlay or pin 156), Windows cross-build, CI.
 
 ## Committing the Chromium source
 

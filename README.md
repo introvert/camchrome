@@ -56,6 +56,9 @@ which is not ported here.
 
 `NOTES.md` has the background, the patch repos compared, what has been verified, and the open work.
 
+`COVERAGE.md` maps the 365 checks of the [Clearcote fingerprint audit](https://www.clearcotelabs.com/audit/checks)
+to the patches that cover them, lists the gaps, and names other repos to take patches from.
+
 ## Credits
 
 See `CREDITS.md`.
