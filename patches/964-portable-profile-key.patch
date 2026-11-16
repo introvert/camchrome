@@ -92,13 +92,15 @@ profiles were already portable.
 +#include <vector>
 +
 +#include "base/base64.h"
++#include "base/containers/span.h"
 +#include "base/files/file_util.h"
 +#include "base/functional/bind.h"
 +#include "base/logging.h"
 +#include "base/task/thread_pool.h"
 +#include "components/os_crypt/async/common/algorithm.mojom.h"
 +#include "components/os_crypt/async/common/encryptor.h"
-+#include "crypto/hkdf.h"
++#include "crypto/hash.h"
++#include "crypto/kdf.h"
 +#include "crypto/random.h"
 +
 +namespace ungoogled {
@@ -118,8 +120,13 @@ profiles were already portable.
 +constexpr char kHkdfInfo[] = "os_crypt key v1";
 +
 +std::vector<uint8_t> DeriveFromSecret(const std::string& secret) {
-+  const std::string derived =
-+      crypto::HkdfSha256(secret, kHkdfSalt, kHkdfInfo, kKeySize);
++  // Chromium 156 moved HKDF from crypto/hkdf.h (crypto::HkdfSha256) to
++  // crypto/kdf.h (crypto::kdf::Hkdf with a crypto::hash::HashKind).
++  std::string derived(kKeySize, 0);
++  crypto::kdf::Hkdf(crypto::hash::kSha256, base::as_byte_span(secret),
++                    base::as_byte_span(std::string_view(kHkdfSalt)),
++                    base::as_byte_span(std::string_view(kHkdfInfo)),
++                    base::as_writable_byte_span(derived));
 +  return std::vector<uint8_t>(derived.begin(), derived.end());
 +}
 +
