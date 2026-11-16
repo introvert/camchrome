@@ -25,10 +25,13 @@ they were written, so some will not apply to 157 until they are rebased.
 
 ## Requirements
 
-- Linux x64 (the tested path) or macOS with Xcode
-- ~32 GB RAM for the official ThinLTO link, ~120 GB free disk, many CPU cores, several hours
-- `git`, `python3`, `ninja`, `xz`, `curl`; Linux also needs Chromium's
+- Linux x64 (the tested path) or macOS with Xcode + the Metal toolchain
+  (`xcodebuild -downloadComponent MetalToolchain`)
+- ~32 GB RAM for the official ThinLTO link; `config/args.mac.gn` builds without
+  LTO/PGO/PCH so a 24 GB machine works. ~120 GB free disk, many CPU cores, several hours.
+- `git`, `python3` (3.10+ for building), `ninja`, `xz`, `curl`; Linux also needs Chromium's
   [build deps](https://chromium.googlesource.com/chromium/src/+/main/docs/linux/build_instructions.md#install-additional-build-dependencies)
+- macOS also needs `go`, `esbuild` and `typescript` (e.g. `brew install ninja esbuild typescript`)
 
 ## Build
 
