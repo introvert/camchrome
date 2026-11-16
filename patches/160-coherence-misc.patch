@@ -1,6 +1,8 @@
+diff --git a/chrome/renderer/BUILD.gn b/chrome/renderer/BUILD.gn
+index 9d104f90e9..5f042cc837 100644
 --- a/chrome/renderer/BUILD.gn
 +++ b/chrome/renderer/BUILD.gn
-@@ -184,6 +184,7 @@
+@@ -202,6 +202,7 @@ static_library("renderer") {
      "//components/translate/content/renderer",
      "//components/translate/core/common",
      "//components/translate/core/language_detection",
@@ -8,9 +10,11 @@
      "//components/visitedlink/renderer",
      "//components/wallet/content/renderer",
      "//components/wallet/core/common:features",
+diff --git a/chrome/renderer/DEPS b/chrome/renderer/DEPS
+index 4f95b49eef..d5cad5bc3e 100644
 --- a/chrome/renderer/DEPS
 +++ b/chrome/renderer/DEPS
-@@ -87,6 +87,7 @@
+@@ -91,6 +91,7 @@ include_rules = [
    "+components/trusted_vault/features.h",
    "+components/trusted_vault/trusted_vault_histograms.h",
    "+components/trusted_vault/trusted_vault_server_constants.h",
@@ -18,9 +22,11 @@
    "+components/version_info",
    "+components/visitedlink/renderer",
    "+components/wallet/content/renderer",
+diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
+index 9944fac277..6b0f58a208 100644
 --- a/chrome/renderer/chrome_content_renderer_client.cc
 +++ b/chrome/renderer/chrome_content_renderer_client.cc
-@@ -120,6 +120,7 @@
+@@ -125,6 +125,7 @@
  #include "components/subresource_filter/core/common/common_features.h"
  #include "components/surface_embed/common/features.h"
  #include "components/surface_embed/renderer/create_plugin.h"
@@ -28,7 +34,7 @@
  #include "components/variations/net/variations_http_headers.h"
  #include "components/variations/variations_switches.h"
  #include "components/version_info/version_info.h"
-@@ -1424,12 +1425,47 @@
+@@ -1517,12 +1518,47 @@ void ChromeContentRendererClient::
    // embedder only.
    blink::WebRuntimeFeatures::EnablePerformanceManagerInstrumentation(true);
  
@@ -79,24 +85,28 @@
  
    if (base::FeatureList::IsEnabled(
            autofill::features::kAutofillPolicyControlledFeatureAutofill)) {
---- a/third_party/blink/renderer/core/url/dom_url.cc
-+++ b/third_party/blink/renderer/core/url/dom_url.cc
-@@ -26,7 +26,13 @@
+diff --git a/third_party/blink/renderer/core/url/url.cc b/third_party/blink/renderer/core/url/url.cc
+index af21a7b02c..4043d82dc1 100644
+--- a/third_party/blink/renderer/core/url/url.cc
++++ b/third_party/blink/renderer/core/url/url.cc
+@@ -26,10 +26,15 @@
  
- #include "third_party/blink/renderer/core/url/dom_url.h"
+ #include "third_party/blink/renderer/core/url/url.h"
  
 +#include <string>
-+
+ #include <utility>
+ 
  #include "base/auto_reset.h"
+ #include "base/check.h"
 +#include "base/command_line.h"
 +#include "base/strings/string_util.h"
 +#include "build/build_config.h"
 +#include "components/ungoogled/ungoogled_switches.h"
  #include "third_party/blink/renderer/core/execution_context/execution_context.h"
  #include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
- #include "third_party/blink/renderer/core/url/dom_origin.h"
-@@ -57,11 +63,82 @@
-                                       exception_state);
+ #include "third_party/blink/renderer/core/html/media/media_source_attachment.h"
+@@ -58,11 +63,82 @@ URL* URL::Create(const String& url,
+   return MakeGarbageCollected<URL>(PassKey(), url, base_url, exception_state);
  }
  
 +namespace {
@@ -117,7 +127,7 @@
 +// otherwise the host build. Keeping all three in lockstep is the point --
 +// navigator.platform and new URL("C:/").protocol must not contradict.
 +//
-+// Cached in a function-local static: DOMURL is constructed on every
++// Cached in a function-local static: URL is constructed on every
 +// new URL(...) and the command line is fixed for the process lifetime.
 +bool IsWindowsPersona() {
 +  static const bool kIsWindowsPersona = [] {
@@ -170,12 +180,12 @@
 +
 +}  // namespace
 +
- DOMURL::DOMURL(PassKey,
-                const String& url,
-                const KURL& base,
-                ExceptionState& exception_state)
+ URL::URL(PassKey,
+          const String& url,
+          const KURL& base,
+          ExceptionState& exception_state)
 -    : url_(base, url) {
 +    : url_(base, MaybeRewriteDriveLetter(url)) {
-   if (!url_.IsValid())
+   if (!url_.IsValid()) {
      exception_state.ThrowTypeError("Invalid URL");
- }
+   }

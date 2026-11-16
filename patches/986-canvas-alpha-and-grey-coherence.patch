@@ -1,0 +1,35 @@
+diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
+index b0af835803..2b43ed98a8 100644
+--- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
++++ b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
+@@ -233,12 +233,26 @@ void StaticBitmapImage::ShuffleSubchannelColorData(const void *addr, const SkIma
+         continue;
+       }
+       // Alpha is never touched -- a changed alpha is visible, not sub-perceptual.
++      //
++      // camchrome (canvas-alpha-zero-reads-black): a fully transparent pixel has
++      // no colour to vary. In a premultiplied canvas alpha==0 forces RGB to 0, so
++      // noise written under a transparent pixel is a provable tell -- the audit
++      // counts "colour found under a fully transparent pixel". Skip alpha==0
++      // pixels: for both kRGBA_8888 and kBGRA_8888 the alpha byte is index 3.
++      if (bpp == 4 && p[3] == 0) {
++        continue;
++      }
++      // camchrome (canvas-grey-stays-grey): a neutral grey pixel must read back
++      // with R==G==B. Flip every colour channel with the SAME bit instead of
++      // three independent bits, so grey stays grey while non-grey content still
++      // gets the same per-site, per-pixel mask.
++      const uint8_t flip = static_cast<uint8_t>((k >> 40) & 1u);
+       if (bpp >= 3) {
+-        p[0] ^= static_cast<uint8_t>((k >> 40) & 1u);
+-        p[1] ^= static_cast<uint8_t>((k >> 41) & 1u);
+-        p[2] ^= static_cast<uint8_t>((k >> 42) & 1u);
++        p[0] ^= flip;
++        p[1] ^= flip;
++        p[2] ^= flip;
+       } else {
+-        p[0] ^= static_cast<uint8_t>((k >> 40) & 1u);
++        p[0] ^= flip;
+       }
+      }
+    }

@@ -33,15 +33,21 @@ use_sysroot = false
 enable_rust = true
 
 # --- Release configuration ---
+# NOTE: this host has 24 GB RAM, below the ~32 GB peak of the official
+# ThinLTO+PGO link. Build without LTO/PGO and with DCHECKs out so the
+# patched tree can be verified and used; flip back to is_official_build=true
+# + use_thin_lto=true + chrome_pgo_phase=2 on a 32 GB machine for the shippable
+# official binary.
 is_debug = false
-is_official_build = true
-use_thin_lto = true
-dcheck_always_on = false
+is_official_build = false
+use_thin_lto = false
+dcheck_always_on = false              # explicit: keep DCHECKs out of the shipped path
+enable_precompiled_headers = false    # PCH conflicts with libc++ modules (cxx23) on this tree
 is_component_build = false
 symbol_level = 0
 blink_symbol_level = 0
-chrome_pgo_phase = 2
-pgo_data_path = ""                    # set by scripts/02-build.sh
+chrome_pgo_phase = 0
+pgo_data_path = ""                    # set by scripts/02-build.sh when PGO is on
 use_remoteexec = false
 enable_updater = false
 enable_iterator_debugging = false

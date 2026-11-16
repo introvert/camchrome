@@ -89,6 +89,9 @@ crash the renderer.
 | `983-webgpu-architecture-per-model` | WebGPU adapter architecture follows the GPU model rather than one value per vendor, and an imported capture's own WebGPU identity is read. |
 | `984-socks5-auth-implementation` | The rest of `963`: the RFC 1929 sub-negotiation, the credential parser and the two-method greeting. |
 | `985-webgl-stencil-masks` | The WebGL stencil masks come from the persona until the page writes stencil state, then report the real values. |
+| `986-canvas-alpha-and-grey-coherence` | **camchrome addition.** In the per-pixel canvas-noise exit, skip pixels whose alpha is 0 (a premultiplied canvas must read them back as `(0,0,0,0)`; audit: `canvas-alpha-zero-reads-black`) and flip all three colour channels with one shared bit so neutral grey stays grey (audit: `canvas-grey-stays-grey`). |
+
+`900`/`905` are Windows cross-build mechanics; `01-apply-patches.sh` skips them for the macOS target.
 
 `956`–`958` (macOS persona fonts) belong to the open **150** macOS build only and live in
 [`macos-150/`](macos-150/); they are not in `series`. See [`../docs/MACOS-FONTS.md`](../docs/MACOS-FONTS.md).

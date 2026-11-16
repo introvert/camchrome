@@ -1,35 +1,8 @@
---- a/components/ungoogled/persona_profile.h
-+++ b/components/ungoogled/persona_profile.h
-@@ -231,6 +231,26 @@
- // persona; later calls return the same one. Thread-safe (std::call_once).
- COMPONENT_EXPORT(UNGOOGLED) const PersonaProfile& CurrentPersona();
- 
-+// clearcote: the persona's speechSynthesis voice list, retargeted to the
-+// persona's locale. |accept_languages| is the RendererPreferences
-+// Accept-Language string -- the SAME field blink::Settings::GetAcceptLanguages()
-+// exposes and that NavigatorLanguage::EnsureUpdatedLanguage() parses into
-+// navigator.languages, so there is exactly ONE source of locale truth and a
-+// de-DE locale cannot ship an en-US-only voice roster.
-+//
-+// Both speechSynthesis emission paths call this -- the browser one
-+// (content::SpeechSynthesisImpl::SendVoiceListToObserver) and the renderer
-+// backfill (blink::SpeechSynthesis::BackfillPersonaVoices) -- so whichever
-+// answers first, the list is identical.
-+//
-+// Rules: a deliberately EMPTY persona voice list (the linux and android
-+// personas, which really do report getVoices()==[]) stays empty; an imported
-+// profile's captured voices are ground truth and are returned unchanged; only
-+// the built-in Windows en-US default set is retargeted, and only when the
-+// primary language tag has a known Windows SAPI voice pack.
-+COMPONENT_EXPORT(UNGOOGLED) std::vector<PersonaProfile::Voice>
-+PersonaVoicesForAcceptLanguages(const std::string& accept_languages);
-+
- }  // namespace ungoogled
- 
- #endif  // COMPONENTS_UNGOOGLED_PERSONA_PROFILE_H_
+diff --git a/components/ungoogled/persona_profile.cc b/components/ungoogled/persona_profile.cc
+index d0633d9df0..78010723ac 100644
 --- a/components/ungoogled/persona_profile.cc
 +++ b/components/ungoogled/persona_profile.cc
-@@ -782,4 +782,204 @@
+@@ -802,4 +802,204 @@ const PersonaProfile& CurrentPersona() {
    return *profile;
  }
  
@@ -234,9 +207,42 @@
 +}
 +
  }  // namespace ungoogled
+diff --git a/components/ungoogled/persona_profile.h b/components/ungoogled/persona_profile.h
+index 40a34f3010..f2806ac749 100644
+--- a/components/ungoogled/persona_profile.h
++++ b/components/ungoogled/persona_profile.h
+@@ -243,6 +243,26 @@ COMPONENT_EXPORT(UNGOOGLED) PersonaProfile DerivePersona(uint64_t seed);
+ // persona; later calls return the same one. Thread-safe (std::call_once).
+ COMPONENT_EXPORT(UNGOOGLED) const PersonaProfile& CurrentPersona();
+ 
++// clearcote: the persona's speechSynthesis voice list, retargeted to the
++// persona's locale. |accept_languages| is the RendererPreferences
++// Accept-Language string -- the SAME field blink::Settings::GetAcceptLanguages()
++// exposes and that NavigatorLanguage::EnsureUpdatedLanguage() parses into
++// navigator.languages, so there is exactly ONE source of locale truth and a
++// de-DE locale cannot ship an en-US-only voice roster.
++//
++// Both speechSynthesis emission paths call this -- the browser one
++// (content::SpeechSynthesisImpl::SendVoiceListToObserver) and the renderer
++// backfill (blink::SpeechSynthesis::BackfillPersonaVoices) -- so whichever
++// answers first, the list is identical.
++//
++// Rules: a deliberately EMPTY persona voice list (the linux and android
++// personas, which really do report getVoices()==[]) stays empty; an imported
++// profile's captured voices are ground truth and are returned unchanged; only
++// the built-in Windows en-US default set is retargeted, and only when the
++// primary language tag has a known Windows SAPI voice pack.
++COMPONENT_EXPORT(UNGOOGLED) std::vector<PersonaProfile::Voice>
++PersonaVoicesForAcceptLanguages(const std::string& accept_languages);
++
+ }  // namespace ungoogled
+ 
+ #endif  // COMPONENTS_UNGOOGLED_PERSONA_PROFILE_H_
+diff --git a/content/browser/speech/speech_synthesis_impl.cc b/content/browser/speech/speech_synthesis_impl.cc
+index 766a22c54c..413afdb973 100644
 --- a/content/browser/speech/speech_synthesis_impl.cc
 +++ b/content/browser/speech/speech_synthesis_impl.cc
-@@ -4,11 +4,14 @@
+@@ -4,12 +4,15 @@
  
  #include "content/browser/speech/speech_synthesis_impl.h"
  
@@ -244,14 +250,15 @@
 +#include "components/ungoogled/persona_profile.h"
  #include "content/browser/media/audio_stream_monitor.h"
  #include "content/browser/renderer_host/render_frame_host_impl.h"
+ #include "content/browser/speech/tts_controller_impl.h"
  #include "content/browser/speech/tts_utterance_impl.h"
  #include "content/browser/web_contents/web_contents_impl.h"
  #include "content/public/browser/web_contents.h"
 +#include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
+ #include "services/metrics/public/cpp/ukm_builders.h"
+ #include "services/metrics/public/cpp/ukm_recorder.h"
  
- namespace content {
- namespace {
-@@ -96,9 +99,56 @@
+@@ -99,9 +102,56 @@ class EventThunk : public UtteranceEventDelegate {
    bool is_audible_;
  };
  
@@ -309,17 +316,17 @@
    std::vector<blink::mojom::SpeechSynthesisVoicePtr> out_voices;
    out_voices.resize(voices.size());
    for (size_t i = 0; i < voices.size(); ++i) {
-@@ -146,7 +196,8 @@
- 
-   std::vector<VoiceData> voices;
-   TtsController::GetInstance()->GetVoices(browser_context_, GURL(), &voices);
--  SendVoiceListToObserver(observer.get(), voices);
-+  SendVoiceListToObserver(observer.get(), voices,
-+                          PersonaAcceptLanguages(web_contents_));
+@@ -155,7 +205,8 @@ void SpeechSynthesisImpl::AddVoiceListObserver(
+   // every observer as soon as loading completes.
+   if (!voices.empty() ||
+       !TtsControllerImpl::GetInstance()->TtsPlatformLoading()) {
+-    SendVoiceListToObserver(observer.get(), voices);
++    SendVoiceListToObserver(observer.get(), voices,
++                            PersonaAcceptLanguages(web_contents_));
+   }
  
    observer_set_.Add(std::move(observer));
- }
-@@ -199,7 +250,8 @@
+@@ -216,7 +267,8 @@ void SpeechSynthesisImpl::OnVoicesChanged() {
    std::vector<VoiceData> voices;
    TtsController::GetInstance()->GetVoices(browser_context_, GURL(), &voices);
    for (auto& observer : observer_set_)
@@ -329,30 +336,8 @@
  }
  
  }  // namespace content
---- a/third_party/blink/renderer/modules/speech/speech_synthesis.h
-+++ b/third_party/blink/renderer/modules/speech/speech_synthesis.h
-@@ -101,6 +101,11 @@
- 
-  private:
-   void VoicesDidChange();
-+  // clearcote: deferred persona voice backfill. getVoices() never fills the
-+  // list synchronously (see speech_synthesis.cc); it only arms this, which
-+  // runs on a task and no-ops if the browser process already answered.
-+  void MaybeArmPersonaVoiceBackfill();
-+  void BackfillPersonaVoices();
-   void StartSpeakingImmediately();
-   void HandleSpeakingCompleted(
-       SpeechSynthesisUtterance*,
-@@ -135,6 +140,9 @@
-   HeapVector<Member<SpeechSynthesisVoice>> voice_list_;
-   HeapDeque<Member<SpeechSynthesisUtterance>> utterance_queue_;
-   bool is_paused_ = false;
-+  // clearcote: set once MaybeArmPersonaVoiceBackfill() has posted its task,
-+  // so repeated getVoices() calls do not queue a backfill per call.
-+  bool persona_voice_backfill_armed_ = false;
- 
-   // EventTarget
-   const AtomicString& InterfaceName() const override;
+diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.cc b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
+index 891a81543b..1933f6f9cf 100644
 --- a/third_party/blink/renderer/modules/speech/speech_synthesis.cc
 +++ b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
 @@ -28,12 +28,21 @@
@@ -386,7 +371,7 @@
  
  namespace blink {
  
-@@ -95,9 +106,64 @@
+@@ -95,9 +106,64 @@ void SpeechSynthesis::OnSetVoiceList(
  const HeapVector<Member<SpeechSynthesisVoice>>& SpeechSynthesis::getVoices() {
    // Kick off initialization here to ensure voice list gets populated.
    std::ignore = TryEnsureMojomSynthesis();
@@ -451,3 +436,29 @@
  bool SpeechSynthesis::speaking() const {
    // If we have a current speech utterance, then that means we're assumed to be
    // in a speaking state. This state is independent of whether the utterance
+diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.h b/third_party/blink/renderer/modules/speech/speech_synthesis.h
+index 0199d00326..4b4a19fa43 100644
+--- a/third_party/blink/renderer/modules/speech/speech_synthesis.h
++++ b/third_party/blink/renderer/modules/speech/speech_synthesis.h
+@@ -101,6 +101,11 @@ class MODULES_EXPORT SpeechSynthesis final
+ 
+  private:
+   void VoicesDidChange();
++  // clearcote: deferred persona voice backfill. getVoices() never fills the
++  // list synchronously (see speech_synthesis.cc); it only arms this, which
++  // runs on a task and no-ops if the browser process already answered.
++  void MaybeArmPersonaVoiceBackfill();
++  void BackfillPersonaVoices();
+   void StartSpeakingImmediately();
+   void HandleSpeakingCompleted(
+       SpeechSynthesisUtterance*,
+@@ -135,6 +140,9 @@ class MODULES_EXPORT SpeechSynthesis final
+   HeapVector<Member<SpeechSynthesisVoice>> voice_list_;
+   HeapDeque<Member<SpeechSynthesisUtterance>> utterance_queue_;
+   bool is_paused_ = false;
++  // clearcote: set once MaybeArmPersonaVoiceBackfill() has posted its task,
++  // so repeated getVoices() calls do not queue a backfill per call.
++  bool persona_voice_backfill_armed_ = false;
+ 
+   // EventTarget
+   const AtomicString& InterfaceName() const override;

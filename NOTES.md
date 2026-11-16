@@ -49,10 +49,17 @@ Clearcote's scripts skip ungoogled's domain-substitution step; so do ours.
 
 ## What has and hasn't been verified
 
-- Verified: scripts pass `bash -n`; `00-fetch-source.sh` clones the pinned tags correctly; the
-  157 tarball URL responds; `patches.py apply <tree> <dirs...>` usage matches the scripts.
-- **Not verified:** the tarball download/unpack, any patch applying, any build.
-  `config/args.mac.gn` is written from ungoogled-chromium-macos's `flags.macos.gn` and untested.
+- Verified on macOS (arm64, 24 GB): `00-fetch-source.sh` fetches and unpacks the Chromium 156
+  lite tarball plus the overlay's LLVM/Rust/node toolchains and sets up the rust/llvm/go
+  symlink layout; `01-apply-patches.sh --check` lists the series; **all 60 series patches that
+  apply to macOS have been rebased and apply cleanly** (900/905 are Windows cross-build and are
+  skipped for macOS). Added `986-canvas-alpha-and-grey-coherence` (canvas-alpha-zero-reads-black
+  + canvas-grey-stays-grey).
+- Verified: `gn gen out/Default --fail-on-unused-args` succeeds (35 838 targets). A
+  non-official, no-LTO/no-PGO/no-PCH `chrome` build compiles cleanly (see `config/args.mac.gn`;
+  flip back to official + ThinLTO + PGO on a 32 GB machine).
+- **Not yet verified at this point:** the full link to a `chrome` binary and a runtime
+  fingerprint-audit pass, plus the Linux/Windows (157) rebase.
   `config/args.win.gn` needs Clearcote's xwin cross-compile setup (not ported).
 
 ## What to cover
@@ -62,18 +69,14 @@ and other repos to pull from (patchright, rebrowser-patches, ghost-cursor, Brave
 
 ## Open work, in order
 
-1. On the build machine:
-   `scripts/00-fetch-source.sh && scripts/01-apply-patches.sh --check`
-   to list which of the 62 patches fail against 157.
-2. Rebase the failing patches (README → "Rebasing the patches"). Six majors passed since 151,
-   so expect real conflicts in Blink and GPU code. fingerprint-chromium's 148 branch can help.
-3. Update `PATCHES_BASE` in `UPSTREAM` to `157.0.8103.78`.
-4. `scripts/01-apply-patches.sh && scripts/02-build.sh`, then smoke-test
-   `build/src/out/Default/chrome` against a fingerprinting test page.
-5. Run the full audit (`COVERAGE.md`) against the build and record failures.
-6. Close the gaps in `COVERAGE.md`: driver (patchright), Chrome-branding checks, input events.
-7. Vendor Clearcote's `assets/fonts/` if we spoof another OS's fonts.
-8. Later: macOS (wait for a 157 overlay or pin 156), Windows cross-build, CI.
+1. macOS: finish the `chrome` link, then smoke-test `build/src/out/Default/chrome` against the
+   Clearcote audit and record failures in `COVERAGE.md`.
+2. Linux/Windows: rebase the series to 157 (the macOS rebase to 156 is the reference for
+   how each conflict was resolved) and set `PATCHES_BASE=157.0.8103.78`.
+3. Close the remaining gaps in `COVERAGE.md`: driver (patchright), Chrome-branding checks,
+   input coalescing/raw-update engine patches.
+4. Vendor Clearcote's `assets/fonts/` if we spoof another OS's fonts.
+5. Windows cross-build, CI.
 
 ## Committing the Chromium source
 

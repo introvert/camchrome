@@ -21,7 +21,15 @@ fi
 series() {
   while IFS= read -r line; do
     line="${line%%#*}"; line="$(printf '%s' "$line" | tr -d '[:space:]')"
-    [ -n "$line" ] && printf '%s\n' "$line"
+    [ -n "$line" ] || continue
+    # 900/905 are Windows cross-build mechanics (rc.py wrapper, .rc branding,
+    # rc-invoked guards). They are irrelevant and do not apply to a macOS tree.
+    if [ "$TARGET" = mac ]; then
+      case "$line" in
+        900-windows-build-fixes.patch|905-rc-invoked-guard.patch) continue ;;
+      esac
+    fi
+    printf '%s\n' "$line"
   done < "$REPO/patches/series"
 }
 

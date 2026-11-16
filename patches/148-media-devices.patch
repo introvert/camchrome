@@ -1,3 +1,5 @@
+diff --git a/content/browser/renderer_host/media/media_devices_manager.cc b/content/browser/renderer_host/media/media_devices_manager.cc
+index da86c44a2a..23b0bff239 100644
 --- a/content/browser/renderer_host/media/media_devices_manager.cc
 +++ b/content/browser/renderer_host/media/media_devices_manager.cc
 @@ -37,6 +37,7 @@
@@ -7,11 +9,11 @@
 +#include "components/ungoogled/persona_profile.h"
  #include "media/audio/audio_device_description.h"
  #include "media/audio/audio_system.h"
- #include "media/base/media_switches.h"
-@@ -1509,10 +1510,34 @@
+ #include "media/base/device_enumeration_outcome.h"
+@@ -1525,10 +1526,34 @@ void MediaDevicesManager::DevicesEnumerated(
      const blink::WebMediaDeviceInfoArray& snapshot) {
-   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-   DCHECK(blink::IsValidMediaDeviceType(type));
+   CHECK_CURRENTLY_ON(BrowserThread::IO, base::NotFatalUntil::M155);
+   CHECK(blink::IsValidMediaDeviceType(type), base::NotFatalUntil::M155);
 -  UpdateSnapshot(type, snapshot);
 +
 +  // clearcote: substitute a deterministic persona device roster for the real

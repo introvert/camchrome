@@ -1,6 +1,8 @@
+diff --git a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
+index 1dea63eee6..37382ec77c 100644
 --- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
 +++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
-@@ -17,7 +17,9 @@
+@@ -18,7 +18,9 @@
  #include "media/base/media_switches.h"
  #include "media/base/media_util.h"
  #include "media/base/mime_util.h"
@@ -10,7 +12,7 @@
  #include "media/base/supported_video_decoder_config.h"
  #include "media/base/video_decoder_config.h"
  #include "media/filters/stream_parser_factory.h"
-@@ -108,6 +110,28 @@
+@@ -109,6 +111,28 @@ bool WebrtcEncodeForceSmoothIfPowerEfficient() {
        kWebrtcEncodeSmoothIfPowerEfficientDefault);
  }
  
@@ -39,17 +41,17 @@
  // static
  bool UseGpuFactoriesForPowerEfficient(
      ExecutionContext* execution_context,
-@@ -1375,6 +1399,9 @@
-       callback_id,
-       MakeGarbageCollected<MediaCapabilities::PendingCallbackState>(
-           resolver, access, request_time));
+@@ -1400,6 +1424,9 @@ void MediaCapabilities::GetPerfInfo(
+ 
+   const int callback_id = InsertCallbackAndScheduleTimeout(
+       resolver, access, request_time, QueryType::kDecoding);
 +  // clearcote: plumb the codec so ResolveCallbackIfReady can key the persona
 +  // MediaCapabilities override (smooth / DB-branch powerEfficient) by codec.
 +  pending_cb_map_.at(callback_id)->video_codec = video_codec;
  
    media::mojom::blink::PredictionFeaturesPtr features =
        media::mojom::blink::PredictionFeatures::New(
-@@ -1505,11 +1532,26 @@
+@@ -1534,11 +1561,26 @@ void MediaCapabilities::ResolveCallbackIfReady(int callback_id) {
        info->setSupported(false);
      }
    } else {
@@ -79,8 +81,8 @@
    const base::TimeDelta process_time =
        base::TimeTicks::Now() - pending_cb->request_time;
    UMA_HISTOGRAM_TIMES("Media.Capabilities.DecodingInfo.Time.Video",
-@@ -1550,6 +1592,16 @@
-   DCHECK(pending_cb_map_.Contains(callback_id));
+@@ -1585,6 +1627,16 @@ void MediaCapabilities::OnGpuFactoriesSupport(int callback_id,
+   }
    PendingCallbackState* pending_cb = pending_cb_map_.at(callback_id);
  
 +  // clearcote: neutralize the real-GPU HW-decode leak at the last codec-aware
@@ -94,10 +96,10 @@
 +      is_supported = cc.power_efficient;
 +  }
    pending_cb->is_gpu_factories_supported = is_supported;
-   pending_cb->is_builtin_video_codec =
-       media::IsDecoderBuiltInVideoCodec(video_codec);
-@@ -1567,6 +1619,36 @@
-   DCHECK(pending_cb_map_.Contains(callback_id));
+   ResolveCallbackIfReady(callback_id);
+ }
+@@ -1601,6 +1653,36 @@ void MediaCapabilities::OnWebrtcSupportInfo(
+   }
    PendingCallbackState* pending_cb = pending_cb_map_.at(callback_id);
  
 +  // clearcote: WebRTC is an independent resolution sink (it never reaches
@@ -133,9 +135,11 @@
    // Special treatment if the config is not supported, or if only audio was
    // specified which is indicated by the fact that `video_pixels` equals 0,
    // or if we fail to access the WebrtcPerfHistoryService.
+diff --git a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
+index 2d9f523baa..4cef8e83af 100644
 --- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
 +++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
-@@ -83,6 +83,10 @@
+@@ -157,6 +157,10 @@ class MODULES_EXPORT MediaCapabilities final
      std::optional<bool> db_is_power_efficient;
      std::optional<bool> is_gpu_factories_supported;
      std::optional<bool> is_builtin_video_codec;
@@ -144,5 +148,5 @@
 +    // powerEfficient) by codec.
 +    media::VideoCodec video_codec = media::VideoCodec::kUnknown;
      base::TimeTicks request_time;
-   };
+     QueryType query_type;
  

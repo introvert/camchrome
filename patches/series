@@ -60,3 +60,4 @@
 983-webgpu-architecture-per-model.patch
 984-socks5-auth-implementation.patch
 985-webgl-stencil-masks.patch
+986-canvas-alpha-and-grey-coherence.patch

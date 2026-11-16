@@ -13,8 +13,8 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 |---|---|---|
 | ungoogled-chromium base (Linux, Windows) | `157.0.8103.78-1` | pinned in `UPSTREAM` |
 | ungoogled-chromium-macos overlay | `156.0.8078.79-1.1` | pinned; macOS lags upstream by one major |
-| Fingerprint patches (`patches/`) | written for Chromium `151.0.7922.108` | **need rebasing to 157** |
-| macOS build config (`config/args.mac.gn`) | — | untested |
+| Fingerprint patches (`patches/`) | written for Chromium `151.0.7922.108` | **rebased to 156 (macOS)**; Linux/Windows (157) still open |
+| macOS build config (`config/args.mac.gn`) | — | builds without LTO/PGO/PCH for 24 GB machines; verified `gn gen` + compile |
 
 The patches in `patches/` come from
 [Clearcote](https://github.com/clearcotelabs/clearcote-browser) at commit

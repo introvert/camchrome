@@ -1,6 +1,7 @@
-diff -u --recursive a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
---- a/components/embedder_support/user_agent_utils.cc	2026-07-20 15:12:24.873716537 +0000
-+++ b/components/embedder_support/user_agent_utils.cc	2026-07-20 15:12:24.981717018 +0000
+diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
+index f4b3454..08f84cd 100644
+--- a/components/embedder_support/user_agent_utils.cc
++++ b/components/embedder_support/user_agent_utils.cc
 @@ -30,6 +30,7 @@
  #include "components/embedder_support/switches.h"
  #include "components/policy/core/common/policy_pref_names.h"
@@ -9,7 +10,7 @@ diff -u --recursive a/components/embedder_support/user_agent_utils.cc b/componen
  #include "components/version_info/version_info.h"
  #include "net/http/http_util.h"
  #include "third_party/blink/public/common/features.h"
-@@ -217,8 +218,32 @@
+@@ -217,8 +218,32 @@ const blink::UserAgentBrandList GetUserAgentBrandFullVersionListInternal(
  // depending on the Reduce User-Agent reduction phase features.
  std::string GetUserAgentInternal() {
    std::string product = GetProductAndVersion();
@@ -44,7 +45,7 @@ diff -u --recursive a/components/embedder_support/user_agent_utils.cc b/componen
    }
  
  #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-@@ -227,9 +252,12 @@
+@@ -227,9 +252,12 @@ std::string GetUserAgentInternal() {
    }
  #endif
  
@@ -58,7 +59,7 @@ diff -u --recursive a/components/embedder_support/user_agent_utils.cc b/componen
  }
  
  // Generate random order list based on the input size and seed.
-@@ -281,6 +309,21 @@
+@@ -281,6 +309,21 @@ blink::UserAgentBrandList ShuffleBrandList(
  }
  
  std::string GetUserAgentPlatform() {
@@ -80,7 +81,7 @@ diff -u --recursive a/components/embedder_support/user_agent_utils.cc b/componen
  #if BUILDFLAG(IS_WIN)
    return "";
  #elif BUILDFLAG(IS_MAC)
-@@ -301,6 +344,21 @@
+@@ -301,6 +344,21 @@ std::string GetUserAgentPlatform() {
  }
  
  std::string GetUnifiedPlatform() {
@@ -102,10 +103,11 @@ diff -u --recursive a/components/embedder_support/user_agent_utils.cc b/componen
  #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
    // This constant is only used on Android (desktop) and Linux.
    constexpr char kUnifiedPlatformChromeOSX64[] = "X11; CrOS x86_64 14541.0.0";
-diff -u --recursive a/content/browser/client_hints/client_hints.cc b/content/browser/client_hints/client_hints.cc
---- a/content/browser/client_hints/client_hints.cc	2026-07-20 15:12:24.889716608 +0000
-+++ b/content/browser/client_hints/client_hints.cc	2026-07-20 15:12:24.985717035 +0000
-@@ -710,6 +710,8 @@
+diff --git a/content/browser/client_hints/client_hints.cc b/content/browser/client_hints/client_hints.cc
+index 957d093..23c6f56 100644
+--- a/content/browser/client_hints/client_hints.cc
++++ b/content/browser/client_hints/client_hints.cc
+@@ -712,6 +712,8 @@ void UpdateNavigationRequestClientUaHeadersImpl(
      if (!ua_metadata.has_value())
        ua_metadata = delegate->GetUserAgentMetadata();
  
@@ -114,15 +116,17 @@ diff -u --recursive a/content/browser/client_hints/client_hints.cc b/content/bro
      // The `Sec-CH-UA` client hint is attached to all outgoing requests. This is
      // (intentionally) different than other client hints.
      // It's barred behind ShouldAddClientHints to make sure it's controlled by
-diff -u --recursive a/third_party/blink/common/user_agent/user_agent_metadata.cc b/third_party/blink/common/user_agent/user_agent_metadata.cc
---- a/third_party/blink/common/user_agent/user_agent_metadata.cc	2026-07-20 15:12:24.905716679 +0000
-+++ b/third_party/blink/common/user_agent/user_agent_metadata.cc	2026-07-20 15:12:24.985717035 +0000
-@@ -6,8 +6,14 @@
+diff --git a/third_party/blink/common/user_agent/user_agent_metadata.cc b/third_party/blink/common/user_agent/user_agent_metadata.cc
+index 905d30f..c7e95e4 100644
+--- a/third_party/blink/common/user_agent/user_agent_metadata.cc
++++ b/third_party/blink/common/user_agent/user_agent_metadata.cc
+@@ -6,9 +6,15 @@
  
  #include <algorithm>
  
 +#include "base/command_line.h"
  #include "base/containers/span.h"
+ #include "base/containers/to_vector.h"
  #include "base/pickle.h"
 +#include "base/strings/string_number_conversions.h"
 +#include "base/strings/string_util.h"
@@ -132,7 +136,7 @@ diff -u --recursive a/third_party/blink/common/user_agent/user_agent_metadata.cc
  #include "net/http/structured_headers.h"
  #include "third_party/blink/public/common/features.h"
  
-@@ -24,6 +30,74 @@
+@@ -25,6 +31,74 @@ constexpr std::string_view kValidFormFactors[] = {
      blink::kXRFormFactor,      blink::kEInkFormFactor,
      blink::kWatchFormFactor};
  
@@ -207,7 +211,7 @@ diff -u --recursive a/third_party/blink/common/user_agent/user_agent_metadata.cc
  }  // namespace
  
  UserAgentBrandVersion::UserAgentBrandVersion(const std::string& ua_brand,
-@@ -232,4 +306,251 @@
+@@ -237,4 +311,251 @@ bool operator==(const UserAgentOverride& a, const UserAgentOverride& b) {
           a.ua_metadata_override == b.ua_metadata_override;
  }
  
@@ -459,10 +463,11 @@ diff -u --recursive a/third_party/blink/common/user_agent/user_agent_metadata.cc
 +}
 +
  }  // namespace blink
-diff -u --recursive a/third_party/blink/common/user_agent/user_agent_metadata.cc.edgebak b/third_party/blink/common/user_agent/user_agent_metadata.cc.edgebak
---- a/third_party/blink/public/common/user_agent/user_agent_metadata.h	2026-07-20 15:12:24.941716839 +0000
-+++ b/third_party/blink/public/common/user_agent/user_agent_metadata.h	2026-07-20 15:12:24.985717035 +0000
-@@ -106,6 +106,11 @@
+diff --git a/third_party/blink/public/common/user_agent/user_agent_metadata.h b/third_party/blink/public/common/user_agent/user_agent_metadata.h
+index 089e424..d94e157 100644
+--- a/third_party/blink/public/common/user_agent/user_agent_metadata.h
++++ b/third_party/blink/public/common/user_agent/user_agent_metadata.h
+@@ -99,6 +99,11 @@ bool BLINK_COMMON_EXPORT operator==(const UserAgentMetadata& a,
  bool BLINK_COMMON_EXPORT operator==(const UserAgentOverride& a,
                                      const UserAgentOverride& b);
  
@@ -474,9 +479,10 @@ diff -u --recursive a/third_party/blink/common/user_agent/user_agent_metadata.cc
  }  // namespace blink
  
  #endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_USER_AGENT_USER_AGENT_METADATA_H_
-diff -u --recursive a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
---- a/third_party/blink/renderer/core/execution_context/navigator_base.cc	2026-07-20 15:12:24.945716857 +0000
-+++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc	2026-07-20 15:12:24.993717071 +0000
+diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
+index d1f2628..7fbffaa 100644
+--- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
++++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
 @@ -4,10 +4,16 @@
  
  #include "third_party/blink/renderer/core/execution_context/navigator_base.h"
@@ -494,8 +500,8 @@ diff -u --recursive a/third_party/blink/renderer/core/execution_context/navigato
  #include "third_party/blink/renderer/core/frame/navigator_concurrent_hardware.h"
  #include "third_party/blink/renderer/core/probe/core_probes.h"
  #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-@@ -24,6 +30,21 @@
- namespace {
+@@ -32,6 +38,21 @@ constexpr char kLinuxX86_64[] = "Linux x86_64";
+ #endif
  
  String GetReducedNavigatorPlatform() {
 +const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
@@ -514,9 +520,9 @@ diff -u --recursive a/third_party/blink/renderer/core/execution_context/navigato
 +  }
 +}
  #if BUILDFLAG(IS_ANDROID)
-   return "Linux armv81";
- #elif BUILDFLAG(IS_MAC)
-@@ -72,8 +93,35 @@
+   if (base::android::device_info::is_desktop() ||
+       base::android::device_info::is_xr()) {
+@@ -87,8 +108,35 @@ void NavigatorBase::Trace(Visitor* visitor) const {
  unsigned int NavigatorBase::hardwareConcurrency() const {
    if (base::FeatureList::IsEnabled(blink::features::kReducedSystemInfo))
      return 2;
@@ -554,10 +560,11 @@ diff -u --recursive a/third_party/blink/renderer/core/execution_context/navigato
  
    probe::ApplyHardwareConcurrencyOverride(
        probe::ToCoreProbeSink(GetExecutionContext()), hardware_concurrency);
-diff -u --recursive a/third_party/blink/renderer/core/execution_context/navigator_base.h b/third_party/blink/renderer/core/execution_context/navigator_base.h
---- a/third_party/blink/renderer/core/execution_context/navigator_base.h	2026-07-20 15:12:24.977716999 +0000
-+++ b/third_party/blink/renderer/core/execution_context/navigator_base.h	2026-07-20 15:12:25.001717106 +0000
-@@ -59,6 +59,15 @@
+diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.h b/third_party/blink/renderer/core/execution_context/navigator_base.h
+index c19ffa6..9532b0b 100644
+--- a/third_party/blink/renderer/core/execution_context/navigator_base.h
++++ b/third_party/blink/renderer/core/execution_context/navigator_base.h
+@@ -59,6 +59,15 @@ class CORE_EXPORT NavigatorBase : public ScriptWrappable,
   protected:
    ExecutionContext* GetUAExecutionContext() const override;
    UserAgentMetadata GetUserAgentMetadata() const override;
@@ -573,9 +580,10 @@ diff -u --recursive a/third_party/blink/renderer/core/execution_context/navigato
  };
  
  }  // namespace blink
-diff -u --recursive a/third_party/blink/renderer/core/frame/navigator.cc b/third_party/blink/renderer/core/frame/navigator.cc
---- a/third_party/blink/renderer/core/frame/navigator.cc	2026-07-20 15:12:24.949716875 +0000
-+++ b/third_party/blink/renderer/core/frame/navigator.cc	2026-07-20 15:12:24.985717035 +0000
+diff --git a/third_party/blink/renderer/core/frame/navigator.cc b/third_party/blink/renderer/core/frame/navigator.cc
+index 583f05f..bca910e 100644
+--- a/third_party/blink/renderer/core/frame/navigator.cc
++++ b/third_party/blink/renderer/core/frame/navigator.cc
 @@ -21,6 +21,9 @@
   *  MA 02110-1301, USA
   */
@@ -586,7 +594,7 @@ diff -u --recursive a/third_party/blink/renderer/core/frame/navigator.cc b/third
  #include "third_party/blink/renderer/core/frame/navigator.h"
  
  #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
-@@ -56,6 +59,22 @@
+@@ -56,6 +59,22 @@ String Navigator::vendorSub() const {
  }
  
  String Navigator::platform() const {
@@ -609,7 +617,7 @@ diff -u --recursive a/third_party/blink/renderer/core/frame/navigator.cc b/third
    // TODO(955620): Consider changing devtools overrides to only allow overriding
    // the platform with a frozen platform to distinguish between
    // mobile and desktop when ReduceUserAgent is enabled.
-@@ -98,9 +117,6 @@
+@@ -98,9 +117,6 @@ bool Navigator::cookieEnabled() const {
  }
  
  bool Navigator::webdriver() const {
@@ -619,10 +627,11 @@ diff -u --recursive a/third_party/blink/renderer/core/frame/navigator.cc b/third
    bool automation_enabled = false;
    probe::ApplyAutomationOverride(GetExecutionContext(), automation_enabled);
    return automation_enabled;
-diff -u --recursive a/third_party/blink/renderer/core/frame/navigator_ua.cc b/third_party/blink/renderer/core/frame/navigator_ua.cc
---- a/third_party/blink/renderer/core/frame/navigator_ua.cc	2026-07-20 15:12:24.965716946 +0000
-+++ b/third_party/blink/renderer/core/frame/navigator_ua.cc	2026-07-20 15:12:24.985717035 +0000
-@@ -19,6 +19,9 @@
+diff --git a/third_party/blink/renderer/core/frame/navigator_ua.cc b/third_party/blink/renderer/core/frame/navigator_ua.cc
+index 9e0a578..5199f97 100644
+--- a/third_party/blink/renderer/core/frame/navigator_ua.cc
++++ b/third_party/blink/renderer/core/frame/navigator_ua.cc
+@@ -18,6 +18,9 @@ NavigatorUAData* NavigatorUA::userAgentData() {
      return ua_data;
  
    UserAgentMetadata metadata = GetUserAgentMetadata();
@@ -632,10 +641,11 @@ diff -u --recursive a/third_party/blink/renderer/core/frame/navigator_ua.cc b/th
    ua_data->SetBrandVersionList(metadata.brand_version_list);
    ua_data->SetMobile(metadata.mobile);
    ua_data->SetPlatform(String::FromUtf8(metadata.platform),
-diff -u --recursive a/third_party/blink/renderer/core/loader/frame_fetch_context.cc b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
---- a/third_party/blink/renderer/core/loader/frame_fetch_context.cc	2026-07-20 15:12:24.969716964 +0000
-+++ b/third_party/blink/renderer/core/loader/frame_fetch_context.cc	2026-07-20 15:12:24.985717035 +0000
-@@ -43,6 +43,7 @@
+diff --git a/third_party/blink/renderer/core/loader/frame_fetch_context.cc b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
+index 5cfbfac..3df7f17 100644
+--- a/third_party/blink/renderer/core/loader/frame_fetch_context.cc
++++ b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
+@@ -43,6 +43,7 @@ BASE_FEATURE(kFastMemoryCacheWithDevTools, base::FEATURE_ENABLED_BY_DEFAULT);
  #include "base/memory/scoped_refptr.h"
  #include "base/metrics/histogram_functions.h"
  #include "base/metrics/histogram_macros.h"
@@ -643,7 +653,7 @@ diff -u --recursive a/third_party/blink/renderer/core/loader/frame_fetch_context
  #include "build/build_config.h"
  #include "mojo/public/cpp/bindings/associated_remote.h"
  #include "net/http/structured_headers.h"
-@@ -733,6 +734,8 @@
+@@ -736,6 +737,8 @@ void FrameFetchContext::AddClientHintsIfNecessary(
  
    // Only send User Agent hints if the info is available
    if (ua) {

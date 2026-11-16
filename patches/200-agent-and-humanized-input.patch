@@ -1,6 +1,8 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index c6dfce70e6..82d1a8da39 100644
 --- a/chrome/app/chrome_main_delegate.cc
 +++ b/chrome/app/chrome_main_delegate.cc
-@@ -87,6 +87,7 @@
+@@ -78,6 +78,7 @@
  #include "content/public/common/content_constants.h"
  #include "content/public/common/content_paths.h"
  #include "content/public/common/content_switches.h"
@@ -8,7 +10,7 @@
  #include "content/public/common/main_function_params.h"
  #include "content/public/common/profiling.h"
  #include "content/public/common/url_constants.h"
-@@ -1088,6 +1089,28 @@
+@@ -1213,6 +1214,28 @@ std::optional<int> ChromeMainDelegate::BasicStartupComplete() {
    // The DevTools remote debugging pipe file descriptors need to be checked
    // before any other files are opened, see https://crbug.com/40259890.
    const bool is_browser = !command_line.HasSwitch(switches::kProcessType);
@@ -37,9 +39,11 @@
  #if BUILDFLAG(IS_WIN)
    const bool pipes_are_specified_explicitly =
        command_line.HasSwitch(::switches::kRemoteDebuggingIoPipes);
+diff --git a/chrome/browser/actor/actor_keyed_service_factory.cc b/chrome/browser/actor/actor_keyed_service_factory.cc
+index e760f58316..f0230390be 100644
 --- a/chrome/browser/actor/actor_keyed_service_factory.cc
 +++ b/chrome/browser/actor/actor_keyed_service_factory.cc
-@@ -29,8 +29,11 @@
+@@ -30,8 +30,11 @@ ActorKeyedServiceFactory* ActorKeyedServiceFactory::GetInstance() {
  
  ActorKeyedServiceFactory::ActorKeyedServiceFactory(
      base::PassKey<ActorKeyedServiceFactory>)
@@ -50,8 +54,11 @@
 -                                 ProfileSelections::BuildForRegularProfile()) {
 +                                 ProfileSelections::BuildForRegularAndIncognito()) {
    DependsOn(IdentityManagerFactory::GetInstance());
+   DependsOn(origin_gating::OriginGatingServiceFactory::GetInstance());
  }
- 
+diff --git a/chrome/browser/ai_agent/BUILD.gn b/chrome/browser/ai_agent/BUILD.gn
+new file mode 100644
+index 0000000000..41444669c1
 --- /dev/null
 +++ b/chrome/browser/ai_agent/BUILD.gn
 @@ -0,0 +1,42 @@
@@ -97,6 +104,9 @@
 +    "//url",
 +  ]
 +}
+diff --git a/chrome/browser/ai_agent/agent_controller.cc b/chrome/browser/ai_agent/agent_controller.cc
+new file mode 100644
+index 0000000000..c82e6e6515
 --- /dev/null
 +++ b/chrome/browser/ai_agent/agent_controller.cc
 @@ -0,0 +1,1245 @@
@@ -1345,6 +1355,9 @@
 +}
 +
 +}  // namespace ai_agent
+diff --git a/chrome/browser/ai_agent/agent_controller.h b/chrome/browser/ai_agent/agent_controller.h
+new file mode 100644
+index 0000000000..c4e0ed012b
 --- /dev/null
 +++ b/chrome/browser/ai_agent/agent_controller.h
 @@ -0,0 +1,182 @@
@@ -1530,6 +1543,9 @@
 +}  // namespace ai_agent
 +
 +#endif  // CHROME_BROWSER_AI_AGENT_AGENT_CONTROLLER_H_
+diff --git a/chrome/browser/ai_agent/agent_switches.cc b/chrome/browser/ai_agent/agent_switches.cc
+new file mode 100644
+index 0000000000..526909e1a7
 --- /dev/null
 +++ b/chrome/browser/ai_agent/agent_switches.cc
 @@ -0,0 +1,28 @@
@@ -1561,6 +1577,9 @@
 +}
 +
 +}  // namespace ai_agent
+diff --git a/chrome/browser/ai_agent/agent_switches.h b/chrome/browser/ai_agent/agent_switches.h
+new file mode 100644
+index 0000000000..7fdd40f891
 --- /dev/null
 +++ b/chrome/browser/ai_agent/agent_switches.h
 @@ -0,0 +1,58 @@
@@ -1622,6 +1641,9 @@
 +}  // namespace ai_agent
 +
 +#endif  // CHROME_BROWSER_AI_AGENT_AGENT_SWITCHES_H_
+diff --git a/chrome/browser/ai_agent/llm_client.cc b/chrome/browser/ai_agent/llm_client.cc
+new file mode 100644
+index 0000000000..a19e452908
 --- /dev/null
 +++ b/chrome/browser/ai_agent/llm_client.cc
 @@ -0,0 +1,193 @@
@@ -1818,6 +1840,9 @@
 +}
 +
 +}  // namespace ai_agent
+diff --git a/chrome/browser/ai_agent/llm_client.h b/chrome/browser/ai_agent/llm_client.h
+new file mode 100644
+index 0000000000..0368146caa
 --- /dev/null
 +++ b/chrome/browser/ai_agent/llm_client.h
 @@ -0,0 +1,83 @@
@@ -1904,6 +1929,9 @@
 +}  // namespace ai_agent
 +
 +#endif  // CHROME_BROWSER_AI_AGENT_LLM_CLIENT_H_
+diff --git a/chrome/browser/ai_agent/page_serializer.cc b/chrome/browser/ai_agent/page_serializer.cc
+new file mode 100644
+index 0000000000..61de34865c
 --- /dev/null
 +++ b/chrome/browser/ai_agent/page_serializer.cc
 @@ -0,0 +1,380 @@
@@ -2287,6 +2315,9 @@
 +}
 +
 +}  // namespace ai_agent
+diff --git a/chrome/browser/ai_agent/page_serializer.h b/chrome/browser/ai_agent/page_serializer.h
+new file mode 100644
+index 0000000000..0c7393899d
 --- /dev/null
 +++ b/chrome/browser/ai_agent/page_serializer.h
 @@ -0,0 +1,72 @@
@@ -2362,9 +2393,11 @@
 +}  // namespace ai_agent
 +
 +#endif  // CHROME_BROWSER_AI_AGENT_PAGE_SERIALIZER_H_
+diff --git a/chrome/browser/resources/actor_overlay/app.css b/chrome/browser/resources/actor_overlay/app.css
+index 3b47d07228..4e23be090b 100644
 --- a/chrome/browser/resources/actor_overlay/app.css
 +++ b/chrome/browser/resources/actor_overlay/app.css
-@@ -169,3 +169,42 @@
+@@ -169,3 +169,42 @@ reduced motion */
  .clicking {
    animation: cursor-click 400ms ease-out;
  }
@@ -2407,9 +2440,11 @@
 +    transform: scale(2.6);
 +  }
 +}
+diff --git a/chrome/browser/resources/actor_overlay/app.html.ts b/chrome/browser/resources/actor_overlay/app.html.ts
+index e749ea72e1..a08f51404a 100644
 --- a/chrome/browser/resources/actor_overlay/app.html.ts
 +++ b/chrome/browser/resources/actor_overlay/app.html.ts
-@@ -15,6 +15,7 @@
+@@ -15,6 +15,7 @@ export function getHtml(this: ActorOverlayAppElement) {
  </div>
  <div id="magicCursor">
    <div id="cursorImage"></div>
@@ -2417,31 +2452,35 @@
  </div>
  <!--_html_template_end_-->`;
    // clang-format on
---- a/chrome/browser/ui/BUILD.gn
-+++ b/chrome/browser/ui/BUILD.gn
-@@ -167,6 +167,7 @@
-     ":url_identity",
-     "//base",
-     "//base:i18n",
-+    "//chrome/browser/ai_agent",
-     "//base/allocator:buildflags",
-     "//build:android_buildflags",
-     "//build:branding_buildflags",
---- a/chrome/browser/ui/browser.cc
-+++ b/chrome/browser/ui/browser.cc
-@@ -39,6 +39,7 @@
- #include "chrome/browser/actor/actor_keyed_service.h"
+diff --git a/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn b/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
+index d4dacf5897..f131f405ad 100644
+--- a/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
++++ b/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
+@@ -17,6 +17,7 @@ if (!is_android) {
+       "//chrome/browser:file_select_helper",
+       "//chrome/browser:repost_form_warning_controller",
+       "//chrome/browser/actor",
++      "//chrome/browser/ai_agent",
+       "//chrome/browser/background",
+       "//chrome/browser/content_settings",
+       "//chrome/browser/content_settings:content_settings_factory",
+diff --git a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
+index 3bc40bcc91..f9b6d930fa 100644
+--- a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
++++ b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
+@@ -10,6 +10,7 @@
+ #include "base/trace_event/trace_event.h"
+ #include "chrome/app/chrome_command_ids.h"
  #include "chrome/browser/actor/actor_util.h"
- #include "chrome/browser/actor/execution_engine.h"
 +#include "chrome/browser/ai_agent/agent_controller.h"
- #include "chrome/browser/ai/ai_data_keyed_service.h"          // nogncheck
- #include "chrome/browser/ai/ai_data_keyed_service_factory.h"  // nogncheck
- #include "chrome/browser/app_mode/app_mode_utils.h"
-@@ -2623,6 +2624,20 @@
+ #include "chrome/browser/background/background_contents.h"
+ #include "chrome/browser/background/background_contents_service.h"
+ #include "chrome/browser/background/background_contents_service_factory.h"
+@@ -1496,6 +1497,20 @@ void BrowserWebContentsDelegate::GetAIPageContent(
        }).Then(std::move(callback)));
  }
  
-+void Browser::RunAgentTask(
++void BrowserWebContentsDelegate::RunAgentTask(
 +    content::WebContents* web_contents,
 +    const std::string& goal,
 +    int max_steps,
@@ -2455,15 +2494,17 @@
 +                                   plan_json, std::move(callback));
 +}
 +
- #if BUILDFLAG(ENABLE_PRINTING)
- void Browser::PrintCrossProcessSubframe(
+ void BrowserWebContentsDelegate::PrintCrossProcessSubframe(
      content::WebContents* web_contents,
---- a/chrome/browser/ui/browser.h
-+++ b/chrome/browser/ui/browser.h
-@@ -952,6 +952,16 @@
-       content::WebContents* web_contents,
+     const gfx::Rect& rect,
+diff --git a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h
+index 360d1abf0b..0bed7876e1 100644
+--- a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h
++++ b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h
+@@ -255,6 +255,16 @@ class BrowserWebContentsDelegate : public content::WebContentsDelegate {
        bool include_actionable_elements,
-       base::OnceCallback<void(const std::string&)> callback) override;
+       base::OnceCallback<void(base::expected<std::string, std::string>)>
+           callback) override;
 +  void RunAgentTask(
 +      content::WebContents* web_contents,
 +      const std::string& goal,
@@ -2474,9 +2515,12 @@
 +                              const std::string& final_text,
 +                              const std::string& steps_json)>
 +          callback) override;
- 
- #if BUILDFLAG(ENABLE_PRINTING)
    void PrintCrossProcessSubframe(
+       content::WebContents* web_contents,
+       const gfx::Rect& rect,
+diff --git a/content/browser/humanized_click.cc b/content/browser/humanized_click.cc
+new file mode 100644
+index 0000000000..67cfe67266
 --- /dev/null
 +++ b/content/browser/humanized_click.cc
 @@ -0,0 +1,237 @@
@@ -2717,9 +2761,11 @@
 +}
 +
 +}  // namespace content
+diff --git a/content/public/browser/BUILD.gn b/content/public/browser/BUILD.gn
+index 790d665707..efc2715b9b 100644
 --- a/content/public/browser/BUILD.gn
 +++ b/content/public/browser/BUILD.gn
-@@ -218,6 +218,7 @@
+@@ -220,6 +220,7 @@ source_set("browser_sources") {
      "hid_delegate.h",
      "histogram_fetcher.h",
      "host_zoom_map.h",
@@ -2727,6 +2773,9 @@
      "immersive_playback_options.h",
      "initiator_navigation_state.cc",
      "initiator_navigation_state.h",
+diff --git a/content/public/browser/humanized_click.h b/content/public/browser/humanized_click.h
+new file mode 100644
+index 0000000000..4bec45f9b4
 --- /dev/null
 +++ b/content/public/browser/humanized_click.h
 @@ -0,0 +1,48 @@
@@ -2778,10 +2827,12 @@
 +}  // namespace content
 +
 +#endif  // CONTENT_PUBLIC_BROWSER_HUMANIZED_CLICK_H_
+diff --git a/content/public/browser/web_contents_delegate.cc b/content/public/browser/web_contents_delegate.cc
+index 2de5b3392b..156dfb3a42 100644
 --- a/content/public/browser/web_contents_delegate.cc
 +++ b/content/public/browser/web_contents_delegate.cc
-@@ -476,6 +476,19 @@
-   std::move(callback).Run(std::string());
+@@ -487,6 +487,19 @@ void WebContentsDelegate::GetAIPageContent(
+       "Annotated page content is not available for this browser target."));
  }
  
 +void WebContentsDelegate::RunAgentTask(
@@ -2800,11 +2851,13 @@
  bool WebContentsDelegate::IsWaitingForPointerLockPrompt(
      WebContents* web_contents) {
    return false;
+diff --git a/content/public/browser/web_contents_delegate.h b/content/public/browser/web_contents_delegate.h
+index cd03383472..2917ad7523 100644
 --- a/content/public/browser/web_contents_delegate.h
 +++ b/content/public/browser/web_contents_delegate.h
-@@ -900,6 +900,22 @@
-       bool include_actionable_elements,
-       base::OnceCallback<void(const std::string&)> callback);
+@@ -914,6 +914,22 @@ class CONTENT_EXPORT WebContentsDelegate {
+       base::OnceCallback<void(base::expected<std::string, std::string>)>
+           callback);
  
 +  // ChromiumFish: runs a native, in-browser AI agent task against
 +  // `web_contents` toward `goal` (natural language), driven by a configured

@@ -1,14 +1,16 @@
+diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
+index 901df80d0d..e60b5f8b53 100644
 --- a/content/browser/BUILD.gn
 +++ b/content/browser/BUILD.gn
-@@ -933,6 +933,7 @@
+@@ -836,6 +836,7 @@ source_set("browser") {
      "devtools/protocol/background_service_handler.h",
      "devtools/protocol/browser_handler.cc",
      "devtools/protocol/browser_handler.h",
 +    "devtools/protocol/humanized_cursor_overlay_mac.h",
+     "devtools/protocol/debugger_handler.cc",
+     "devtools/protocol/debugger_handler.h",
      "devtools/protocol/device_access_handler.cc",
-     "devtools/protocol/device_access_handler.h",
-     "devtools/protocol/device_orientation_handler.cc",
-@@ -1208,6 +1209,7 @@
+@@ -1110,6 +1111,7 @@ source_set("browser") {
      "host_zoom_level_context.h",
      "host_zoom_map_impl.cc",
      "host_zoom_map_impl.h",
@@ -16,7 +18,7 @@
      "idle/idle_manager_impl.cc",
      "idle/idle_manager_impl.h",
      "image_capture/image_capture_impl.cc",
-@@ -2886,6 +2888,8 @@
+@@ -2681,6 +2683,8 @@ source_set("browser") {
          [ "file_system_access/file_path_watcher/file_path_watcher_stub.cc" ]
  
      sources += [
@@ -25,11 +27,13 @@
        "../app_shim_remote_cocoa/ns_view_bridge_factory_impl.mm",
        "../app_shim_remote_cocoa/popup_window_mac.h",
        "../app_shim_remote_cocoa/popup_window_mac.mm",
+diff --git a/content/browser/devtools/protocol/browser_handler.cc b/content/browser/devtools/protocol/browser_handler.cc
+index e4b87a6ee3..8c67d38631 100644
 --- a/content/browser/devtools/protocol/browser_handler.cc
 +++ b/content/browser/devtools/protocol/browser_handler.cc
-@@ -32,6 +32,24 @@
- #include "content/browser/devtools/devtools_agent_host_impl.h"
+@@ -34,6 +34,25 @@
  #include "content/browser/devtools/devtools_manager.h"
+ #include "content/browser/devtools/devtools_session.h"
  #include "content/browser/devtools/protocol/devtools_download_manager_delegate.h"
 +#include <map>
 +
@@ -49,10 +53,11 @@
 +#if BUILDFLAG(IS_MAC)
 +#include "content/browser/devtools/protocol/humanized_cursor_overlay_mac.h"
 +#endif
++
+ #include "content/browser/global_privacy_control_util.h"
  #include "content/browser/gpu/gpu_process_host.h"
- #include "content/browser/interest_group/interest_group_manager_impl.h"
  #include "content/browser/permissions/permission_controller_impl.h"
-@@ -704,6 +722,515 @@
+@@ -740,6 +759,516 @@ Response BrowserHandler::GetGlobalPrivacyControl(bool* out_gpc) {
    return Response::Success();
  }
  
@@ -565,12 +570,15 @@
 +          std::move(callback)));
 +}
 +
- void BrowserHandler::AddPrivacySandboxCoordinatorKeyConfig(
-     const std::string& in_api,
-     const std::string& in_coordinator_origin,
++
+ Response BrowserHandler::SetGlobalPrivacyControl(bool in_gpc, bool* out_gpc) {
+   if (!blink::IsGlobalPrivacyControlFeatureEnabled()) {
+     return Response::ServerError("Global Privacy Control is disabled.");
+diff --git a/content/browser/devtools/protocol/browser_handler.h b/content/browser/devtools/protocol/browser_handler.h
+index 9e1ba76dba..d5bb257f30 100644
 --- a/content/browser/devtools/protocol/browser_handler.h
 +++ b/content/browser/devtools/protocol/browser_handler.h
-@@ -101,6 +101,29 @@
+@@ -106,6 +106,29 @@ class BrowserHandler : public DevToolsDomainHandler,
    Response Crash() override;
    Response CrashGpuProcess() override;
  
@@ -597,9 +605,12 @@
 +                    std::optional<std::string> in_plan_json,
 +                    std::unique_ptr<AgentRunTaskCallback> callback) override;
 +
-   void AddPrivacySandboxCoordinatorKeyConfig(
-       const std::string& in_api,
-       const std::string& in_coordinator_origin,
+   Response GetGlobalPrivacyControl(bool* out_gpc) override;
+   Response SetGlobalPrivacyControl(bool in_gpc, bool* out_gpc) override;
+ 
+diff --git a/content/browser/devtools/protocol/humanized_cursor_overlay_mac.h b/content/browser/devtools/protocol/humanized_cursor_overlay_mac.h
+new file mode 100644
+index 0000000000..edde69ca4e
 --- /dev/null
 +++ b/content/browser/devtools/protocol/humanized_cursor_overlay_mac.h
 @@ -0,0 +1,37 @@
@@ -640,6 +651,9 @@
 +}  // namespace content
 +
 +#endif  // CONTENT_BROWSER_DEVTOOLS_PROTOCOL_HUMANIZED_CURSOR_OVERLAY_MAC_H_
+diff --git a/content/browser/devtools/protocol/humanized_cursor_overlay_mac.mm b/content/browser/devtools/protocol/humanized_cursor_overlay_mac.mm
+new file mode 100644
+index 0000000000..99ef9592c9
 --- /dev/null
 +++ b/content/browser/devtools/protocol/humanized_cursor_overlay_mac.mm
 @@ -0,0 +1,149 @@
@@ -792,9 +806,11 @@
 +
 +}  // namespace devtools
 +}  // namespace content
+diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
+index 8468f4d256..e773e2c0ca 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
-@@ -48,6 +48,8 @@
+@@ -49,6 +49,8 @@
  #include "ui/base/clipboard/clipboard_constants.h"
  #include "ui/base/dragdrop/mojom/drag_drop_types.mojom-shared.h"
  #include "ui/events/base_event_utils.h"
@@ -803,8 +819,8 @@
  #include "ui/events/blink/web_input_event_traits.h"
  #include "ui/events/event_constants.h"
  #include "ui/events/gesture_detection/gesture_provider_config_helper.h"
-@@ -1353,6 +1355,37 @@
-       std::move(closure));
+@@ -1358,6 +1360,37 @@ void InputHandler::ImeSetComposition(
+       /*target_dom_node_id=*/blink::DOMNodeIdType(), std::move(closure));
  }
  
 +namespace {
@@ -841,7 +857,7 @@
  void InputHandler::DispatchMouseEvent(
      const std::string& event_type,
      double x,
-@@ -1371,6 +1404,64 @@
+@@ -1376,6 +1409,64 @@ void InputHandler::DispatchMouseEvent(
      std::optional<double> delta_y,
      std::optional<std::string> pointer_type,
      std::unique_ptr<DispatchMouseEventCallback> callback) {
@@ -906,6 +922,8 @@
    base::expected<std::unique_ptr<blink::WebMouseEvent>, protocol::Response>
        maybe_event = CreateWebMouseEvent(
            event_type, x, y, ScaleFactor(), std::move(modifiers),
+diff --git a/content/browser/devtools/protocol/input_handler.h b/content/browser/devtools/protocol/input_handler.h
+index 4c25a8c1c2..2e4fb7298b 100644
 --- a/content/browser/devtools/protocol/input_handler.h
 +++ b/content/browser/devtools/protocol/input_handler.h
 @@ -16,6 +16,7 @@
@@ -916,7 +934,7 @@
  #include "content/browser/devtools/protocol/devtools_domain_handler.h"
  #include "content/browser/devtools/protocol/input.h"
  #include "content/browser/renderer_host/render_widget_host_view_base.h"
-@@ -356,6 +357,9 @@
+@@ -356,6 +357,9 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
        injectors_;
    int last_id_ = 0;
    bool ignore_input_events_ = false;
@@ -926,9 +944,11 @@
    std::optional<content::WebContents::ScopedIgnoreInputEvents>
        scoped_ignore_input_events_;
    bool intercept_drags_ = false;
+diff --git a/content/browser/devtools/protocol/network_handler.cc b/content/browser/devtools/protocol/network_handler.cc
+index 7a9d60a1e3..a30df80705 100644
 --- a/content/browser/devtools/protocol/network_handler.cc
 +++ b/content/browser/devtools/protocol/network_handler.cc
-@@ -199,14 +199,14 @@
+@@ -221,14 +221,14 @@ std::unique_ptr<Network::CookiePartitionKey> BuildCookiePartitionKey(
  
  std::unique_ptr<Network::Cookie> BuildCookie(
      const net::CanonicalCookie& cookie) {
@@ -945,25 +965,30 @@
                            ? -1
                            : cookie.ExpiryDate().InSecondsFSinceUnixEpoch())
            .SetSize(cookie.Name().length() + cookie.Value().length())
+diff --git a/content/browser/devtools/protocol_config.json b/content/browser/devtools/protocol_config.json
+index d5ffdcfd66..13a048b759 100644
 --- a/content/browser/devtools/protocol_config.json
 +++ b/content/browser/devtools/protocol_config.json
-@@ -20,8 +20,8 @@
+@@ -19,8 +19,8 @@
+             },
              {
                  "domain": "Browser",
-                 "include": ["getVersion", "getHistograms", "getHistogram", "getBrowserCommandLine", "grantPermissions", "setDownloadBehavior", "cancelDownload", "resetPermissions", "crash", "crashGpuProcess", "setPermission",
--                "addPrivacySandboxCoordinatorKeyConfig"],
--                "async": ["addPrivacySandboxCoordinatorKeyConfig", "grantPermissions", "resetPermissions", "setPermission"]
-+                "addPrivacySandboxCoordinatorKeyConfig", "humanizedClick", "humanizedClickSelector", "agentRunTask"],
-+                "async": ["addPrivacySandboxCoordinatorKeyConfig", "grantPermissions", "resetPermissions", "setPermission", "humanizedClick", "humanizedClickSelector", "agentRunTask"]
+-                "include": ["getVersion", "getHistograms", "getHistogram", "getBrowserCommandLine", "grantPermissions", "setDownloadBehavior", "cancelDownload", "resetPermissions", "crash", "crashGpuProcess", "setPermission", "getGlobalPrivacyControl", "setGlobalPrivacyControl", "addMockCamera"],
+-                "async": ["grantPermissions", "resetPermissions", "setPermission"]
++                "include": ["getVersion", "getHistograms", "getHistogram", "getBrowserCommandLine", "grantPermissions", "setDownloadBehavior", "cancelDownload", "resetPermissions", "crash", "crashGpuProcess", "setPermission", "getGlobalPrivacyControl", "setGlobalPrivacyControl", "addMockCamera", "humanizedClick", "humanizedClickSelector", "agentRunTask"],
++                "async": ["grantPermissions", "resetPermissions", "setPermission", "humanizedClick", "humanizedClickSelector", "agentRunTask"]
              },
              {
                  "domain": "DOM",
+diff --git a/third_party/blink/public/devtools_protocol/domains/Browser.pdl b/third_party/blink/public/devtools_protocol/domains/Browser.pdl
+index 142bd94887..4b9d86564a 100644
 --- a/third_party/blink/public/devtools_protocol/domains/Browser.pdl
 +++ b/third_party/blink/public/devtools_protocol/domains/Browser.pdl
-@@ -350,3 +350,71 @@
-       # BrowserContext to perform the action in. When omitted, default browser
-       # context is used.
-       optional BrowserContextID browserContextId
+@@ -356,3 +356,72 @@ domain Browser
+       boolean gpc
+     returns
+       boolean gpc
++
 +
 +  # Lightweight-fork: dispatch a humanized mouse click to a target.
 +  #
