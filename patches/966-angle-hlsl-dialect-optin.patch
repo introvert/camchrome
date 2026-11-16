@@ -50,17 +50,19 @@ that rendered, so a shader the Vulkan backend accepts but the HLSL translator re
 SPIR-V and reintroduces the tell for that shader alone. This is for users who hit this specific
 check, not a default.
 
+diff --git a/third_party/angle/src/libANGLE/Shader.cpp b/third_party/angle/src/libANGLE/Shader.cpp
+index a833d82ff6..675dfdbd05 100644
 --- a/third_party/angle/src/libANGLE/Shader.cpp
 +++ b/third_party/angle/src/libANGLE/Shader.cpp
-@@ -14,6 +14,7 @@
- 
+@@ -11,6 +11,7 @@
  #include "libANGLE/Shader.h"
+ #include "common/unsafe_buffers.h"
  
 +#include <cstdlib>
  #include <functional>
  #include <sstream>
  
-@@ -570,11 +571,122 @@
+@@ -567,11 +568,123 @@ int Shader::getTranslatedSourceLength(const Context *context)
      return static_cast<int>(mState.mCompiledState->translatedSource->length()) + 1;
  }
  
@@ -130,7 +132,8 @@ check, not a default.
 +    // Already HLSL means a real D3D backend; keep the honest translation. Makes this a strict
 +    // no-op in the Windows build even with the variable set.
 +    const ShShaderOutput output = context->getCompiler()->getShaderOutputType();
-+    if (output == SH_HLSL_4_1_OUTPUT || output == SH_HLSL_3_0_OUTPUT)
++    // ANGLE 156 dropped the D3D9-era HLSL 3.0 output type; only 4.1 remains.
++    if (output == SH_HLSL_4_1_OUTPUT)
 +    {
 +        return real;
 +    }
@@ -184,7 +187,7 @@ check, not a default.
      if (debugInfo.empty())
      {
          return 0;
-@@ -614,7 +726,7 @@
+@@ -611,7 +724,7 @@ void Shader::getTranslatedSourceWithDebugInfo(const Context *context,
                                                char *buffer)
  {
      resolveCompile(context);
@@ -193,18 +196,3 @@ check, not a default.
      GetSourceImpl(debugInfo, bufSize, length, buffer);
  }
  
---- a/third_party/angle/src/libANGLE/Shader.h
-+++ b/third_party/angle/src/libANGLE/Shader.h
-@@ -212,6 +212,12 @@
-                       const ShShaderOutput &outputType,
-                       const ShBuiltInResources &resources);
- 
-+    // clearcote: debug info to report for the translated-source query, and the cached HLSL
-+    // re-translation behind it (opt-in, see Shader.cpp). Empty cache means no spoof.
-+    std::string clearcoteDebugInfo(const Context *context);
-+    std::string mClearcoteHlsl;
-+    bool mClearcoteHlslDone = false;
-+
-     ShaderState mState;
-     std::unique_ptr<rx::ShaderImpl> mImplementation;
-     const gl::Limitations mRendererLimitations;
