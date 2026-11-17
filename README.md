@@ -13,7 +13,7 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 |---|---|---|
 | ungoogled-chromium base (Linux, Windows) | `157.0.8103.78-1` | pinned in `UPSTREAM` |
 | ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | pinned, built and audited on macOS arm64 |
-| Fingerprint patches (`patches/`) | 70 patches | verified against 157: built on macOS; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
+| Fingerprint patches (`patches/`) | 71 patches | verified against 157: built on macOS; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
 | Clearcote stealth audit | 365 checks | **100/100 · 236/236 scored checks agree · 0 findings** |
 
 The shipped and audited binary is Chromium `157.0.8103.78` — the latest ungoogled-chromium
@@ -24,7 +24,7 @@ Linux binary has been linked or audited yet. Windows is not ported.
 The patches in `patches/` come from
 [Clearcote](https://github.com/clearcotelabs/clearcote-browser) at commit
 `ac40bdc` (BSD-3-Clause; see `LICENSE.clearcote` and `CREDITS.md`), rebased from 151 to
-157 and extended with patches 986–993 (see below). They cover canvas, WebGL, WebGPU,
+157 and extended with patches 986–994 (see below). They cover canvas, WebGL, WebGPU,
 audio, fonts, GPU info, screen, timezone/locale, WebRTC, client hints, `navigator.webdriver`,
 headless and CDP `Runtime.enable` signals, and more.
 
@@ -70,6 +70,7 @@ events afterwards.
 | Patch | Fix |
 |---|---|
 | `993-humanized-typing-scroll-drag` | `Browser.humanizedType`, `Browser.humanizedScroll` and `Browser.humanizedDrag` next to 130's `humanizedClick`: human typing rhythm with Shift handling and corrected typos, per-OS wheel/trackpad/swipe scrolling, and drags, all as trusted input without attaching to the page |
+| `994-persona-validator-cli` | The persona validator as a small standalone binary that CI builds on every push, plus the persona bugs it found: macOS personas validated against Windows rules, 10 touch points under a Mac UA, imported Android and macOS captures overwritten by the platform tables, and an unset platform validated as Windows |
 
 ```python
 browser.call("Browser.humanizedClickSelector", {"targetId": tid, "selector": "#email"})

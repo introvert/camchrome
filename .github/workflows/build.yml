@@ -61,7 +61,9 @@ jobs:
       - name: SOCKS5 UDP test proxy
         run: tools/socks5_udp_proxy.py --selftest
       - name: Fingerprint library
-        run: tools/fingerprint_library.py check
+        run: |
+          tools/fingerprint_library.py check
+          tools/fingerprint_library.py selftest --binary "$(command -v google-chrome || command -v chromium)"
       - name: Self-test harness on stock Chrome
         # Stock Chrome has no persona, so persona-only checks are XFAIL; any FAIL means
         # the harness (or a check that should hold on any Chrome) is broken.
@@ -197,9 +199,22 @@ jobs:
           tools/socks5_udp_proxy.py --selftest
           tools/socks5_udp_proxy.py --run-selftest-binary build/src/out/Default/socks5_udp_relay_selftest
 
+      # Persona derivation and capture import (994): build the standalone validator (~300 ninja
+      # steps) and sweep every platform and schema, plus capture-shaped imports and refusals.
+      - name: Persona validator self-test
+        if: matrix.os == 'linux' && matrix.cpu == 'x64'
+        run: |
+          NINJA_TARGETS=components/ungoogled:persona_validator_cli scripts/02-build.sh
+          tools/fingerprint_library.py selftest --validator build/src/out/Default/persona_validator_cli
+          tools/fingerprint_library.py check --validator build/src/out/Default/persona_validator_cli
+
       - name: Persona validator
         if: needs.plan.outputs.mode == 'full' && matrix.os == 'linux' && matrix.cpu == 'x64'
-        run: build/src/out/Default/chrome --no-sandbox --clearcote-validate-persona=64
+        run: |
+          for p in "" windows macos linux android; do
+            build/src/out/Default/chrome --no-sandbox --clearcote-validate-persona=64 \
+              ${p:+--fingerprint-platform=$p}
+          done
 
       - name: Package
         if: needs.plan.outputs.mode == 'full'

@@ -68,3 +68,4 @@
 991-webrtc-relay-exit-ip.patch
 992-android-persona-mobile-behaviour.patch
 993-humanized-typing-scroll-drag.patch
+994-persona-validator-cli.patch
