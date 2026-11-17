@@ -1,26 +1,5 @@
-camchrome: engine-version coherence and a real macOS persona.
-
-The seed derivation claimed a frozen Chrome 151 while this engine is 156, and a
---fingerprint-platform=macos persona still carried Windows ANGLE/D3D11 strings,
-SAPI voices, Realtek devices and a Windows screen pool. Both are directly
-readable contradictions: image/jxl in Accept betrays a newer engine, ANGLE's
-shader dialect betrays the real backend, and the audit cross-checks every one of
-these fields against the platform claim.
-
-* Every version surface (UA, UA-CH brands/fullVersionList, persona) now derives
-  from version_info::GetVersionNumber(), so a Chromium major bump cannot leave a
-  stale claim behind. The seed draw is preserved for identity stability.
-* macOS personas get Apple Silicon hardware tiers (never below the host's real
-  core count, which the audit measures with workers), Retina screens, the ANGLE
-  Metal GPU strings and the limit/extension table that backend actually reports,
-  macOS voices and MacBook audio devices. An imported profile stays authoritative.
-* navigator.cpuPerformance is derived from the reported core count instead of
-  the host CPU model.
-* navigator.connection's persona rtt/downlink/ect are used for the Sec-CH
-  headers too, so the wire and the page agree.
-
 diff --git a/components/ungoogled/BUILD.gn b/components/ungoogled/BUILD.gn
-index 2ffc58b40a..e950e8d089 100644
+index 2ffc58b..e950e8d 100644
 --- a/components/ungoogled/BUILD.gn
 +++ b/components/ungoogled/BUILD.gn
 @@ -21,6 +21,7 @@ component("ungoogled_switches") {
@@ -32,14 +11,15 @@ index 2ffc58b40a..e950e8d089 100644
      "//third_party/zlib/google:compression_utils",
    ]
 diff --git a/components/ungoogled/persona_profile.cc b/components/ungoogled/persona_profile.cc
-index f4ffc4bced..7d8912bd46 100644
+index f4ffc4b..e40ab65 100644
 --- a/components/ungoogled/persona_profile.cc
 +++ b/components/ungoogled/persona_profile.cc
-@@ -17,12 +17,23 @@
+@@ -17,12 +17,24 @@
  #include "base/json/json_reader.h"
  #include "base/strings/string_number_conversions.h"
  #include "base/strings/string_util.h"
 +#include "base/system/sys_info.h"
++#include "build/build_config.h"
  #include "base/values.h"
  #include "components/ungoogled/ungoogled_switches.h"
 +#include "components/version_info/version_info.h"
@@ -59,7 +39,7 @@ index f4ffc4bced..7d8912bd46 100644
  namespace {
  
  template <typename T>
-@@ -82,6 +93,77 @@ constexpr std::array<WeightedEntry<ScreenSize>, 9> kScreens = {{
+@@ -82,6 +94,77 @@ constexpr std::array<WeightedEntry<ScreenSize>, 9> kScreens = {{
      {{3840, 2160, 2120}, 0.10},
  }};
  
@@ -137,7 +117,7 @@ index f4ffc4bced..7d8912bd46 100644
  // Hardware tiers: pick a tier first, then draw cores + RAM from that tier's
  // constrained pools so the (cores, RAM) pair is one a real desktop ships. Flat
  // independent sampling produces off-distribution combos (e.g. 20 cores + 16 GB,
-@@ -786,10 +868,22 @@ PersonaProfile DerivePersona(uint64_t seed) {
+@@ -786,10 +869,22 @@ PersonaProfile DerivePersona(uint64_t seed) {
    PersonaProfile p;
    p.persona_seed = mixed;
  
@@ -164,7 +144,50 @@ index f4ffc4bced..7d8912bd46 100644
  
    // Hardware: tier first, then correlated cores + RAM.
    std::array<double, kHwTiers.size()> tier_weights;
-@@ -1021,6 +1115,118 @@ PersonaProfile DerivePersona(uint64_t seed) {
+@@ -948,6 +1043,24 @@ PersonaProfile DerivePersona(uint64_t seed) {
+ 
+   ApplyProfileOverride(&p);
+ 
++  // A launch without --fingerprint-platform keeps the HOST platform: the seed
++  // derivation is Windows-shaped, so leaving kUnset there made the default
++  // persona claim a Windows GPU/voices/devices while the UA/UA-CH (which do map
++  // kUnset to the host) said macOS or Linux. An explicit profile is still
++  // authoritative because ApplyProfileOverride has already run.
++  PersonaPlatform platform = GetPersonaPlatform();
++  if (platform == PersonaPlatform::kUnset) {
++#if BUILDFLAG(IS_MAC)
++    platform = PersonaPlatform::kMacOS;
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++    platform = PersonaPlatform::kLinux;
++#elif BUILDFLAG(IS_WIN)
++    platform = PersonaPlatform::kWindows;
++#elif BUILDFLAG(IS_ANDROID)
++    platform = PersonaPlatform::kAndroid;
++#endif
++  }
++
+   // clearcote: an explicit --fingerprint-gpu-vendor/-renderer overrides the seed-/profile-
+   // derived GPU (precedence: switch > imported profile > seed); WebGL getParameter reads these.
+   const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
+@@ -955,7 +1068,7 @@ PersonaProfile DerivePersona(uint64_t seed) {
+   // SAPI voices, Realtek/WASAPI audio devices). On a Linux persona, swap each to its coherent
+   // Linux form so no field contradicts platform=Linux. Only rewrite a still-Windows default (an
+   // imported Linux/mac profile is left intact); an explicit --fingerprint-gpu-renderer wins below.
+-  if (GetPersonaPlatform() == PersonaPlatform::kLinux) {
++  if (platform == PersonaPlatform::kLinux) {
+     if (p.webgl_renderer.find("Direct3D") != std::string::npos)
+       p.webgl_renderer = LinuxWebGLRenderer(p.webgl_vendor);
+     // A real Chrome-on-Linux with no speech-dispatcher reports getVoices()==[]; never Windows
+@@ -971,7 +1084,7 @@ PersonaProfile DerivePersona(uint64_t seed) {
+   // devices and keeps the Windows screen/pointer/touch), android inverts the
+   // desktop shape structurally, so it overwrites screen/DPR/mobile/touch/GPU +
+   // the GLES limit table from one atomic device row.
+-  if (GetPersonaPlatform() == PersonaPlatform::kAndroid) {
++  if (platform == PersonaPlatform::kAndroid) {
+     const AndroidDevice& dev = WeightedPick(rng, kAndroidDevices);
+     // Portrait screen; Android reports availWidth/Height == the full screen.
+     p.screen_width = dev.screen_w;
+@@ -1021,6 +1134,118 @@ PersonaProfile DerivePersona(uint64_t seed) {
      // enumerateDevices: phone-shaped roster.
      p.media_devices = AndroidMediaDevices(rng);
    }
@@ -172,7 +195,7 @@ index f4ffc4bced..7d8912bd46 100644
 +  // Direct3D, SAPI voices, WASAPI devices, Windows screen pool); under a macOS
 +  // claim each of those is provable incoherence. Rewrite them to what Chrome on
 +  // Apple Silicon reports. An imported capture is authoritative and untouched.
-+  if (GetPersonaPlatform() == PersonaPlatform::kMacOS &&
++  if (platform == PersonaPlatform::kMacOS &&
 +      !DecodedProfileSwitch()) {
 +    const MacScreen& ms = kMacScreens[rng() % std::size(kMacScreens)];
 +    p.screen_width = ms.w;
@@ -284,7 +307,7 @@ index f4ffc4bced..7d8912bd46 100644
      p.webgl_vendor = cmd->GetSwitchValueASCII(switches::kFingerprintGpuVendor);
    if (cmd->HasSwitch(switches::kFingerprintGpuRenderer))
 diff --git a/components/ungoogled/persona_profile.h b/components/ungoogled/persona_profile.h
-index 4570246f41..223f29a712 100644
+index 4570246..223f29a 100644
 --- a/components/ungoogled/persona_profile.h
 +++ b/components/ungoogled/persona_profile.h
 @@ -340,6 +340,12 @@ COMPONENT_EXPORT(UNGOOGLED) void PersonaHeapLimitBounds(const PersonaProfile& p,
@@ -301,7 +324,7 @@ index 4570246f41..223f29a712 100644
  // override and the caller should fall back to the real display value. Resolution
  // order is flag > persona > none, which is what window.devicePixelRatio returns.
 diff --git a/third_party/blink/common/user_agent/user_agent_metadata.cc b/third_party/blink/common/user_agent/user_agent_metadata.cc
-index 1e5267c892..7f7c741ca6 100644
+index 1e5267c..7f7c741 100644
 --- a/third_party/blink/common/user_agent/user_agent_metadata.cc
 +++ b/third_party/blink/common/user_agent/user_agent_metadata.cc
 @@ -330,7 +330,8 @@ std::string GetChromiumVersion() {

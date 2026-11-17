@@ -272,11 +272,9 @@ def run_audit(args) -> int:
         print(f"browser not found: {binary}", file=sys.stderr)
         return 2
 
-    flags = [
-        f"--fingerprint={args.seed}",
-        f"--fingerprint-platform={args.platform}",
-        f"--window-size={args.window_size}",
-    ]
+    flags = [f"--fingerprint={args.seed}", f"--window-size={args.window_size}"]
+    if args.platform != "auto":
+        flags.append(f"--fingerprint-platform={args.platform}")
     browser = None
     cdp = None
     try:
@@ -363,9 +361,9 @@ def run_signals(args) -> int:
     try:
         browser = Browser(
             str(binary),
-            flags=[f"--fingerprint={args.seed}",
-                   f"--fingerprint-platform={args.platform}",
-                   f"--window-size={args.window_size}"],
+            flags=([f"--fingerprint={args.seed}", f"--window-size={args.window_size}"]
+                   + ([] if args.platform == "auto"
+                      else [f"--fingerprint-platform={args.platform}"])),
             headless=args.headless,
             log_path=str(REPO / "build/stealth-browser.log"),
         )
@@ -411,7 +409,9 @@ def main() -> int:
                         help="browser executable (default: build/src/out/Default/...)")
     parser.add_argument("--seed", default="camchrome-audit", help="--fingerprint seed")
     parser.add_argument("--platform", default=default_platform(),
-                        choices=["macos", "windows", "linux", "android"])
+                        choices=["auto", "macos", "windows", "linux", "android"],
+                        help="persona OS; auto omits --fingerprint-platform so the "
+                             "host platform is used")
     parser.add_argument("--window-size", default="1280,800")
     parser.add_argument("--audit-url", default=DEFAULT_AUDIT)
     parser.add_argument("--timeout", type=float, default=600,

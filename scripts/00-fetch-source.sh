@@ -88,18 +88,19 @@ if [ "$TARGET" = mac ]; then
   rust_lib_dir="$rust_dir/rust-std-$rust_name/lib/rustlib/$rust_name/lib"
   rustc_lib_dir="$rust_dir/rustc/lib/rustlib/$rust_name/lib"
   mkdir -p "$rust_bin_dir" "$rust_dir/lib"
-  ln -sf "$rust_dir/rustc/bin/rustc" "$rust_bin_dir/rustc"
-  ln -sf "$rust_dir/cargo/bin/cargo" "$rust_bin_dir/cargo"
-  ln -sf "$rust_dir/rustfmt-preview/bin/rustfmt" "$rust_bin_dir/rustfmt"
-  ln -sfn "$rust_lib_dir" "$rustc_lib_dir"
-  ln -sfn "$rust_dir/rustc/lib" "$rust_dir/rustfmt-preview/lib"
+  # Relative links: the tree must survive `mv build build-...`.
+  ln -sf "../rustc/bin/rustc" "$rust_bin_dir/rustc"
+  ln -sf "../cargo/bin/cargo" "$rust_bin_dir/cargo"
+  ln -sf "../rustfmt-preview/bin/rustfmt" "$rust_bin_dir/rustfmt"
+  ln -sfn "../../../../rust-std-$rust_name/lib/rustlib/$rust_name/lib" "$rustc_lib_dir"
+  ln -sfn "../rustc/lib" "$rust_dir/rustfmt-preview/lib"
 
   # Chromium 157: Crubit builds cc_bindings_from_rs against rustc_private, so the
   # rustc-dev crates and libLLVM must be moved into the host sysroot and the
   # toolchain root must be usable as a sysroot. The 156 overlay has neither
   # directory, so both steps are conditional.
   rm -rf "$rust_dir/lib/rustlib"
-  ln -sfn "$rust_dir/rustc/lib/rustlib" "$rust_dir/lib/rustlib"
+  ln -sfn "../rustc/lib/rustlib" "$rust_dir/lib/rustlib"
   if [ -d "$rust_dir/rustc-dev/lib/rustlib/$rust_name/lib" ]; then
     for f in "$rust_dir/rustc-dev/lib/rustlib/$rust_name/lib"/*; do
       [ -e "$f" ] && mv "$f" "$rust_lib_dir/"

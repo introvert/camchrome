@@ -15,7 +15,8 @@ across 16 browser subsystems.
 | Findings | **0** |
 | Unscored | 117 — contextual, unknowable-by-design, or not applicable; see the audit page |
 
-A second seed (`alpha`) produced the same result. Without `--interact` the run scores
+A second seed (`alpha`) and a launch without `--fingerprint-platform` (the host-platform
+default) produced the same result. Without `--interact` the run scores
 **218/218** and the audit reports the 18 input checks as "not attempted", never as passed.
 
 Group results from the run:

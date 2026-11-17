@@ -37,6 +37,35 @@ headless and CDP `Runtime.enable` signals, and more.
 | `988-webgl-readback-and-timing` | readPixels clips to the framebuffer, PBO and array exits agree, and spoofed `getParameter` values pay Chrome's GPU round-trip latency |
 | `989-cpu-tier-and-netinfo-hints` | `navigator.cpuPerformance` follows the persona's cores; `Sec-CH-RTT/Downlink/ECT` match `navigator.connection` |
 
+## Customizing the persona
+
+One seed drives every surface (UA, UA-CH, canvas, WebGL/WebGPU, audio, fonts, screen,
+timezone, voices, devices). The same seed produces the same machine in every process and on
+every origin; a different seed produces a different but internally coherent one.
+
+```bash
+build/src/out/Default/Chromium.app/Contents/MacOS/Chromium \
+  --fingerprint=demo --fingerprint-platform=macos --window-size=1280,800
+```
+
+| Flag | Effect |
+|---|---|
+| `--fingerprint=<seed>` | Selects the persona. Non-numeric seeds are hashed deterministically. |
+| `--fingerprint-platform=windows\|linux\|macos\|android` | OS the persona claims. Defaults to the host platform. |
+| `--fingerprint-brand=chrome\|edge\|opera\|vivaldi`, `--fingerprint-brand-version=<v>` | UA brand and version. The default claims the engine's own Chromium version. |
+| `--fingerprint-gpu-vendor=…`, `--fingerprint-gpu-renderer=…` | Override the derived GPU. The macOS persona defaults to ANGLE/Metal; Windows to ANGLE/D3D11. |
+| `--fingerprint-hardware-concurrency=<n>`, `--fingerprint-device-memory=<gb>` | CPU/RAM. A claim below the host's real cores is refused by the coherence checks (the audit measures worker parallelism). |
+| `--fingerprint-screen-width/-height/-avail-width/-avail-height/-color-depth/-device-pixel-ratio/-max-touch-points` | Explicit screen/touch values. |
+| `--timezone=<IANA>`, `--fingerprint-location=<lat,lng>` | Timezone and geolocation. |
+| `--fingerprint-schema=2` | Versioned derivation: couples screen class and GPU class to the hardware tier and sizes the JS heap from RAM. |
+| `--fingerprint-profile=<base64>` | Import a captured profile. It is authoritative over the seed; fields it omits keep the seed's values. |
+| `--fingerprint-tls-profile=chrome-156` | TLS ClientHello persona; absent/native leaves BoringSSL stock. |
+| `--disable-gpu-fingerprint` | Present the real GPU (strings, limits, extensions, pixels) instead of the persona. |
+| `--disable-gpu-string-spoof` | Only the UNMASKED vendor/renderer strings go real; limits, extensions and noise stay on the persona. |
+| `--disable-canvas-noise`, `--disable-fingerprint-noise` | Turn canvas-only, or all, farbling off. |
+| `--portable-profile`, `--profile-encryption-key=<secret>` | Store the profile's cookie key in the profile, or derive it from a caller secret. |
+| `--canvas-bridge-url=ws://…` | Forward canvas/WebGL rendering to a real-GPU host (see 065). |
+
 ## Requirements
 
 - Linux x64 or macOS with Xcode + the Metal toolchain
