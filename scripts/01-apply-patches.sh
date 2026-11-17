@@ -14,7 +14,45 @@ if [ ! -e "$SRC/.ungoogled-patched" ]; then
   echo "applying ungoogled-chromium base"
   python3 "$UG/utils/patches.py" apply "$SRC" "$UG/patches"
   echo "applying $OVERLAY"
-  python3 "$UG/utils/patches.py" apply "$SRC" "$WORK/$OVERLAY/patches"
+  overlay_dir="$WORK/$OVERLAY/patches"
+  if [ "$TARGET" = linux ]; then
+    # On Linux the Windows overlay is only needed for its source changes (905 depends on
+    # its chrome_command_ids.h, 900 on its rc.py change). Its Windows-host tooling
+    # patches are skipped (they break gn's bootstrap and the hermetic Python on Linux),
+    # and so are patches that edit files only a Windows checkout has (e.g.
+    # third_party/typescript/windows-amd64/src/lib/lib.dom.d.ts).
+    overlay_dir="$WORK/overlay-linux"
+    rm -rf "$overlay_dir"; mkdir -p "$overlay_dir"
+    : > "$overlay_dir/series"
+    while IFS= read -r p; do
+      case "$p" in ''|\#*) continue ;; esac
+      # Windows-host build tooling: these retarget gn's bootstrap at gn.exe, swap the
+      # hermetic Python, drop Crubit, change compiler flags, etc. They break a Linux
+      # build and no fingerprint patch depends on them.
+      case "$(basename "$p" .patch)" in
+        windows-fix-building-gn|windows-fix-python|windows-fix-building-without-crubit|\
+        windows-fix-building-with-rust|windows-fix-complex-builtins|\
+        windows-disable-clang-version-check|windows-fix-unsupported-llvm-flags|\
+        windows-fix-rc-terminating-error|windows-fix-clang-format-exe|\
+        windows-fix-licenses-gn-path|windows-disable-win-build-output|\
+        windows-no-unknown-warnings)
+          echo "  skipping $p (Windows-host build tooling)"; continue ;;
+      esac
+      missing=0
+      while IFS= read -r f; do
+        [ "$f" = /dev/null ] && continue
+        [ -e "$SRC/${f#a/}" ] || missing=1
+      done < <(grep '^--- ' "$WORK/$OVERLAY/patches/$p" | awk '{print $2}')
+      if [ "$missing" = 1 ]; then
+        echo "  skipping $p (targets a Windows-only file)"
+        continue
+      fi
+      mkdir -p "$overlay_dir/$(dirname "$p")"
+      ln -sf "$WORK/$OVERLAY/patches/$p" "$overlay_dir/$p"
+      printf '%s\n' "$p" >> "$overlay_dir/series"
+    done < "$WORK/$OVERLAY/patches/series"
+  fi
+  python3 "$UG/utils/patches.py" apply "$SRC" "$overlay_dir"
   touch "$SRC/.ungoogled-patched"
 fi
 

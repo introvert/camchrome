@@ -1,18 +1,17 @@
 # Clearcote patch set
 
-These are the **Clearcote fingerprint patches** — plain unified diffs against the pinned
-Chromium revision in [`../UPSTREAM_REVISION`](../UPSTREAM_REVISION), applied **after** the
-ungoogled-chromium base and the ungoogled-chromium-windows overlay (see
-[`../scripts/01-apply-patches.sh`](../scripts/01-apply-patches.sh) and
-[`../docs/BUILDING.md`](../docs/BUILDING.md)).
+These are the **Clearcote fingerprint patches**, rebased by camchrome to Chromium 157, plus
+camchrome's own 986–989. They are plain unified diffs against the Chromium revision pinned in
+[`../UPSTREAM`](../UPSTREAM) (`PATCHES_BASE`), applied **after** the ungoogled-chromium base
+and the platform overlay (see [`../scripts/01-apply-patches.sh`](../scripts/01-apply-patches.sh)
+and the Build section of [`../README.md`](../README.md)).
 
-They are listed in [`series`](series) and applied in order with ungoogled's quilt-style
-patch tool (`patches.py apply`, `-p1`). Reading these diffs *is* how you audit what Clearcote
+They are listed in [`series`](series) and applied in order with `patch -p1`. Reading these diffs *is* how you audit what Clearcote
 changes in the engine — there is no compiled-in behavior that isn't here.
 
-> [`../docs/PATCHES.md`](../docs/PATCHES.md) is the broader **design manifest** (the full
-> coherence model and the roadmap of surfaces still to come). This README documents what the
-> committed patch set actually contains today.
+> Clearcote's upstream `docs/PATCHES.md` (the design manifest) is not vendored here. This
+> README documents what the committed patch set contains; [`../docs/FINGERPRINT-TESTS.md`](../docs/FINGERPRINT-TESTS.md)
+> maps each patch to the tests that cover it.
 
 ## Seed model
 
@@ -36,7 +35,7 @@ crash the renderer.
 | `040-fonts` | Font enumeration via the engine allowlist (`font_cache.cc`) — exposes the persona's font set (a default installed-Windows list, or an imported profile's `fonts.detected`), so `measureText` enumeration matches the donor. Since 150 the default Windows list is modelled on real installs (about 300 families) instead of one short list shared by every copy, the block-glyph fallback matches stock Chrome, and a Windows persona on Linux has 231 metric-compatible substitutes (was 41), checked by actually drawing with them. |
 | `050-shadow-dom` | Closed shadow-root access (`Element::FakeShadowRoot()`; since 151 no longer exposed to pages, see `960`) **and removal** of the inherited client-rects noise machinery (`document`, `element`, `range`): `Document::GetNoiseFactorX/Y`, the `noise_factor_*_` members and all four `get*ClientRect*()` perturbation sites are deleted, so client rects are reported exactly. Client rects are an *output* of fonts + DPR + viewport, never an input — perturbing them can only move the profile out of the cluster its real inputs place it in, and the old offset also made `getClientRects()` disagree with `getBoundingClientRect()`. |
 | `060-canvas` | Canvas 2D farbling — `toDataURL`/`getImageData`/`toBlob`/`measureText` and the encoder/bitmap paths. Also the **canvas-bridge Canvas2D integration**: records the op stream and substitutes the bridge host's pixels/`measureText` metrics on readback when `--canvas-bridge-url` is set (the transport itself lives in `065`), and **fixes a `measureText` width bug** — the per-site noise was applied as a bare offset instead of `1 + offset`, which zeroed every fingerprinted text width. Since 150 every export path reads the same pixels (partial reads included), and uniform regions get position-keyed noise. |
-| `065-canvas-bridge` | **Canvas bridge** (opt-in, `--canvas-bridge-url`): forwards canvas/WebGL **operations** to a real-GPU render host over a WebSocket and returns that host's authentic pixels/metrics, so canvas/WebGL readbacks are coherent with the GPU the profile claims (it renders on hardware that actually has it, rather than spoofing the string). The little-endian binary codec + renderer-side client (`platform/canvas_bridge/` + its `BUILD.gn`), the `platform/BUILD.gn` wiring, and the `blink_initializer.cc` pre-warm. **Per-origin policy** (`--canvas-bridge-mode=off|all|allow|deny` + `--canvas-bridge-allow`/`--canvas-bridge-deny` eTLD+1 lists; default `all`), cold-cache-miss `--canvas-bridge-fallback=block|local`, and a **speculative content-version prefetch** that warms the per-canvas cache so deferred/repeated readbacks don't block. Unset = clearcote renders locally exactly as before. See [docs/CANVAS-BRIDGE.md](../docs/CANVAS-BRIDGE.md). |
+| `065-canvas-bridge` | **Canvas bridge** (opt-in, `--canvas-bridge-url`): forwards canvas/WebGL **operations** to a real-GPU render host over a WebSocket and returns that host's authentic pixels/metrics, so canvas/WebGL readbacks are coherent with the GPU the profile claims (it renders on hardware that actually has it, rather than spoofing the string). The little-endian binary codec + renderer-side client (`platform/canvas_bridge/` + its `BUILD.gn`), the `platform/BUILD.gn` wiring, and the `blink_initializer.cc` pre-warm. **Per-origin policy** (`--canvas-bridge-mode=off|all|allow|deny` + `--canvas-bridge-allow`/`--canvas-bridge-deny` eTLD+1 lists; default `all`), cold-cache-miss `--canvas-bridge-fallback=block|local`, and a **speculative content-version prefetch** that warms the per-canvas cache so deferred/repeated readbacks don't block. Unset = clearcote renders locally exactly as before. (Clearcote's `docs/CANVAS-BRIDGE.md` describes the host; not vendored here.) |
 | `070-webgl-gpu` | WebGL `UNMASKED_VENDOR/RENDERER` (**session-constant** — the persona GPU, identical on every origin), the full `getParameter` table (WebGL1 + WebGL2 limits, bit depths, aliased line/point ranges, max anisotropy) **and** `getSupportedExtensions` — all persona/profile-driven (coherent ANGLE/D3D11 values, or an imported profile's exact GPU), plus GPU info and `readPixels` farbling (`gpu_fingerprint.{cc,h}`, `webgl_rendering_context_base.cc`). **`--disable-gpu-fingerprint`** (`persona.webgl_real`) instead reports the host's **real** backend — the renderer/vendor strings, the `getParameter` table, and `getSupportedExtensions` route to the stock getters and the readback noise is skipped — so the reported GPU matches the actually-rendered pixels (no spoof to cross-check), for users who present real hardware coherently rather than spoofing it. Also carries the **WebGL canvas-bridge** op-recorders in `webgl_rendering_context_base.cc` (when `--canvas-bridge-url` is set): a stable bridge-id object model on `WebGLObject`/`WebGLUniformLocation`, recorders for create\*/shader/program/buffer/vertex-attrib/uniform/draw/state and the **procedural-texture** path (`texImage2D`/`texSubImage2D` ArrayBufferView upload + bind/activeTexture/texParameter/generateMipmap), the `readPixels` substitution, a `ReadBridgePixels` override (WebGL `toDataURL`, Y-flipped), and a `TexImageBase` backstop that falls back to local rendering for image/canvas/video/3D texture sources. Since 150 `--disable-gpu-string-spoof` swaps only the renderer/vendor strings for the real ones, and the uniform-block limits stay within what the driver enforces. |
 | `071-webgl2-extension-split` | An imported profile's WebGL1 and WebGL2 extension lists apply to their own contexts instead of one shared list, so each context advertises what that context can provide. |
 | `075-webgpu-coherence` | WebGPU `GPUAdapterInfo` (vendor/architecture/device/description) **and** `adapter.limits` (`GPUSupportedLimits`, a canonical desktop table) forced coherent with the WebGL persona GPU (`webgpu/gpu_adapter.cc`) so `navigator.gpu` can't contradict WebGL. Vendor/architecture are derived from the persona's WebGL GPU for **seed-only** personas too (Intel→`intel`/`gen-12-lp`, NVIDIA→`nvidia`/`ampere`, AMD→`amd`/`rdna2`), with `--fingerprint-webgpu-vendor/-architecture` + imported-profile (`webgpu.vendor`/`.architecture`) overrides. Since 150 it follows `--disable-gpu-fingerprint` (the real GPU) as WebGL does. |
@@ -90,15 +89,18 @@ crash the renderer.
 | `984-socks5-auth-implementation` | The rest of `963`: the RFC 1929 sub-negotiation, the credential parser and the two-method greeting. |
 | `985-webgl-stencil-masks` | The WebGL stencil masks come from the persona until the page writes stencil state, then report the real values. |
 | `986-canvas-alpha-and-grey-coherence` | **camchrome addition.** In the per-pixel canvas-noise exit, skip pixels whose alpha is 0 (a premultiplied canvas must read them back as `(0,0,0,0)`; audit: `canvas-alpha-zero-reads-black`) and flip all three colour channels with one shared bit so neutral grey stays grey (audit: `canvas-grey-stays-grey`). |
+| `987-engine-version-and-macos-persona` | **camchrome addition.** Every version surface (UA, UA-CH brands and full version list) derives from the engine's own version, so the claimed Chrome major always equals the built one. macOS personas become Apple Silicon devices: ANGLE/Metal GPU strings, caps and limits, Apple screen classes, macOS voices and media devices. |
+| `988-webgl-readback-and-timing` | **camchrome addition.** `readPixels` noise is clipped to the framebuffer (sentinel bytes outside it stay untouched), PBO and array readback agree, and spoofed `getParameter` values pay Chrome's GPU round-trip latency instead of answering from memory. |
+| `989-cpu-tier-and-netinfo-hints` | **camchrome addition.** `navigator.cpuPerformance` follows the persona's core count instead of the host CPU model; the `Sec-CH-RTT`/`Downlink`/`ECT` request hints carry the same persona values as `navigator.connection`. |
 
-`900`/`905` are Windows cross-build mechanics; `01-apply-patches.sh` skips them for the macOS target.
+`900`/`905` are Windows cross-build mechanics; `01-apply-patches.sh` skips them for the macOS target. They also apply on Linux (verified on 157), where they are inert.
 
 `956`–`958` (macOS persona fonts) belong to the open **150** macOS build only and live in
-[`macos-150/`](macos-150/); they are not in `series`. See [`../docs/MACOS-FONTS.md`](../docs/MACOS-FONTS.md).
+[`macos-150/`](macos-150/); they are not in `series`.
 
 ## Re-generating / verifying
 
-The set is produced by diffing the build tree against a freshly reconstructed
+Clearcote produced the set by diffing its build tree against a freshly reconstructed
 `pristine 151 → prune → ungoogled base → windows overlay` baseline, so it captures exactly the
 Clearcote delta and nothing else. Every patch re-applies to that baseline with zero rejects.
 After editing a patch, rebuild **incrementally** (`ninja -C out/Default chrome`) — never a clean

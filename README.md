@@ -13,13 +13,13 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 |---|---|---|
 | ungoogled-chromium base (Linux, Windows) | `157.0.8103.78-1` | pinned in `UPSTREAM` |
 | ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | pinned, built and audited on macOS arm64 |
-| Fingerprint patches (`patches/`) | 66 patches | verified against 157 (macOS) |
+| Fingerprint patches (`patches/`) | 66 patches | verified against 157: built on macOS; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
 | Clearcote stealth audit | 365 checks | **100/100 · 236/236 scored checks agree · 0 findings** |
 
 The shipped and audited binary is Chromium `157.0.8103.78` — the latest ungoogled-chromium
 tag and the latest macOS overlay. The 156 macOS build is preserved at tag
-`v156-audit100`. Linux/Windows use the same 157 base; their rebase is still open because the
-series was verified on macOS.
+`v156-audit100`. Linux uses the same 157 base: the series applies and compiles there, but no
+Linux binary has been linked or audited yet. Windows is not ported.
 
 The patches in `patches/` come from
 [Clearcote](https://github.com/clearcotelabs/clearcote-browser) at commit
@@ -86,6 +86,17 @@ scripts/02-build.sh                   # gn gen + ninja -> build/src/out/Default/
 ```
 
 `TARGET` defaults to `linux` or `mac` from the host; `WORK` defaults to `./build`.
+`TARGET_CPU=x64|arm64` cross-compiles (Linux arm64 from an x64 host, macOS x64 from Apple
+Silicon). `GN_ONLY=1 scripts/02-build.sh` stops after `gn gen`, and
+`NINJA_TARGETS="$(scripts/patched-sources.sh)" scripts/02-build.sh` compiles only the files the
+series touches, a quick check that a rebase builds.
+
+On Linux, `00-fetch-source.sh` also fetches what the lite tarball leaves out
+(`scripts/linux-toolchain.sh`): Chromium's clang, Rust and Debian sysroot, the DEPS-pinned
+libclang and node (`scripts/fetch-gcs-dep.py`, sha256-checked), tsgo and esbuild at the versions
+DEPS names, and links the host `go`, `gperf` and `python3` where the build expects them. The host
+needs `python3`, `npm`, `go`, `gperf`, `ninja` and `curl`.
+
 `config/args.win.gn` is Clearcote's Windows cross-compile config. It needs their xwin SDK setup,
 which is not ported here.
 
@@ -114,6 +125,32 @@ Crubit before GN runs.
 Results are written to `build/stealth-audit.txt` / `.json` (audit) and
 `build/stealth-signals.json` (`--signals`).
 
+## Tests
+
+| Tool | What | Network |
+|---|---|---|
+| `scripts/check-repo.sh` | series integrity, patch syntax, dead doc links, shellcheck, Python | no |
+| `tools/fingerprint_selftest.py` | one local check per patched surface, named after its patch | no |
+| `tools/stealth_audit.py` | the Clearcote audit (acceptance test) | yes |
+| `tools/site_checks.py` | browserleaks QUIC, Twilio WebRTC, fingerprint.com, pixelscan, browserscan, reCAPTCHA… | yes, plus a SOCKS5 proxy with UDP |
+
+```bash
+tools/fingerprint_selftest.py --platform macos          # against the build
+tools/fingerprint_selftest.py --stock --binary "$(command -v google-chrome)"   # harness only
+```
+
+`docs/FINGERPRINT-TESTS.md` maps every patch to its tests and lists the untested ones;
+`docs/TEST-MATRIX.md` is the external-site matrix.
+
+## CI
+
+`.github/workflows/build.yml` runs the repository checks and the self-test harness on every
+push, then fetches, patches, runs `gn gen` and compiles the patched files for linux-x64,
+linux-arm64, mac-arm64 and mac-x64. Dispatch it with `mode=full` (or push a `v*` tag) to build
+and upload the browser. A full build does not fit GitHub's standard runners (disk and the 6 h
+limit): set `linux_runner` / `mac_runner`, or the repository variables
+`CAMCHROME_LINUX_RUNNER` / `CAMCHROME_MAC_RUNNER`, to larger or self-hosted runners.
+
 ## Rebasing the patches to a new Chromium
 
 1. Bump `UG_TAG` and `UGW_TAG` (and `UGM_TAG` when moving macOS) in `UPSTREAM`.
@@ -127,6 +164,9 @@ Results are written to `build/stealth-audit.txt` / `.json` (audit) and
 ## More
 
 `NOTES.md` has the background, the patch repos compared, what has been verified, and the open work.
+
+`docs/SHARDBROWSER-COMPARISON.md` compares the patch set with ShardBrowser's advertised
+capabilities (QUIC/WebRTC over SOCKS5, mobile personas, input, automation) and lists the gaps.
 
 `COVERAGE.md` maps the 365 checks of the [Clearcote fingerprint audit](https://www.clearcotelabs.com/audit/checks)
 to the patches that cover them, lists the gaps, and names other repos to take patches from.

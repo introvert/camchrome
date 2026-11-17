@@ -15,7 +15,7 @@ Usage:
 The 18 input checks are reported as "not attempted" unless the audit's five
 optional steps are completed. Pass --interact to drive those steps with trusted
 CDP input (the harness aims inside each control, holds for a human interval and
-reports pressure while a button is down), which scores them: 237/237.
+reports pressure while a button is down), which scores them: 236/236.
 """
 
 from __future__ import annotations
@@ -277,6 +277,7 @@ def run_audit(args) -> int:
         flags.append(f"--fingerprint-platform={args.platform}")
     browser = None
     cdp = None
+    (REPO / "build").mkdir(exist_ok=True)
     try:
         browser = Browser(
             str(binary),
@@ -326,6 +327,7 @@ def run_audit(args) -> int:
             text = cdp.evaluate("document.body.innerText")
 
         result = parse_audit(text)
+        (REPO / "build").mkdir(exist_ok=True)
         out_txt = REPO / "build/stealth-audit.txt"
         out_json = REPO / "build/stealth-audit.json"
         out_txt.write_text(text)
@@ -358,6 +360,7 @@ def run_signals(args) -> int:
         return 2
     browser = None
     cdp = None
+    (REPO / "build").mkdir(exist_ok=True)
     try:
         browser = Browser(
             str(binary),
@@ -390,6 +393,7 @@ def run_signals(args) -> int:
         finally:
             server.shutdown()
             server.server_close()
+        (REPO / "build").mkdir(exist_ok=True)
         out = REPO / "build/stealth-signals.json"
         out.write_text(json.dumps(signals, indent=2) + "\n")
         print(json.dumps(signals, indent=2))

@@ -63,7 +63,6 @@ proprietary_codecs = true
 ffmpeg_branding = "Chrome"
 
 # --- Build hygiene ---
-enable_nacl = false
 treat_warnings_as_errors = false
 fatal_linker_warnings = false
 v8_drumbrake_bounds_checks = true

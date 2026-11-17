@@ -75,6 +75,14 @@ re-running ninja by hand.
   `tools/stealth_audit.py --seed testseed --interact`. Without `--interact`:
   218/218 and the 18 input checks are reported as not attempted.
 - The 156 build reached the same 100/100 (237/237) and is tagged `v156-audit100`.
+- **Linux x64 (2026-11-17, Ubuntu 24.04 container):** the full series applies in order to the
+  ungoogled 157 base; `gn gen --fail-on-unused-args` succeeds (36,541 targets) and every
+  patched source file compiles. Getting there needed four fixes, now in the scripts: the
+  Windows overlay's host-tooling patches broke gn's bootstrap and the hermetic Python on
+  Linux and are skipped; `900`'s `tool_wrapper.py` hunk was re-indented for 157;
+  `enable_nacl` (removed in 157) was dropped from `config/args.linux.gn`; and the prebuilts
+  the lite tarball leaves out are fetched by `scripts/linux-toolchain.sh`. No Linux browser
+  has been linked or audited yet. Details in `docs/BUILD-STATUS.md`.
 
 ## 156 → 157 rebase notes
 
@@ -98,8 +106,8 @@ The series applied almost entirely. The changes needed:
 
 ## Open work, in order
 
-1. Linux/Windows: the series is verified on macOS only. Apply the same rebase on Linux
-   (900/905 included there) and run the audit on both.
+1. Linux: link a full build (CI `mode=full` on a large runner) and run the audit and
+   `tools/fingerprint_selftest.py` on it. Windows: not started.
 2. Cross-OS personas: `cpu-arch-nan-*` cannot be patched (the persona's CPU arch must match
    the host's). Text-scaler/hyphenation/rare-font checks follow the host font stack. A
    Windows persona on a Mac needs Clearcote's font bundles, not vendored here.
@@ -113,8 +121,11 @@ The series applied almost entirely. The changes needed:
    a driver that injects itself into the page. The included audit harness uses raw CDP and
    adds nothing to the page.
 5. Windows cross-build: `config/args.win.gn` needs Clearcote's xwin setup; not ported here.
-6. CI: no workflow yet. `tools/stealth_audit.py --signals` is a cheap offline smoke test; the
-   full audit needs network and macOS/Linux GPU access.
+6. CI: `.github/workflows/build.yml` checks the repo, runs the self-test harness and
+   compile-checks the series for linux-x64/arm64 and mac-arm64/x64. Full builds need larger
+   or self-hosted runners (see README).
+7. ShardBrowser gaps, in priority order, are in `docs/SHARDBROWSER-COMPARISON.md`; QUIC over
+   SOCKS5 UDP is the first.
 
 ## Committing the Chromium source
 

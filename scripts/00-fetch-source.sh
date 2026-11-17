@@ -28,13 +28,21 @@ if [ ! -e "$SRC/.camchrome-source-fetched" ]; then
   touch "$SRC/.camchrome-source-fetched"
 fi
 
+# --- Linux prebuilt toolchain (clang, Rust, sysroot, libclang, tsgo, esbuild) ---
+if [ "$TARGET" = linux ]; then
+  # shellcheck source=scripts/linux-toolchain.sh
+  source "$REPO/scripts/linux-toolchain.sh"
+  linux_toolchain
+fi
+
 # --- macOS prebuilt LLVM + Rust toolchains + symlink layout ---
 # Faithful port of ungoogled-chromium-macos's
 # retrieve_and_unpack_resource.py::_retrieve_platform_specific.
 if [ "$TARGET" = mac ]; then
   host_arch="arm64"; [ "$(uname -m)" = x86_64 ] && host_arch="x86-64"
 
-  target_cpu="$(grep -E '^target_cpu *= *"' "$REPO/config/args.mac.gn" | sed 's/^target_cpu *= *"\([^"]*\)".*/\1/' | head -1)"
+  target_cpu="${TARGET_CPU:-}"
+  [ -z "$target_cpu" ] && target_cpu="$(grep -E '^target_cpu *= *"' "$REPO/config/args.mac.gn" | sed 's/^target_cpu *= *"\([^"]*\)".*/\1/' | head -1)"
   [ -z "$target_cpu" ] && { [ "$host_arch" = arm64 ] && target_cpu=arm64 || target_cpu=x64; }
 
   # Clean partial/previous toolchain state before unpacking.

@@ -1,0 +1,210 @@
+name: build
+
+# Three tiers, cheapest first:
+#   checks   every push / PR: repository checks + the self-test harness on stock Chrome.
+#   compile  every push / PR touching patches, scripts or config, and on demand: fetch the
+#            pinned source, apply the series, gn gen, then compile every patched source
+#            file for the target. This proves the series builds without a full link.
+#   full     on demand (workflow_dispatch, mode=full) or a v* tag: the whole browser.
+#
+# Targets: linux-x64, linux-arm64 (cross-compiled on an x64 host, the way Chromium builds
+# Linux arm64), mac-arm64 and mac-x64 (cross-compiled on an Apple Silicon host).
+#
+# Runner sizes: a Chromium build needs ~100 GB of disk, 16+ GB of RAM and hours of CPU.
+# GitHub's standard hosted runners (4 cores, ~14 GB free disk before cleanup, 6 h job
+# limit) are enough for `checks` and, after the disk cleanup below, for `compile` on
+# Linux. `full` and the macOS `compile` jobs need larger runners. Their labels are inputs,
+# so point them at larger GitHub-hosted runners or self-hosted machines, e.g.
+#   linux_runner: ubuntu-24.04-16core   mac_runner: macos-26-xlarge
+# Repository variables CAMCHROME_LINUX_RUNNER / CAMCHROME_MAC_RUNNER set the defaults.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'compile = patched files only; full = the whole browser'
+        type: choice
+        options: [compile, full]
+        default: compile
+      targets:
+        description: 'comma-separated: linux-x64,linux-arm64,mac-arm64,mac-x64'
+        default: 'linux-x64,linux-arm64,mac-arm64,mac-x64'
+      linux_runner:
+        description: 'runner label for Linux builds'
+        default: ''
+      mac_runner:
+        description: 'runner label for macOS builds'
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck python3-yaml
+      - name: Repository checks
+        run: scripts/check-repo.sh
+      - name: Self-test harness on stock Chrome
+        # Stock Chrome has no persona, so persona-only checks are XFAIL; any FAIL means
+        # the harness (or a check that should hold on any Chrome) is broken.
+        run: |
+          tools/fingerprint_selftest.py --stock --headless \
+            --binary "$(command -v google-chrome || command -v chromium)" \
+            --json selftest-stock.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest-stock
+          path: selftest-stock.json
+
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+      mode: ${{ steps.m.outputs.mode }}
+    steps:
+      - id: m
+        env:
+          MODE: ${{ inputs.mode || (startsWith(github.ref, 'refs/tags/v') && 'full') || 'compile' }}
+          TARGETS: ${{ inputs.targets || 'linux-x64,linux-arm64,mac-arm64,mac-x64' }}
+          LINUX_RUNNER: ${{ inputs.linux_runner || vars.CAMCHROME_LINUX_RUNNER || 'ubuntu-24.04' }}
+          MAC_RUNNER: ${{ inputs.mac_runner || vars.CAMCHROME_MAC_RUNNER || 'macos-26' }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os
+          rows = {
+            "linux-x64":   {"os": "linux", "cpu": "x64",   "runner": os.environ["LINUX_RUNNER"]},
+            "linux-arm64": {"os": "linux", "cpu": "arm64", "runner": os.environ["LINUX_RUNNER"]},
+            "mac-arm64":   {"os": "mac",   "cpu": "arm64", "runner": os.environ["MAC_RUNNER"]},
+            "mac-x64":     {"os": "mac",   "cpu": "x64",   "runner": os.environ["MAC_RUNNER"]},
+          }
+          want = [t.strip() for t in os.environ["TARGETS"].split(",") if t.strip() in rows]
+          include = [dict(name=t, **rows[t]) for t in want]
+          print("matrix=" + json.dumps({"include": include}))
+          print("mode=" + os.environ["MODE"])
+          EOF
+
+  build:
+    needs: [checks, plan]
+    name: ${{ needs.plan.outputs.mode }} ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 4320   # hosted runners cap a job at 360; self-hosted can use more
+    env:
+      TARGET: ${{ matrix.os }}
+      TARGET_CPU: ${{ matrix.cpu }}
+      WORK: ${{ github.workspace }}/build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk (hosted Linux)
+        if: matrix.os == 'linux' && startsWith(matrix.runner, 'ubuntu-')
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
+                      /usr/local/share/boost /usr/local/.ghcup /usr/share/swift || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Host packages (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ninja-build gperf xz-utils curl git pkg-config
+
+      - name: Host packages (macOS)
+        if: matrix.os == 'mac'
+        run: |
+          # Chromium 157's libc++ modules need the DarwinFoundation*.modulemap files that
+          # first ship in the macOS 26 SDK (Xcode 26). Pick the newest Xcode on the image.
+          xcode="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode/Contents/Developer"; fi
+          sdk="$(xcrun --sdk macosx --show-sdk-path)"
+          echo "Xcode: $(xcodebuild -version | tr '\n' ' ')  SDK: $(xcrun --sdk macosx --show-sdk-version)"
+          if [ ! -f "$sdk/usr/include/DarwinFoundation1.modulemap" ]; then
+            echo "::error::$sdk has no DarwinFoundation1.modulemap. Chromium 157 needs the macOS 26 SDK or newer (Xcode 26+); use a macos-26 runner or set CAMCHROME_MAC_RUNNER."
+            exit 1
+          fi
+          brew install ninja esbuild typescript go || true
+          xcodebuild -downloadComponent MetalToolchain || true
+          df -h /
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # npm fetches the pinned tsgo/esbuild packages (scripts/linux-toolchain.sh); the
+      # build's own node comes from the GCS object DEPS pins.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # Dawn's code generator runs `go run`.
+      - uses: actions/setup-go@v5
+        if: matrix.os == 'linux'
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Fetch source
+        run: scripts/00-fetch-source.sh
+
+      - name: Apply patches
+        run: |
+          scripts/01-apply-patches.sh --check
+          scripts/01-apply-patches.sh
+
+      - name: gn gen
+        run: GN_ONLY=1 scripts/02-build.sh
+
+      - name: Compile patched files
+        if: needs.plan.outputs.mode == 'compile'
+        run: |
+          # Drop the macOS-only units on Linux and vice versa (patched-sources.sh does it).
+          NINJA_TARGETS="$(scripts/patched-sources.sh | tr '\n' ' ')" scripts/02-build.sh
+
+      - name: Full build
+        if: needs.plan.outputs.mode == 'full'
+        run: scripts/02-build.sh
+
+      - name: Persona validator
+        if: needs.plan.outputs.mode == 'full' && matrix.os == 'linux' && matrix.cpu == 'x64'
+        run: build/src/out/Default/chrome --no-sandbox --clearcote-validate-persona=64
+
+      - name: Package
+        if: needs.plan.outputs.mode == 'full'
+        run: |
+          cd build/src/out/Default
+          if [ "$TARGET" = mac ]; then
+            ditto -c -k --keepParent Chromium.app "$GITHUB_WORKSPACE/camchrome-${{ matrix.name }}.zip"
+          else
+            tar -cJf "$GITHUB_WORKSPACE/camchrome-${{ matrix.name }}.tar.xz" \
+              chrome chrome_sandbox chrome_crashpad_handler *.pak *.bin *.dat locales/ \
+              lib*.so* 2>/dev/null || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: needs.plan.outputs.mode == 'full'
+        with:
+          name: camchrome-${{ matrix.name }}
+          path: camchrome-${{ matrix.name }}.*
+          retention-days: 14
+
+      - name: Logs on failure
+        if: failure()
+        run: |
+          ls -la build/src/out/Default 2>/dev/null | head -20 || true
+          df -h /
