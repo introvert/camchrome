@@ -354,7 +354,7 @@
 +#endif  // CONTENT_BROWSER_DEVTOOLS_PROTOCOL_HUMANIZED_INPUT_H_
 --- /dev/null
 +++ b/content/browser/devtools/protocol/humanized_input.cc
-@@ -0,0 +1,755 @@
+@@ -0,0 +1,765 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -364,6 +364,7 @@
 +#include <algorithm>
 +#include <cmath>
 +#include <optional>
++#include <string_view>
 +#include <utility>
 +#include <variant>
 +#include <vector>
@@ -739,6 +740,10 @@
 +    } else if (!key.shift && shift_down_) {
 +      ReleaseShift();
 +    }
++    // The same physical key cannot go down again before it has come up.
++    if (key.code == last_code_) {
++      t_ = std::max(t_, last_code_up_ + Gauss(25, 8, 10, 60));
++    }
 +    const int mods = shift_down_ ? blink::WebInputEvent::kShiftKey
 +                                 : blink::WebInputEvent::kNoModifiers;
 +    const ui::DomKey dom_key =
@@ -753,6 +758,8 @@
 +    items_.push_back({up, Key(blink::WebInputEvent::Type::kKeyUp, mods,
 +                              key.code, dom_key, key.text, key.unmodified)});
 +    last_up_ = std::max(last_up_, up);
++    last_code_ = key.code;
++    last_code_up_ = up;
 +    if (shift_down_ && !keep_shift) {
 +      t_ = up;
 +      ReleaseShift();
@@ -763,6 +770,7 @@
 +    if (shift_down_) {
 +      ReleaseShift();
 +    }
++    t_ = std::max(t_, last_up_ + Gauss(30, 10, 10, 80));
 +    items_.push_back({t_, Key(blink::WebInputEvent::Type::kRawKeyDown,
 +                              blink::WebInputEvent::kNoModifiers,
 +                              ui::DomCode::BACKSPACE, ui::DomKey::BACKSPACE, 0,
@@ -826,6 +834,8 @@
 +  const double median_gap_ms_;
 +  double t_ = 0;
 +  double last_up_ = 0;
++  ui::DomCode last_code_ = ui::DomCode::NONE;
++  double last_code_up_ = 0;
 +  bool shift_down_ = false;
 +  std::vector<Item> items_;
 +};
