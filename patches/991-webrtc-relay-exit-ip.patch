@@ -1,0 +1,147 @@
+camchrome: WebRTC over the SOCKS5 relay finds the exit IP by itself
+
+100 hides the real IP by fabricating the server-reflexive candidate at --webrtc-ip, which the user
+must look up and pass by hand, and which is wrong as soon as a rotating proxy changes exit. With
+973/990 every P2P UDP socket already leaves through the proxy's relay, so a real STUN binding
+request reports the proxy's exit IP on its own.
+
+  * The browser appends --webrtc-socks5-relay to each renderer when it runs with --socks5-udp and a
+    SOCKS5 --proxy-server (the proxy URL itself stays out of the renderer).
+  * In the renderer, that switch without an IP-literal --webrtc-ip (absent, or --webrtc-ip=auto)
+    turns on relay mode: candidate gathering is forced on as for --webrtc-ip, STUN runs for real
+    (through the relay), host candidates are suppressed (they would name the local socket) and the
+    srflx candidate's related address is emptied (it would carry the default local address).
+  * An explicit --webrtc-ip=<ip> keeps 100's behaviour: no STUN packet, fabricated srflx.
+
+Use --webrtc-ip=auto only together with --socks5-udp and a SOCKS5 proxy: without the relay, STUN
+would leave from the real interface.
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -7,6 +7,9 @@
+ 
+ #include "content/browser/renderer_host/render_process_host_impl.h"
+ 
++#include "net/base/proxy_server.h"
++#include "net/base/proxy_string_util.h"
++
+ #include <algorithm>
+ #include <atomic>
+ #include <limits>
+@@ -3841,6 +3844,21 @@
+       *base::CommandLine::ForCurrentProcess();
+   PropagateBrowserCommandLineToRenderer(browser_command_line, command_line);
+ 
++  // camchrome: tell WebRTC in the renderer that its UDP really leaves through the SOCKS5 proxy's
++  // relay (--socks5-udp with a SOCKS5 --proxy-server; the network service relays every P2P
++  // socket). Only then is it safe to let real STUN run so the server-reflexive candidate becomes
++  // the proxy's exit IP with no --webrtc-ip. The proxy URL itself stays out of the renderer.
++  if (browser_command_line.HasSwitch("socks5-udp") &&
++      browser_command_line.HasSwitch("proxy-server")) {
++    const net::ProxyServer proxy = net::ProxyUriToProxyServer(
++        browser_command_line.GetSwitchValueASCII("proxy-server"),
++        net::ProxyServer::SCHEME_HTTP);
++    if (proxy.is_valid() &&
++        proxy.scheme() == net::ProxyServer::SCHEME_SOCKS5) {
++      command_line->AppendSwitch("webrtc-socks5-relay");
++    }
++  }
++
+   // Pass on the browser locale.
+   const std::string locale =
+       GetContentClient()->browser()->GetApplicationLocale();
+--- a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
++++ b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
+@@ -1060,6 +1060,13 @@
+       webrtc::SetForcedWebRtcSrflxIP(
+           clearcoat_cmd->GetSwitchValueASCII("webrtc-ip"));
+     }
++    // camchrome: with UDP relayed through the SOCKS5 proxy, let real STUN discover the exit IP.
++    // An explicit IP literal in --webrtc-ip still wins (SetForcedWebRtcSrflxIP accepted it);
++    // --webrtc-ip=auto, or no --webrtc-ip, selects relay mode.
++    if (clearcoat_cmd->HasSwitch("webrtc-socks5-relay") &&
++        !webrtc::HasForcedWebRtcSrflxIP()) {
++      webrtc::SetWebRtcProxyRelayMode(true);
++    }
+   }
+ 
+   // Copy the flag from Preference associated with this WebLocalFrame.
+@@ -1142,7 +1149,8 @@
+   // a STUN server-reflexive candidate is produced (then rewritten to the proxy
+   // IP in stun_port.cc). Real host candidates are suppressed in port.cc, so the
+   // real LAN/public IP never leaks.
+-  if (base::CommandLine::ForCurrentProcess()->HasSwitch("webrtc-ip")) {
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch("webrtc-ip") ||
++      webrtc::IsWebRtcProxyRelayMode()) {
+     port_config.enable_multiple_routes = true;
+     port_config.enable_nonproxied_udp = true;
+   }
+--- a/third_party/webrtc/p2p/base/port.h
++++ b/third_party/webrtc/p2p/base/port.h
+@@ -59,6 +59,12 @@
+ RTC_EXPORT void SetForcedWebRtcSrflxIP(absl::string_view ip);
+ RTC_EXPORT bool HasForcedWebRtcSrflxIP();
+ RTC_EXPORT IPAddress ForcedWebRtcSrflxIP();
++// camchrome: every UDP socket this process gets is relayed through a SOCKS5 proxy (the network
++// service does it; the renderer is told with --webrtc-socks5-relay). Real STUN then reports the
++// proxy's exit IP, so no --webrtc-ip is needed, but host candidates and the srflx related address
++// would still describe this machine and are suppressed.
++RTC_EXPORT void SetWebRtcProxyRelayMode(bool enabled);
++RTC_EXPORT bool IsWebRtcProxyRelayMode();
+ 
+ enum class MdnsNameRegistrationStatus {
+   // IP concealment with mDNS is not enabled or the name registration process is
+--- a/third_party/webrtc/p2p/base/port.cc
++++ b/third_party/webrtc/p2p/base/port.cc
+@@ -13,6 +13,7 @@
+ #include "rtc_base/ip_address.h"
+ #include "rtc_base/synchronization/mutex.h"
+ 
++#include <atomic>
+ #include <cstddef>
+ #include <cstdint>
+ #include <functional>
+@@ -87,6 +88,20 @@
+   MutexLock lock(&ClearcoatForcedIpMutex());
+   return ClearcoatForcedIpStore().value_or(IPAddress());
+ }
++
++namespace {
++std::atomic<bool>& CamchromeRelayMode() {
++  static std::atomic<bool>* mode = new std::atomic<bool>(false);
++  return *mode;
++}
++}  // namespace
++
++void SetWebRtcProxyRelayMode(bool enabled) {
++  CamchromeRelayMode().store(enabled, std::memory_order_relaxed);
++}
++bool IsWebRtcProxyRelayMode() {
++  return CamchromeRelayMode().load(std::memory_order_relaxed);
++}
+ namespace {
+ 
+ PacketInfoProtocolType ConvertProtocolTypeToPacketInfoProtocolType(
+@@ -251,7 +266,8 @@
+   // clearcoat: when mocking the WebRTC IP to the proxy egress, never expose a
+   // real local host candidate (it would leak the LAN/real IP). Only the srflx
+   // candidate (rewritten in stun_port.cc) is emitted.
+-  if (type == IceCandidateType::kHost && HasForcedWebRtcSrflxIP()) {
++  if (type == IceCandidateType::kHost &&
++      (HasForcedWebRtcSrflxIP() || IsWebRtcProxyRelayMode())) {
+     return;
+   }
+ 
+--- a/third_party/webrtc/p2p/base/stun_port.cc
++++ b/third_party/webrtc/p2p/base/stun_port.cc
+@@ -607,6 +607,11 @@
+     if (!MaybeSetDefaultLocalAddress(&related_address)) {
+       related_address = EmptySocketAddressWithFamily(related_address.family());
+     }
++    // camchrome: through the SOCKS5 relay the reflexive address is the proxy's exit; the related
++    // address (this machine's default local address) must not ride along with it.
++    if (IsWebRtcProxyRelayMode()) {
++      related_address = EmptySocketAddressWithFamily(related_address.family());
++    }
+ 
+     StringBuilder url;
+     url << "stun:" << stun_server_addr.hostname() << ":"

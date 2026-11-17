@@ -1,7 +1,7 @@
 # Clearcote patch set
 
 These are the **Clearcote fingerprint patches**, rebased by camchrome to Chromium 157, plus
-camchrome's own 986–989. They are plain unified diffs against the Chromium revision pinned in
+camchrome's own 986–991. They are plain unified diffs against the Chromium revision pinned in
 [`../UPSTREAM`](../UPSTREAM) (`PATCHES_BASE`), applied **after** the ungoogled-chromium base
 and the platform overlay (see [`../scripts/01-apply-patches.sh`](../scripts/01-apply-patches.sh)
 and the Build section of [`../README.md`](../README.md)).
@@ -92,6 +92,9 @@ crash the renderer.
 | `987-engine-version-and-macos-persona` | **camchrome addition.** Every version surface (UA, UA-CH brands and full version list) derives from the engine's own version, so the claimed Chrome major always equals the built one. macOS personas become Apple Silicon devices: ANGLE/Metal GPU strings, caps and limits, Apple screen classes, macOS voices and media devices. |
 | `988-webgl-readback-and-timing` | **camchrome addition.** `readPixels` noise is clipped to the framebuffer (sentinel bytes outside it stay untouched), PBO and array readback agree, and spoofed `getParameter` values pay Chrome's GPU round-trip latency instead of answering from memory. |
 | `989-cpu-tier-and-netinfo-hints` | **camchrome addition.** `navigator.cpuPerformance` follows the persona's core count instead of the host CPU model; the `Sec-CH-RTT`/`Downlink`/`ECT` request hints carry the same persona values as `navigator.connection`. |
+
+| `990-quic-over-socks5-udp` | **camchrome addition.** With `--socks5-udp` and a single SOCKS5 proxy, QUIC (HTTP/3) is carried over the proxy's UDP ASSOCIATE relay instead of being refused. The origin is never resolved locally: the QUIC job connects to a placeholder in 198.18.0.0/15 and every datagram is sent with ATYP=DOMAINNAME, so the proxy resolves it. Proxied QUIC sessions never migrate; a proxy that refuses UDP fails the QUIC job and the request stays on TCP. Also: a named relay proxy is resolved instead of falling back to a direct socket, and the relay never delivers to private/loopback/link-local destinations. Self-test target `socks5_udp_relay_selftest`. |
+| `991-webrtc-relay-exit-ip` | **camchrome addition.** With the relay on (`--socks5-udp`, SOCKS5 proxy) and no IP-literal `--webrtc-ip` (absent or `auto`), WebRTC runs real STUN through the relay, so the srflx candidate is the proxy's exit IP with nothing to configure; host candidates and the srflx related address are suppressed. An explicit `--webrtc-ip=<ip>` keeps 100's fabricated candidate. |
 
 `900`/`905` are Windows cross-build mechanics; `01-apply-patches.sh` skips them for the macOS target. They also apply on Linux (verified on 157), where they are inert.
 

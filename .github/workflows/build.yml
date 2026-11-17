@@ -6,6 +6,8 @@ name: build
 #            pinned source, apply the series, gn gen, then compile every patched source
 #            file for the target. This proves the series builds without a full link.
 #   full     on demand (workflow_dispatch, mode=full) or a v* tag: the whole browser.
+#            full-build.yml does the same for Linux and then runs every local test and,
+#            optionally, the public check sites (docs/FULL-BUILD.md).
 #
 # Targets: linux-x64, linux-arm64 (cross-compiled on an x64 host, the way Chromium builds
 # Linux arm64), mac-arm64 and mac-x64 (cross-compiled on an Apple Silicon host).
@@ -56,6 +58,8 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck python3-yaml
       - name: Repository checks
         run: scripts/check-repo.sh
+      - name: SOCKS5 UDP test proxy
+        run: tools/socks5_udp_proxy.py --selftest
       - name: Self-test harness on stock Chrome
         # Stock Chrome has no persona, so persona-only checks are XFAIL; any FAIL means
         # the harness (or a check that should hold on any Chrome) is broken.
@@ -179,6 +183,15 @@ jobs:
       - name: Full build
         if: needs.plan.outputs.mode == 'full'
         run: scripts/02-build.sh
+
+      # SOCKS5 UDP relay (973/990): build the net-level self-test and run it against the
+      # local SOCKS5 proxy in tools/. ~1,300 ninja steps on top of the compile check.
+      - name: SOCKS5 relay self-test
+        if: matrix.os == 'linux' && matrix.cpu == 'x64'
+        run: |
+          NINJA_TARGETS=socks5_udp_relay_selftest scripts/02-build.sh
+          tools/socks5_udp_proxy.py --selftest
+          tools/socks5_udp_proxy.py --run-selftest-binary build/src/out/Default/socks5_udp_relay_selftest
 
       - name: Persona validator
         if: needs.plan.outputs.mode == 'full' && matrix.os == 'linux' && matrix.cpu == 'x64'
