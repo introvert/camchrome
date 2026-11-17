@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by the numbered scripts. Sets REPO, WORK, SRC, TARGET and the UPSTREAM pins.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

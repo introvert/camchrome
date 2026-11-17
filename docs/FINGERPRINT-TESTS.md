@@ -1,0 +1,103 @@
+# Fingerprint surfaces and how each is tested
+
+Review of 2026-11-17. For every patch in `patches/series`: what surface it changes, which
+test covers it, and where nothing does.
+
+## The three test layers
+
+| Layer | What | Needs | Run |
+|---|---|---|---|
+| **Self-test** (`tools/fingerprint_selftest.py`, new) | Up to 53 local checks (47 on a host-platform persona; the rest depend on `--platform`, `--cores` and the like), each named after the patch it covers. Three launches (seed A twice, seed B once), two sites (`127.0.0.1` and `localhost`), probes in the window, an iframe and a dedicated worker, plus request headers recorded by its own server. | A built binary. No network. | `tools/fingerprint_selftest.py [--platform windows]` |
+| **Clearcote audit** (`tools/stealth_audit.py`) | 365 remote coherence checks, 236 scored. The acceptance test. | Network, headful, ideally a GPU. | `tools/stealth_audit.py --seed demo --interact` |
+| **Public check sites** (`tools/site_checks.py`, new) | browserleaks QUIC/JA4, Twilio WebRTC, fingerprint.com, deviceandbrowserinfo, ProxyShard checker, pixelscan, browserscan, antcpt reCAPTCHA. See [TEST-MATRIX.md](TEST-MATRIX.md). | Network, a residential proxy with SOCKS5 UDP for the QUIC/WebRTC rows. | `tools/site_checks.py --proxy socks5://… --socks5-udp …` |
+
+Plus `--clearcote-validate-persona=<N>` (patch 974), which derives N personas and checks the
+cross-surface invariants inside the engine. The self-test runs it.
+
+`tools/fingerprint_selftest.py --stock --binary <any Chrome>` runs the harness on a stock
+Chrome: checks that need a persona are reported as XFAIL instead of FAIL. CI runs it this way
+on every push so the harness itself stays working. On Chrome for Testing 153 headless in this
+review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
+
+## Review result
+
+- **What's tested:** the persona surfaces (identity, screen, render, audio, devices,
+  locale) are covered twice: by the Clearcote audit (100/100 on macOS 157 per `AUDIT.md`)
+  and now by a local check per patch.
+- **What isn't:** before this review, the only proof per patch was the remote audit, which
+  names checks rather than patches and needs network. Nothing tested the network patches
+  (SOCKS5 auth and UDP, proxy auth, TLS persona), the input/agent patches, or a Linux or
+  Windows persona. The self-test closes part of that. What still has no automated test is
+  listed in the last column below.
+- **Build:** the series had only been verified on macOS. In this review it was applied and
+  compiled on Linux. See [BUILD-STATUS.md](BUILD-STATUS.md).
+
+## Patch by patch
+
+✓ = automated check exists. **Gap** = no automated check yet.
+
+| Patch | Surface | Self-test check(s) | Clearcote audit group | Gap |
+|---|---|---|---|---|
+| 000 switches | flag plumbing to child processes | every check depends on it; `iframe-*`, `worker-*` prove renderer and worker processes see the flags | all | — |
+| 001 farble seed | per-eTLD+1 noise seed | ✓ `canvas-same-seed-same-site-stable`, `canvas-differs-per-site`, `canvas-differs-per-seed` | Render & GPU | — |
+| 002 persona | one coherent persona; profile import | ✓ `iframe/worker-identity-matches-window`, `persona-platform-honoured` | Identity coherence | `--fingerprint-profile` import is not exercised by any test. |
+| 010 UA / UA-CH / webdriver | `navigator.userAgent`, `userAgentData`, `Sec-CH-UA*`, `webdriver` | ✓ `webdriver-false`, `ua-no-headless`, `header-ua-equals-js`, `header-platform-equals-uadata`, `navigator-platform-coherent`, `uach-brand-equals-ua`, `header-full-version-list-sent` | HTTP vs runtime, Navigator identity | — |
+| 020 audio | AudioContext metadata, offline render | ✓ `audio-same-seed-stable`, `audio-sample-rate-plausible` | Render & GPU | Per-site audio difference is not asserted (020's noise was retired on 157; the render is deterministic). |
+| 030 cores / memory | `hardwareConcurrency`, `deviceMemory` | ✓ `device-memory-on-chrome-grid`, `cores-override` (with `--cores`) | Navigator identity | — |
+| 040 fonts | font allowlist | — | Engine & OS oracles | **Gap.** No local check that host-only fonts are hidden. Add a `document.fonts.check()` probe of a host-only family. |
+| 050 shadow DOM / client rects | closed shadow access, no rect noise | — | Automation surface | **Gap.** Add `getClientRects()[0]` vs `getBoundingClientRect()` equality. |
+| 060 canvas | 2D noise, export paths, `measureText` | ✓ `canvas-stable-within-page`, `measuretext-nonzero` | Render & GPU | — |
+| 065 canvas bridge | remote GPU rendering | — | — | **Gap.** Opt-in feature with no test and no host in the repo. |
+| 070 / 071 WebGL | GPU strings, parameters, extensions | ✓ `webgl-session-constant-across-sites`, `iframe/worker-webgl-matches-window` | Render & GPU | — |
+| 075 WebGPU | adapter info and limits | ✓ `webgpu-vendor-matches-webgl` (skipped when no adapter) | Render & GPU | GPU-less CI has no adapter, so this only runs on a GPU machine. |
+| 090 timezone | `--timezone` | ✓ `timezone-pinned` | Environment & locale | — |
+| 092 locale | ICU locale follows `Accept-Language` | ✓ `accept-language-equals-navigator`, `intl-locale-equals-navigator` | Environment & locale | — |
+| 100 WebRTC | no host IP, synthesized srflx | ✓ `webrtc-no-private-ip` | Network & WebRTC | `--webrtc-ip` srflx value needs a STUN server; covered by the Twilio row in the test matrix. |
+| 110 Runtime.enable | CDP tell | indirectly (the harness uses `Runtime.evaluate`) | Automation surface | — |
+| 120 headless | headless tell | ✓ `ua-no-headless` (when run `--headless`) | Automation surface | — |
+| 130 humanized input | `Browser.humanizedClick*` CDP commands | — | Input & behaviour | **Gap.** No test calls the commands. |
+| 140 screen | `screen.*`, outer window | ✓ `avail-within-screen`, `window-fits-screen`, `color-depth-24-or-30` | Screen & display | — |
+| 141 / 142 media queries, touch | pointer/hover, device-size | ✓ `mq-device-size-equals-screen`, `no-touch-means-fine-pointer` | Screen & display | — |
+| 145 storage quota | `storage.estimate()` | ✓ `storage-quota-present` | Capability surfaces | — |
+| 146 JS heap | `performance.memory` | ✓ `js-heap-limit-plausible` | Network & WebRTC | — |
+| 147 media capabilities | `decodingInfo()` | — | Capability surfaces | **Gap.** |
+| 148 media devices | `enumerateDevices()` | ✓ `media-devices-present`, `media-device-labels-empty` | Capability surfaces | — |
+| 150 sensors | battery, connection, keyboard, touch points | ✓ `battery-plausible`, `keyboard-layout-map` | Capability surfaces | — |
+| 160 OS details | `new URL("C:/")`, `navigator.share` | ✓ `url-drive-letter-is-file` (Windows persona) | Engine & OS oracles | — |
+| 170 voices | `speechSynthesis.getVoices()` | ✓ `voices-not-empty` | Environment & locale | — |
+| 180 geolocation | `--fingerprint-location` | ✓ `geolocation-from-flag` | Capability surfaces | — |
+| 200 agent | in-browser LLM agent | — | — | **Gap.** Needs an LLM endpoint; no test. |
+| 210 TLS persona | ClientHello per claimed major | — | TLS & network layer | **Gap locally.** Covered by the browserleaks JA4 row in the test matrix. |
+| 220 no-farble switch | `--cc-no-farble` | — | — | **Gap.** Add a run asserting `canvas-differs-per-site` flips to equal. |
+| 900 / 905 | Windows cross-build | — | — | Build-only. Applies on Linux (verified). |
+| 955 WebGL parity | advertised = returned extensions | — | Render & GPU | **Gap locally**; audit covers it. |
+| 960 | `fakeShadowRoot` unexposed | — | Automation surface | **Gap.** One-line check: `'fakeShadowRoot' in Element.prototype` is false. |
+| 961 Sec-CH-DPR | header = `devicePixelRatio` | ✓ `sec-ch-dpr-equals-dpr` | HTTP vs runtime | — |
+| 962 DPR coherence | `resolution` media query | ✓ `mq-resolution-equals-dpr` | Screen & display | — |
+| 963 / 984 SOCKS5 auth | RFC 1929 | — | — | **Gap.** Needs a SOCKS5 server in the test (e.g. a local `microsocks`/`dante`). |
+| 964 portable profile key | cookie key | — | — | **Gap.** |
+| 965 `Math.tanh` | Windows-exact result | records `tanh` in the raw output | Engine & OS oracles | Expected Windows value not pinned yet. |
+| 966 / 968 / 969 | D3D11 shader dialect, precision, extensions on a non-D3D host | — | Render & GPU | **Gap locally**; audit covers it with a Windows persona. |
+| 967 / 982 / 983 / 970 WebGPU | limits, features, architecture, preferred format | ✓ `webgpu-preferred-format-windows` (Windows persona) | Render & GPU | GPU machine only. |
+| 971 system-ui font (Linux) | `system-ui` resolves | — | Engine & OS oracles | **Gap.** |
+| 972 / 975 window | frame coherence, fits work area | ✓ `window-fits-screen` | Screen & display | — |
+| 973 SOCKS5 UDP | WebRTC UDP via ASSOCIATE | — | Network & WebRTC | **Gap locally.** Twilio row in the test matrix; a local test needs a UDP-capable SOCKS5 server. |
+| 974 validator | in-engine invariants | ✓ `persona-validator-clean` | — | — |
+| 976 Android uniforms | WebGL2 limits on Android personas | — | Render & GPU | **Gap.** Run the self-test with `--platform android`. |
+| 977 activation rule | persona on/off/profile | ✓ `uach-full-version-equals-engine` | Identity coherence | — |
+| 978 proxy auth | HTTP proxy Basic/Digest | — | — | **Gap.** Needs an authenticating proxy in the test. |
+| 979 battery dispatcher | events vs getters | ✓ `battery-plausible` | Capability surfaces | Events not exercised. |
+| 980 / 981 schema 2 | coupled draws | — | — | Run the self-test with `--extra-flag=--fingerprint-schema=2`; no schema-2-specific assertion yet. |
+| 985 stencil masks | WebGL stencil | — | Render & GPU | **Gap locally**; audit covers it. |
+| 986 canvas alpha / grey | alpha-0 reads black, grey stays grey | ✓ `canvas-alpha-zero-reads-black`, `canvas-grey-stays-grey` | Render & GPU | — |
+| 987 engine version, macOS persona | version from engine; Metal persona | ✓ `ua-major-equals-engine`, `uach-full-version-equals-engine`, `webgpu-vendor-matches-webgl` | HTTP vs runtime, Render & GPU | — |
+| 988 readback and timing | `readPixels` sentinel, PBO, `getParameter` latency | ✓ `readpixels-sentinel-untouched` | Render & GPU | PBO and timing only in the audit. |
+| 989 CPU tier, network hints | `cpuPerformance`, `Sec-CH-RTT/Downlink/ECT` | ✓ `rtt-header-equals-connection`, `downlink-header-equals-connection` | HTTP vs runtime | — |
+
+## What to add next
+
+1. A local SOCKS5 server (with UDP ASSOCIATE and auth) in the self-test, to cover 963, 973,
+   978 and 984 without a paid proxy.
+2. One self-test run per persona OS (`--platform windows|macos|linux|android`) in the
+   full-build CI job.
+3. The one-line checks listed as gaps above (960, 050, 040, 147, 220).

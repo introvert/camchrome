@@ -40,13 +40,26 @@ case "$TARGET" in
   mac)   pgo_txt=chrome/build/mac-arm.pgo.txt; [ "$(uname -m)" = x86_64 ] && pgo_txt=chrome/build/mac.pgo.txt ;;
 esac
 mkdir -p out/Default
+# TARGET_CPU=x64|arm64 overrides the config's target_cpu (Linux arm64 and macOS x64
+# are cross-compiled from an x64 / arm64 host). Linux drops PGO for arm64: the tree
+# ships an x64 profile only.
+ARGS_IN="$ARGS"
+if [ -n "${TARGET_CPU:-}" ]; then
+  ARGS_IN="$WORK/args.$TARGET.$TARGET_CPU.gn"
+  if grep -q '^target_cpu' "$ARGS"; then
+    sed "s|^target_cpu *=.*|target_cpu = \"$TARGET_CPU\"|" "$ARGS" > "$ARGS_IN"
+  else
+    { cat "$ARGS"; echo "target_cpu = \"$TARGET_CPU\""; } > "$ARGS_IN"
+  fi
+  if [ "$TARGET" = linux ] && [ "$TARGET_CPU" = arm64 ]; then pgo_txt=/nonexistent; fi
+fi
 if [ -f "$pgo_txt" ] && [ -f "chrome/build/pgo_profiles/$(cat "$pgo_txt")" ]; then
   sed "s|^pgo_data_path *=.*|pgo_data_path = \"//chrome/build/pgo_profiles/$(cat "$pgo_txt")\"|" \
-    "$ARGS" > out/Default/args.gn
+    "$ARGS_IN" > out/Default/args.gn
 else
   echo "PGO profile for $pgo_txt is not in the tree; building without PGO"
   sed -e 's|^chrome_pgo_phase *=.*|chrome_pgo_phase = 0|' -e '/^pgo_data_path/d' \
-    "$ARGS" > out/Default/args.gn
+    "$ARGS_IN" > out/Default/args.gn
 fi
 
 # macOS tooling the ungoogled overlay builds out-of-band (see 00-fetch-source.sh).
@@ -77,10 +90,34 @@ if [ "$TARGET" = mac ]; then
 fi
 
 if [ ! -x out/Default/gn ]; then
+  if [ "$TARGET" = linux ]; then
+    # gn needs C++23 <expected>; the distro clang may not provide it with the system
+    # libstdc++, so bootstrap with the tree's own clang.
+    llvm="$SRC/third_party/llvm-build/Release+Asserts/bin"
+    export CC="$llvm/clang" CXX="$llvm/clang++" AR="$llvm/llvm-ar" LDFLAGS="-fuse-ld=lld"
+  fi
   python3 tools/gn/bootstrap/bootstrap.py --skip-generate-buildfiles -j "$(getconf _NPROCESSORS_ONLN)" -o out/Default/gn
 fi
+# V8's metagen step (157+) looks for gn under buildtools/<plat>/ or on PATH; the lite
+# tarball ships neither, so put the bootstrapped one where gclient would.
+case "$TARGET" in
+  linux) gn_plat=linux64 ;;
+  mac)   gn_plat=mac ;;
+  *)     gn_plat="" ;;
+esac
+if [ -n "$gn_plat" ] && [ ! -x "buildtools/$gn_plat/gn" ]; then
+  mkdir -p "buildtools/$gn_plat"; cp out/Default/gn "buildtools/$gn_plat/gn"
+fi
 out/Default/gn gen out/Default --fail-on-unused-args
+unset CC CXX AR LDFLAGS
+[ "${GN_ONLY:-0}" = 1 ] && { echo "OK: gn gen done (GN_ONLY=1, not building)"; exit 0; }
 
+# NINJA_TARGETS overrides what is built (CI uses it to compile only the patched files,
+# e.g. NINJA_TARGETS="../../components/ungoogled/persona_profile.cc^ ...").
+if [ -n "${NINJA_TARGETS:-}" ]; then
+  # shellcheck disable=SC2086
+  exec ninja -C out/Default ${NINJA_JOBS:+-j "$NINJA_JOBS"} $NINJA_TARGETS
+fi
 case "$TARGET" in
   linux) exec ninja -C out/Default chrome chrome_sandbox chrome_crashpad_handler ;;
   *)     exec ninja -C out/Default chrome ;;
