@@ -102,7 +102,11 @@ jobs:
 
       - name: Persona validator
         if: env.TARGET_CPU == 'x64'
-        run: build/src/out/Default/chrome --no-sandbox --clearcote-validate-persona=64
+        run: |
+          for p in "" windows macos linux android; do
+            build/src/out/Default/chrome --no-sandbox --clearcote-validate-persona=64 \
+              ${p:+--fingerprint-platform=$p}
+          done
 
       - name: Relay self-test
         if: env.TARGET_CPU == 'x64'
