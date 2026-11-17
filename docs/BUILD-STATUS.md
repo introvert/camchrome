@@ -72,6 +72,9 @@ image, and stops with a clear error if the SDK lacks those files.
 
 ## Full builds
 
+See [FULL-BUILD.md](FULL-BUILD.md) for the manual `full-build.yml` workflow (build, every local
+test, optional site matrix) and what it needs.
+
 A full build needs ~100 GB of disk and several hours on a large machine (3 h 55 min of ninja
 on a 10-core Mac). GitHub's standard hosted runners can't do it (about 14 GB free disk after
 cleanup and a 6-hour job limit). The `full` mode of the workflow takes runner labels as inputs

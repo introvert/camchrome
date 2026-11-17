@@ -1,0 +1,183 @@
+name: full-build
+
+# The whole browser, then every local test, then (optionally) the public check sites through a
+# residential SOCKS5 proxy. Manual only (Actions -> full-build -> Run workflow).
+#
+# This is too big for GitHub's standard runners (~100 GB disk, 32+ GB RAM, many cores, and a
+# 6 h job cap). Point it at a self-hosted machine or a larger GitHub runner; docs/FULL-BUILD.md
+# lists what each job needs and which secrets the site matrix reads.
+#
+#   build      runner label input `runner` (default: repo variable CAMCHROME_FULL_RUNNER,
+#              else `self-hosted`). Fetch, patch, build chrome + the relay self-test, run the
+#              persona validator, the fingerprint self-test, the network self-test and the
+#              relay self-test, then upload the browser and the reports.
+#   sites      only when `run_sites` is ticked. Runs on `sites_runner` (default: repo variable
+#              CAMCHROME_SITES_RUNNER, else the build runner) because it needs a desktop
+#              session or Xvfb and egress to the public check sites, through the proxy in the
+#              CAMCHROME_SOCKS5_PROXY secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'linux-x64 (mac targets: use build.yml compile mode or a Mac self-hosted runner)'
+        type: choice
+        options: [linux-x64, linux-arm64]
+        default: linux-x64
+      runner:
+        description: 'runner label for the build (blank: CAMCHROME_FULL_RUNNER or self-hosted)'
+        default: ''
+      run_sites:
+        description: 'also run the public check sites through the SOCKS5 proxy secret'
+        type: boolean
+        default: false
+      sites_runner:
+        description: 'runner label for the site matrix (blank: CAMCHROME_SITES_RUNNER or the build runner)'
+        default: ''
+      persona_platform:
+        description: 'persona OS for the site matrix (blank: host platform)'
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: full ${{ inputs.target || 'linux-x64' }}
+    runs-on: ${{ inputs.runner || vars.CAMCHROME_FULL_RUNNER || 'self-hosted' }}
+    timeout-minutes: 4320
+    outputs:
+      runner: ${{ inputs.runner || vars.CAMCHROME_FULL_RUNNER || 'self-hosted' }}
+    env:
+      TARGET: linux
+      TARGET_CPU: ${{ (inputs.target || 'linux-x64') == 'linux-arm64' && 'arm64' || 'x64' }}
+      WORK: ${{ github.workspace }}/build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host check
+        run: |
+          echo "cores: $(nproc)  memory: $(free -g | awk '/Mem:/{print $2}') GB"
+          df -h "$GITHUB_WORKSPACE"
+          avail=$(df -BG --output=avail "$GITHUB_WORKSPACE" | tail -1 | tr -dc 0-9)
+          if [ "$avail" -lt 110 ]; then
+            echo "::error::$avail GB free; a full build needs ~110 GB (docs/FULL-BUILD.md)"
+            exit 1
+          fi
+
+      - name: Host packages
+        run: |
+          if command -v apt-get >/dev/null && sudo -n true 2>/dev/null; then
+            sudo apt-get update -q
+            sudo apt-get install -y -q ninja-build gperf xz-utils curl git pkg-config xvfb \
+              python3-pip fonts-liberation
+          fi
+          python3 -m pip install --user -q aioquic || true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Fetch source
+        run: scripts/00-fetch-source.sh
+      - name: Apply patches
+        run: |
+          scripts/01-apply-patches.sh --check
+          scripts/01-apply-patches.sh
+      - name: Build
+        run: |
+          scripts/02-build.sh
+          NINJA_TARGETS=socks5_udp_relay_selftest scripts/02-build.sh
+
+      - name: Persona validator
+        if: env.TARGET_CPU == 'x64'
+        run: build/src/out/Default/chrome --no-sandbox --clearcote-validate-persona=64
+
+      - name: Relay self-test
+        if: env.TARGET_CPU == 'x64'
+        run: |
+          python3 -m pip install --user -q aioquic || true
+          tools/socks5_udp_proxy.py --run-selftest-binary build/src/out/Default/socks5_udp_relay_selftest
+
+      - name: Fingerprint and network self-tests
+        if: env.TARGET_CPU == 'x64'
+        run: |
+          python3 -m pip install -q aioquic || true
+          rc=0
+          for platform in auto windows android; do
+            xvfb-run -a -s "-screen 0 1920x1080x24" tools/fingerprint_selftest.py \
+              --platform "$platform" --json "build/reports/fingerprint-$platform.json" || rc=1
+          done
+          xvfb-run -a -s "-screen 0 1920x1080x24" tools/network_selftest.py \
+            --json build/reports/network.json || rc=1
+          exit $rc
+
+      - name: Package
+        if: always()
+        run: |
+          cd build/src/out/Default
+          [ -x chrome ] || exit 0
+          tar -cJf "$GITHUB_WORKSPACE/camchrome-${{ inputs.target || 'linux-x64' }}.tar.xz" \
+            chrome chrome_sandbox chrome_crashpad_handler *.pak *.bin *.dat locales/ \
+            lib*.so* 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: camchrome-${{ inputs.target || 'linux-x64' }}
+          path: |
+            camchrome-*.tar.xz
+            build/reports/
+          retention-days: 14
+
+  sites:
+    needs: build
+    if: inputs.run_sites && (inputs.target || 'linux-x64') == 'linux-x64'
+    runs-on: ${{ inputs.sites_runner || vars.CAMCHROME_SITES_RUNNER || needs.build.outputs.runner }}
+    timeout-minutes: 120
+    env:
+      PROXY: ${{ secrets.CAMCHROME_SOCKS5_PROXY }}
+      CREDS: ${{ secrets.CAMCHROME_SOCKS5_CREDENTIALS }}
+      TZ_EXIT: ${{ vars.CAMCHROME_PROXY_TIMEZONE }}
+      LANG_EXIT: ${{ vars.CAMCHROME_PROXY_LANG }}
+      PLATFORM: ${{ inputs.persona_platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: camchrome-linux-x64
+          path: dl
+      - name: Unpack
+        run: mkdir -p browser && tar -xJf dl/camchrome-linux-x64.tar.xz -C browser
+      - name: Site matrix
+        run: |
+          if [ -z "$PROXY" ]; then
+            echo "::error::secret CAMCHROME_SOCKS5_PROXY is not set (docs/FULL-BUILD.md)"; exit 1
+          fi
+          args=(--binary browser/chrome --proxy "$PROXY" --socks5-udp)
+          [ -n "$CREDS" ] && args+=(--socks5-credentials "$CREDS")
+          [ -n "$TZ_EXIT" ] && args+=(--timezone "$TZ_EXIT")
+          [ -n "$LANG_EXIT" ] && args+=(--lang "$LANG_EXIT")
+          [ -n "$PLATFORM" ] && args+=(--platform "$PLATFORM")
+          if [ -n "${DISPLAY:-}" ]; then
+            tools/site_checks.py "${args[@]}" --out build/site-checks
+          else
+            xvfb-run -a -s "-screen 0 1920x1080x24" tools/site_checks.py "${args[@]}" --out build/site-checks
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: site-checks
+          path: build/site-checks/
+          retention-days: 30
