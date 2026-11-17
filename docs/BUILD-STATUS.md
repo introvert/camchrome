@@ -63,6 +63,13 @@ before turning that on:
 | `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc:6054` | `cb_substituted` set but not used | 070 (canvas bridge) |
 | `v8/src/inspector/v8-runtime-agent-impl.cc:1083` | unreachable code | 110 |
 
+## macOS runners
+
+Chromium 157's libc++ module build reads `DarwinFoundation{1,2,3}.modulemap` from the SDK,
+which first ship in the macOS 26 SDK. GitHub's `macos-15` image only has the 15.x SDKs, so
+`gn gen` fails there. The workflow defaults to `macos-26`, selects the newest Xcode on the
+image, and stops with a clear error if the SDK lacks those files.
+
 ## Full builds
 
 A full build needs ~100 GB of disk and several hours on a large machine (3 h 55 min of ninja

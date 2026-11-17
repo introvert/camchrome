@@ -15,7 +15,7 @@ name: build
 # limit) are enough for `checks` and, after the disk cleanup below, for `compile` on
 # Linux. `full` and the macOS `compile` jobs need larger runners. Their labels are inputs,
 # so point them at larger GitHub-hosted runners or self-hosted machines, e.g.
-#   linux_runner: ubuntu-24.04-16core   mac_runner: macos-15-xlarge
+#   linux_runner: ubuntu-24.04-16core   mac_runner: macos-26-xlarge
 # Repository variables CAMCHROME_LINUX_RUNNER / CAMCHROME_MAC_RUNNER set the defaults.
 
 on:
@@ -80,7 +80,7 @@ jobs:
           MODE: ${{ inputs.mode || (startsWith(github.ref, 'refs/tags/v') && 'full') || 'compile' }}
           TARGETS: ${{ inputs.targets || 'linux-x64,linux-arm64,mac-arm64,mac-x64' }}
           LINUX_RUNNER: ${{ inputs.linux_runner || vars.CAMCHROME_LINUX_RUNNER || 'ubuntu-24.04' }}
-          MAC_RUNNER: ${{ inputs.mac_runner || vars.CAMCHROME_MAC_RUNNER || 'macos-15' }}
+          MAC_RUNNER: ${{ inputs.mac_runner || vars.CAMCHROME_MAC_RUNNER || 'macos-26' }}
         run: |
           python3 - <<'EOF' >> "$GITHUB_OUTPUT"
           import json, os
@@ -128,6 +128,16 @@ jobs:
       - name: Host packages (macOS)
         if: matrix.os == 'mac'
         run: |
+          # Chromium 157's libc++ modules need the DarwinFoundation*.modulemap files that
+          # first ship in the macOS 26 SDK (Xcode 26). Pick the newest Xcode on the image.
+          xcode="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          [ -n "$xcode" ] && sudo xcode-select -s "$xcode/Contents/Developer"
+          sdk="$(xcrun --sdk macosx --show-sdk-path)"
+          echo "Xcode: $(xcodebuild -version | tr '\n' ' ')  SDK: $(xcrun --sdk macosx --show-sdk-version)"
+          if [ ! -f "$sdk/usr/include/DarwinFoundation1.modulemap" ]; then
+            echo "::error::$sdk has no DarwinFoundation1.modulemap. Chromium 157 needs the macOS 26 SDK or newer (Xcode 26+); use a macos-26 runner or set CAMCHROME_MAC_RUNNER."
+            exit 1
+          fi
           brew install ninja esbuild typescript go || true
           xcodebuild -downloadComponent MetalToolchain || true
           df -h /
