@@ -12,7 +12,12 @@ case "$TARGET" in linux|win|mac) ;; *) echo "TARGET must be linux, win or mac"; 
 
 while IFS='=' read -r k v; do
   case "$k" in ''|\#*) continue ;; esac
-  export "$k=$v"
+  # The environment wins over the pinned file, so a one-off rebase can try a
+  # new tag without editing the pins:
+  #   WORK=./build157 UGM_TAG=157.0.8103.78-1.1 scripts/00-fetch-source.sh
+  if [ -z "${!k:-}" ]; then
+    export "$k=$v"
+  fi
 done < "$REPO/UPSTREAM"
 
 # The overlay repo each target needs on top of the ungoogled base. Linux takes the Windows
