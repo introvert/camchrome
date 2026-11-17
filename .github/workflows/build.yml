@@ -69,6 +69,8 @@ jobs:
           tools/fingerprint_selftest.py --stock --headless \
             --binary "$(command -v google-chrome || command -v chromium)" \
             --json selftest-stock.json
+      - name: Automation self-test on stock Chrome
+        run: tools/camauto_selftest.py --binary "$(command -v google-chrome || command -v chromium)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

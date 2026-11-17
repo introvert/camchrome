@@ -77,6 +77,24 @@ browser.call("Browser.humanizedType", {"targetId": tid, "text": "me@example.com"
 browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 ```
 
+## Automation: local API, MCP, recorder, synchronised windows
+
+`tools/camauto.py` drives camchrome with the engine's human input and never touches the page's
+main world (reads run in an isolated world; `Runtime.enable` is never sent).
+
+```bash
+tools/camauto.py api --port 7878 -- --proxy-server=socks5://proxy:1080 --socks5-udp
+#   POST /v1/browsers {"pick": {"os": "windows", "seed": "c42"}}  ->  {"id": "b1", ...}
+#   POST /v1/browsers/b1/actions {"action": "click", "selector": "#login"}
+tools/camauto.py mcp                       # MCP server on stdio (browser_launch, _click, _type, ...)
+tools/camauto.py record --out flow.json --url https://example.com -- --fingerprint=alice
+tools/camauto.py replay flow.json --secrets '{"#password": "..."}' -- --fingerprint=bob
+tools/camauto.py sync --count 3 --flags-each "--fingerprint=s{n}" --url https://example.com
+```
+
+The API binds to loopback and wants the bearer token it prints. Add the MCP server to a client
+as a stdio command: `python3 /path/to/camchrome/tools/camauto.py --binary /path/to/chrome mcp`.
+
 ## Customizing the persona
 
 One seed drives every surface (UA, UA-CH, canvas, WebGL/WebGPU, audio, fonts, screen,
