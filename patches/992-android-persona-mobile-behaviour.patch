@@ -30,6 +30,11 @@
 #     BlinkMacSystemFont) no longer pass through for an Android persona. Each handset family
 #     renders through a metric clone (Arimo/Tinos/Cousine/Comic Neue/Liberation Sans Narrow).
 #
+# Known interaction: CDP Input.dispatchTouchEvent (e.g. Playwright's tap()) switches the tab's
+# emulator to injected-touch mode; mouse events sent after it reach that page as mouse events
+# until its main-frame widget is recreated. Drive an Android persona with mouse events or the
+# Browser.humanized* commands, which all become touch, rather than mixing in raw touch events.
+#
 # Not covered: the Generic Sensor API classes (Accelerometer, Gyroscope) still report no
 # sensor; Android DRM robustness levels; the window must still be launched phone-sized
 # (--window-size) for the layout viewport to match the persona screen.

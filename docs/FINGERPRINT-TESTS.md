@@ -42,7 +42,7 @@ review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
 |---|---|---|---|---|
 | 000 switches | flag plumbing to child processes | every check depends on it; `iframe-*`, `worker-*` prove renderer and worker processes see the flags | all | — |
 | 001 farble seed | per-eTLD+1 noise seed | ✓ `canvas-same-seed-same-site-stable`, `canvas-differs-per-site`, `canvas-differs-per-seed` | Render & GPU | — |
-| 002 persona | one coherent persona; profile import | ✓ `iframe/worker-identity-matches-window`, `persona-platform-honoured` | Identity coherence | `--fingerprint-profile` import is not exercised by any test. |
+| 002 persona | one coherent persona; profile import | ✓ `iframe/worker-identity-matches-window`, `persona-platform-honoured`; library entries checked by `tools/fingerprint_library.py check` (CI) | Identity coherence | `--fingerprint-profile` import is not exercised in a browser yet. |
 | 010 UA / UA-CH / webdriver | `navigator.userAgent`, `userAgentData`, `Sec-CH-UA*`, `webdriver` | ✓ `webdriver-false`, `ua-no-headless`, `header-ua-equals-js`, `header-platform-equals-uadata`, `navigator-platform-coherent`, `uach-brand-equals-ua`, `header-full-version-list-sent` | HTTP vs runtime, Navigator identity | — |
 | 020 audio | AudioContext metadata, offline render | ✓ `audio-same-seed-stable`, `audio-sample-rate-plausible` | Render & GPU | Per-site audio difference is not asserted (020's noise was retired on 157; the render is deterministic). |
 | 030 cores / memory | `hardwareConcurrency`, `deviceMemory` | ✓ `device-memory-on-chrome-grid`, `cores-override` (with `--cores`) | Navigator identity | — |

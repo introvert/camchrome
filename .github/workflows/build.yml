@@ -60,6 +60,8 @@ jobs:
         run: scripts/check-repo.sh
       - name: SOCKS5 UDP test proxy
         run: tools/socks5_udp_proxy.py --selftest
+      - name: Fingerprint library
+        run: tools/fingerprint_library.py check
       - name: Self-test harness on stock Chrome
         # Stock Chrome has no persona, so persona-only checks are XFAIL; any FAIL means
         # the harness (or a check that should hold on any Chrome) is broken.

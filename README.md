@@ -61,7 +61,9 @@ locally with `tools/socks5_udp_proxy.py` (a SOCKS5 proxy with UDP ASSOCIATE).
 | `992-android-persona-mobile-behaviour` | with `--fingerprint-platform=android` the mouse becomes touch (touchstart, `pointerType: "touch"`, taps), deviceorientation/devicemotion stream a phone held in a hand, and fonts answer with the handset set from Android's `fonts.xml` |
 
 Launch the window phone-sized so the layout viewport matches the persona screen, e.g.
-`--window-size=412,915` for the Pixel 7 row.
+`--window-size=412,915` for the Pixel 7 row. Drive it with mouse events or `Browser.humanized*`
+(both become touch); a raw CDP `Input.dispatchTouchEvent` switches that tab back to plain mouse
+events afterwards.
 
 ### What 993 adds (human input)
 
@@ -96,7 +98,7 @@ build/src/out/Default/Chromium.app/Contents/MacOS/Chromium \
 | `--fingerprint-screen-width/-height/-avail-width/-avail-height/-color-depth/-device-pixel-ratio/-max-touch-points` | Explicit screen/touch values. |
 | `--timezone=<IANA>`, `--fingerprint-location=<lat,lng>` | Timezone and geolocation. |
 | `--fingerprint-schema=2` | Versioned derivation: couples screen class and GPU class to the hardware tier and sizes the JS heap from RAM. |
-| `--fingerprint-profile=<base64>` | Import a captured profile. It is authoritative over the seed; fields it omits keep the seed's values. |
+| `--fingerprint-profile=<base64>` | Import a captured profile. It is authoritative over the seed; fields it omits keep the seed's values. `tools/fingerprint_library.py` captures real devices into `profiles/library/` and prints these flags for one (see `profiles/README.md`). |
 | `--fingerprint-tls-profile=chrome-156` | TLS ClientHello persona; absent/native leaves BoringSSL stock. |
 | `--disable-gpu-fingerprint` | Present the real GPU (strings, limits, extensions, pixels) instead of the persona. |
 | `--disable-gpu-string-spoof` | Only the UNMASKED vendor/renderer strings go real; limits, extensions and noise stay on the persona. |

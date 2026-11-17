@@ -385,8 +385,9 @@ def collect(binary: str, flags: list[str], headless: bool, origins: list[str]) -
                 "p => r([p.coords.latitude, p.coords.longitude]), e => r({error: e.message}),"
                 "{timeout: 5000}))")
             result["mobile"] = cdp.evaluate(MOBILE_JS)
+            # Away from the top-left corner, where collectMain left its probe iframe.
             for kind in ("mousePressed", "mouseReleased"):
-                cdp.call("Input.dispatchMouseEvent", {"type": kind, "x": 30, "y": 30,
+                cdp.call("Input.dispatchMouseEvent", {"type": kind, "x": 600, "y": 450,
                                                       "button": "left", "clickCount": 1})
             result["mobile"]["input"] = cdp.evaluate(
                 "new Promise(r => setTimeout(() => r(window.__input), 400))")
