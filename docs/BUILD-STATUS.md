@@ -5,7 +5,7 @@ As of 2026-11-17, Chromium `157.0.8103.78`, ungoogled `157.0.8103.78-1`.
 | Target | Patches apply | `gn gen` | Patched files compile | Full build links | Audit | Where verified |
 |---|---|---|---|---|---|---|
 | mac-arm64 | ✅ 64/64 (900/905 skipped) | ✅ | ✅ | ✅ `Chromium.app` | ✅ 100/100 | macOS 26.1, 10-core M-series, 24 GB (NOTES.md) |
-| linux-x64 | ✅ 66/66 | ✅ 36,541 targets | __COMPILE__ | not attempted | not run | Ubuntu 24.04 container, 4 cores, 15 GB RAM (this review) |
+| linux-x64 | ✅ 66/66 | ✅ 36,541 targets | ✅ 95/95 | not attempted | not run | Ubuntu 24.04 container, 4 cores, 15 GB RAM (this review) |
 | linux-arm64 | same source as x64 | CI | CI | CI (`mode=full`) | — | `.github/workflows/build.yml`, cross-compiled from x64 |
 | mac-x64 | same source as arm64 | CI | CI | CI (`mode=full`) | — | `.github/workflows/build.yml`, cross-compiled from arm64 |
 | windows-x64 | not ported | — | — | — | — | needs Clearcote's xwin setup |
@@ -48,7 +48,20 @@ The README said the Linux rebase was open; trying it found five problems, each f
 real `config/args.linux.gn` (official, ThinLTO, PGO). That takes about 10,700 ninja steps,
 mostly code generation; it does not link.
 
-__COMPILE_DETAIL__
+**Result: all 95 compile** (`ninja: no work to do` on a re-check). The first pass hit three
+missing prebuilts (Go for Dawn's generator, node `v24.12.0` exactly, and gn under `buildtools/`
+for V8 metagen); each is fixed in the scripts and the second pass finished with no failures.
+
+The build has `treat_warnings_as_errors = false`. Warnings in patched code, worth cleaning up
+before turning that on:
+
+| File | Warning | Patch |
+|---|---|---|
+| `components/ungoogled/persona_profile.cc:640-641` | declaration shadows a local variable | 002/987 series |
+| `net/socket/socks5_client_socket.cc:310` | exit-time destructor | 984 |
+| `net/socket/socks5_udp_smoke.cc:90` | unused function `PumpUntil` | 973 |
+| `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc:6054` | `cb_substituted` set but not used | 070 (canvas bridge) |
+| `v8/src/inspector/v8-runtime-agent-impl.cc:1083` | unreachable code | 110 |
 
 ## Full builds
 
