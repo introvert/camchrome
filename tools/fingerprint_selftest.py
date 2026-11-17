@@ -542,7 +542,8 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     rtt_hdr = hdr.get("rtt")
     rep.add("rtt-header-equals-connection", "989",
             rtt_hdr is not None and int(rtt_hdr) == conn.get("rtt"),
-            f"{rtt_hdr} vs {conn.get('rtt')}", skip=rtt_hdr is None and args.stock)
+            f"{rtt_hdr} vs {conn.get('rtt')}", skip=rtt_hdr is None and args.stock,
+            persona=True)  # stock Chrome's wire and JS estimates can differ; 989 aligns them
     dl_hdr = hdr.get("downlink")
     rep.add("downlink-header-equals-connection", "989",
             dl_hdr is not None and float(dl_hdr) == conn.get("downlink"),
