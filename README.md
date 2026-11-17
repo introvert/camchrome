@@ -12,19 +12,19 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 | Piece | Version | State |
 |---|---|---|
 | ungoogled-chromium base (Linux, Windows) | `157.0.8103.78-1` | pinned in `UPSTREAM` |
-| ungoogled-chromium-macos overlay | `156.0.8078.79-1.1` | pinned, built and audited on macOS arm64 |
-| Fingerprint patches (`patches/`) | 66 patches | verified against 156 (macOS); 157 rebase open |
-| Clearcote stealth audit | 365 checks | **100/100 · 237/237 scored checks agree · 0 findings** |
+| ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | pinned, built and audited on macOS arm64 |
+| Fingerprint patches (`patches/`) | 66 patches | verified against 157 (macOS) |
+| Clearcote stealth audit | 365 checks | **100/100 · 236/236 scored checks agree · 0 findings** |
 
-The macOS overlay published `157.0.8103.78-1.1` while this tree was verified, so 157 is
-the next rebase target (see `NOTES.md`). The shipped/verified binary is Chromium
-`156.0.8078.79`, the newest macOS tag whose patch series has been fully rebased here.
-Linux/Windows use the 157 base; their rebase is open.
+The shipped and audited binary is Chromium `157.0.8103.78` — the latest ungoogled-chromium
+tag and the latest macOS overlay. The 156 macOS build is preserved at tag
+`v156-audit100`. Linux/Windows use the same 157 base; their rebase is still open because the
+series was verified on macOS.
 
 The patches in `patches/` come from
 [Clearcote](https://github.com/clearcotelabs/clearcote-browser) at commit
 `ac40bdc` (BSD-3-Clause; see `LICENSE.clearcote` and `CREDITS.md`), rebased from 151 to
-156 and extended with patches 986–989 (see below). They cover canvas, WebGL, WebGPU,
+157 and extended with patches 986–989 (see below). They cover canvas, WebGL, WebGPU,
 audio, fonts, GPU info, screen, timezone/locale, WebRTC, client hints, `navigator.webdriver`,
 headless and CDP `Runtime.enable` signals, and more.
 
@@ -67,16 +67,20 @@ so no driver flags or bindings pollute the result) and runs the public
 [Clearcote audit](https://www.clearcotelabs.com/audit).
 
 ```bash
-tools/stealth_audit.py --seed demo                      # 219/219 engine + fingerprint checks
-tools/stealth_audit.py --seed demo --interact           # + the 18 input checks -> 237/237
+tools/stealth_audit.py --seed demo                      # 218/218 engine + fingerprint checks
+tools/stealth_audit.py --seed demo --interact           # + the 18 input checks -> 236/236
 tools/stealth_audit.py --seed demo --signals            # offline signal dump, no network
 ```
 
 Without `--interact` the audit reports the 18 input checks as "not attempted" and scores
-219/219. With `--interact` the harness completes its five optional input steps using
+218/218. With `--interact` the harness completes its five optional input steps using
 trusted CDP input (it aims inside each control, holds for a human interval, sends
 `PointerEvent.pressure` 0.5 while a button is held and uses real key events), which lets
-the audit score those checks too: 237/237 agree, 0 findings, score 100/100.
+the audit score those checks too: 236/236 agree, 0 findings, score 100/100.
+
+Chromium 157 builds Crubit's `cc_bindings_from_rs` against the rustc-dev toolchain;
+`scripts/00-fetch-source.sh` sets that toolchain up and `scripts/02-build.sh` builds
+Crubit before GN runs.
 
 Results are written to `build/stealth-audit.txt` / `.json` (audit) and
 `build/stealth-signals.json` (`--signals`).
@@ -85,9 +89,10 @@ Results are written to `build/stealth-audit.txt` / `.json` (audit) and
 
 1. Bump `UG_TAG` and `UGW_TAG` (and `UGM_TAG` when moving macOS) in `UPSTREAM`.
 2. `scripts/00-fetch-source.sh && scripts/01-apply-patches.sh --check` lists the failing patches.
-3. Fix each in order: apply it with `patch -p1 --merge`, resolve the conflicts in `build/src`, then
-   regenerate the patch with `git diff` (run `git init && git add -A && git commit` in
-   `build/src` after step 2 so you have a baseline to diff against).
+3. Fix each in order: run `patch -p1 -f < patches/<name>` in `build/src`, resolve the `.rej` hunks
+   by hand, then regenerate that one patch from the commit that contains it. Keep one git commit
+   per patch (`git init && git add -A && git commit` after the ungoogled base) so a patch that
+   changed can be regenerated without dragging in later patches that touch the same file.
 4. Update `PATCHES_BASE` in `UPSTREAM`.
 
 ## More

@@ -1,9 +1,9 @@
 # What we need to cover
 
 The target is the [Clearcote fingerprint audit](https://www.clearcotelabs.com/audit/checks):
-365 checks across 16 groups. **Verified 2026-11-17 on macOS 156: 100/100, 237/237 scored
+365 checks across 16 groups. **Verified 2026-11-17 on macOS 157: 100/100, 236/236 scored
 checks agree, 0 findings** (`tools/stealth_audit.py --seed testseed --interact`). Without
-`--interact` the audit scores 219/219 and reports the 18 input checks as not attempted. Each check has its own page at
+`--interact` the audit scores 218/218 and reports the 18 input checks as not attempted. Each check has its own page at
 `https://www.clearcotelabs.com/audit/checks/<slug>`, e.g.
 [`canvas-alpha-zero-reads-black`](https://www.clearcotelabs.com/audit/checks/canvas-alpha-zero-reads-black).
 
@@ -71,9 +71,9 @@ Checked on 2026-11-16 (license, last push).
 
 ## Findings fixed in 986–989
 
-Before these patches the audit reported 16 findings (score 93). They were:
+Before these patches the audit reported 16 findings (score 93) on the 156 engine. They were:
 
-- Chrome 151 claimed on a 156 engine (`image/jxl` in Accept, UA-CH full version).
+- Chrome 151 claimed on the engine (156 at the time; now the version is derived from the engine itself, so the same class of drift cannot recur).
 - Windows ANGLE/D3D11 GPU strings, caps, extensions and shader dialect under a macOS claim.
 - `0xA780` device id (ANGLE zero-pads to 8 hex digits).
 - `navigator.cpuPerformance` "ultra" from the host CPU model while the persona reported 6 cores.

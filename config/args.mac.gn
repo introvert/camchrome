@@ -31,6 +31,8 @@ target_cpu = "arm64"                  # "x64" on an Intel Mac
 is_clang = true
 use_sysroot = false
 enable_rust = true
+# Chromium 157 builds Crubit's cc_bindings_from_rs from the rustc-dev toolchain.
+rust_crubit_root = "//third_party/rust-toolchain/crubit"
 
 # --- Release configuration ---
 # NOTE: this host has 24 GB RAM, below the ~32 GB peak of the official
@@ -51,7 +53,7 @@ pgo_data_path = ""                    # set by scripts/02-build.sh when PGO is o
 use_remoteexec = false
 enable_updater = false
 enable_iterator_debugging = false
-v8_use_metagen_instance_types = false
+v8_use_metagen = false
 
 # --- Media / codecs (match a normal desktop browser) ---
 proprietary_codecs = true

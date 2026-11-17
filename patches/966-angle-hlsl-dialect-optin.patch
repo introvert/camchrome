@@ -195,4 +195,19 @@ index a833d82ff6..675dfdbd05 100644
 +    const std::string &debugInfo = clearcoteDebugInfo(context);
      GetSourceImpl(debugInfo, bufSize, length, buffer);
  }
+
+diff --git a/third_party/angle/src/libANGLE/Shader.h b/third_party/angle/src/libANGLE/Shader.h
+--- a/third_party/angle/src/libANGLE/Shader.h
++++ b/third_party/angle/src/libANGLE/Shader.h
+@@ -211,6 +211,12 @@ class Shader final : angle::NonCopyable, public LabeledObject
+                       const ShBuiltInResources &resources);
  
++    // clearcote: debug info to report for the translated-source query, and the cached HLSL
++    // re-translation behind it (opt-in, see Shader.cpp). Empty cache means no spoof.
++    std::string clearcoteDebugInfo(const Context *context);
++    std::string mClearcoteHlsl;
++    bool mClearcoteHlslDone = false;
++
+     ShaderState mState;
+     std::unique_ptr<rx::ShaderImpl> mImplementation;
+     const gl::Limitations mRendererLimitations;

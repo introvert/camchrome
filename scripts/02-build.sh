@@ -8,6 +8,13 @@ ARGS="$REPO/config/args.$TARGET.gn"
 [ -f "$ARGS" ] || { echo "no $ARGS"; exit 1; }
 cd "$SRC"
 
+# Go's default cache/GOPATH live under the user's home; a sandboxed or
+# non-interactive builder may not be allowed to write there (Dawn's
+# generate-sources action runs `go build`). Keep both inside WORK.
+export GOCACHE="${GOCACHE:-$WORK/go-cache}"
+export GOPATH="${GOPATH:-$WORK/go-path}"
+mkdir -p "$GOCACHE" "$GOPATH"
+
 # Chromium 156+ build scripts need Python 3.10+; macOS's system python3 is 3.9.
 # Prefer a Homebrew Python and expose it as `python3` for gn/ninja via a private
 # bin dir we prepend to PATH.
@@ -47,6 +54,25 @@ if [ "$TARGET" = mac ]; then
   if [ ! -x third_party/rust-toolchain/bin/bindgen ]; then
     echo "building bindgen"
     python3 tools/rust/build_bindgen.py --skip-test
+  fi
+
+  # Chromium 157 builds Crubit's cc_bindings_from_rs from the rustc-dev
+  # toolchain; GN expects it at rust_crubit_root/bin. The 156 toolchain has no
+  # crubit sources, so this is conditional.
+  if [ -f third_party/rust-toolchain/crubit/lib/third_party/crubit/Cargo.toml ] && \
+     [ ! -x third_party/rust-toolchain/crubit/bin/cc_bindings_from_rs ]; then
+    echo "building crubit"
+    CARGO_HOME="$SRC/out/crubit/cargo_home" \
+    RUSTC="$SRC/third_party/rust-toolchain/bin/rustc" \
+    RUSTFLAGS="-Clink-args=-Wl,-rpath,@loader_path/../../rustc/lib" \
+      "$SRC/third_party/rust-toolchain/bin/cargo" build --release --locked \
+        -p cc_bindings_from_rs --bin cc_bindings_from_rs \
+        --manifest-path \
+        "$SRC/third_party/rust-toolchain/crubit/lib/third_party/crubit/Cargo.toml" \
+        --target-dir "$SRC/out/crubit"
+    mkdir -p third_party/rust-toolchain/crubit/bin
+    cp out/crubit/release/cc_bindings_from_rs \
+       third_party/rust-toolchain/crubit/bin/
   fi
 fi
 

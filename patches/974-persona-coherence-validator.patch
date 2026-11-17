@@ -1,21 +1,53 @@
---- a/components/ungoogled/persona_profile.h
-+++ b/components/ungoogled/persona_profile.h
-@@ -251,6 +251,12 @@
- // tier keeps (cores, RAM) to combinations that exist in the wild.
- COMPONENT_EXPORT(UNGOOGLED) PersonaProfile DerivePersona(uint64_t seed);
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index 2533647..4fcec58 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -72,7 +72,9 @@
+ #include "components/startup_metric_utils/common/startup_metric_utils.h"
+ #include "components/variations/service/variations_network_clock.h"
+ #include "components/variations/variations_ids_provider.h"
++#include "base/version_info/version_info.h"
+ #include "components/version_info/channel.h"
++#include "components/ungoogled/persona_validator.h"  // clearcote: --clearcote-validate-persona
+ #include "content/public/app/initialize_mojo_core.h"
+ #include "content/public/common/content_client.h"
+ #include "content/public/common/content_constants.h"
+@@ -1232,6 +1234,17 @@ std::optional<int> ChromeMainDelegate::BasicStartupComplete() {
+   // before any other files are opened, see https://crbug.com/40259890.
+   const bool is_browser = !command_line.HasSwitch(switches::kProcessType);
  
-+// clearcote: the ONE parse of a --fingerprint value into a persona seed. Numeric
-+// strings are used directly; anything else is FNV-1a hashed (stable across
-+// builds, unlike std::hash) so the browser process, every renderer, and the
-+// persona validator sweep derive the SAME seed from the same text.
-+COMPONENT_EXPORT(UNGOOGLED) uint64_t PersonaSeedFromString(const std::string& raw);
++  // clearcote: --clearcote-validate-persona=<N|a,b,c|current> derives the persona this command
++  // line would serve for each seed, runs the coherence invariants, prints the report (or writes
++  // it to --clearcote-validate-persona-out=<file>), and exits: 0 clean, 3 contradictions. It runs
++  // after the licence gate so validate mode is not a way around it. See persona_validator.h.
++  if (is_browser) {
++    if (const std::optional<int> validate_rc = ungoogled::MaybeRunPersonaValidationCli(
++            command_line, std::string(version_info::GetVersionNumber()))) {
++      return *validate_rc;
++    }
++  }
 +
- // Process-wide singleton persona for this session. The first call reads the
- // --fingerprint switch (numeric, or FNV-1a-hashed if non-numeric -- matching
- // the per-site seed parse so browser + renderers agree) and derives the
+   // clearcote: the in-browser AI agent (--agent-llm-url) drives Chrome's Actor framework, which
+   // is gated behind features::kGlicActor -- left off at runtime by this build's variations config.
+   // When the agent is configured, auto-enable the feature (merging into any existing
+diff --git a/components/ungoogled/BUILD.gn b/components/ungoogled/BUILD.gn
+index c7038f2..2ffc58b 100644
+--- a/components/ungoogled/BUILD.gn
++++ b/components/ungoogled/BUILD.gn
+@@ -9,6 +9,8 @@ component("ungoogled_switches") {
+     "fingerprint_data.h",
+     "persona_profile.cc",
+     "persona_profile.h",
++    "persona_validator.cc",
++    "persona_validator.h",
+     "portable_key_provider.cc",
+     "portable_key_provider.h",
+     "ungoogled_switches.h",
+diff --git a/components/ungoogled/persona_profile.cc b/components/ungoogled/persona_profile.cc
+index 091b1e1..05b31b8 100644
 --- a/components/ungoogled/persona_profile.cc
 +++ b/components/ungoogled/persona_profile.cc
-@@ -176,17 +176,7 @@
+@@ -176,17 +176,7 @@ uint64_t SeedFromCommandLine() {
    if (!cmd || !cmd->HasSwitch(switches::kFingerprint)) {
      return 0;
    }
@@ -34,7 +66,7 @@
  }
  
  // clearcote: when --fingerprint-profile=<gzip+base64 JSON> is set (a captured real
-@@ -464,6 +454,19 @@
+@@ -454,6 +444,19 @@ void ApplyProfileOverride(PersonaProfile* p) {
  
  }  // namespace
  
@@ -54,119 +86,26 @@
  // clearcote: single source of truth for --fingerprint-platform (see
  // persona_profile.h). Parsed once, lowercased once.
  PersonaPlatform GetPersonaPlatform() {
---- a/components/ungoogled/BUILD.gn
-+++ b/components/ungoogled/BUILD.gn
-@@ -9,6 +9,8 @@
-     "fingerprint_data.h",
-     "persona_profile.cc",
-     "persona_profile.h",
-+    "persona_validator.cc",
-+    "persona_validator.h",
-     "portable_key_provider.cc",
-     "portable_key_provider.h",
-     "ungoogled_switches.h",
---- /dev/null
-+++ b/components/ungoogled/persona_validator.h
-@@ -0,0 +1,99 @@
-+// Copyright 2026 The ungoogled-chromium Authors. All rights reserved.
-+// Use of this source code is governed by a BSD-style license that can be
-+// found in the LICENSE file.
+diff --git a/components/ungoogled/persona_profile.h b/components/ungoogled/persona_profile.h
+index 66abfd9..830a545 100644
+--- a/components/ungoogled/persona_profile.h
++++ b/components/ungoogled/persona_profile.h
+@@ -243,6 +243,12 @@ struct COMPONENT_EXPORT(UNGOOGLED) PersonaProfile {
+ // tier keeps (cores, RAM) to combinations that exist in the wild.
+ COMPONENT_EXPORT(UNGOOGLED) PersonaProfile DerivePersona(uint64_t seed);
+ 
++// clearcote: the ONE parse of a --fingerprint value into a persona seed. Numeric
++// strings are used directly; anything else is FNV-1a hashed (stable across
++// builds, unlike std::hash) so the browser process, every renderer, and the
++// persona validator sweep derive the SAME seed from the same text.
++COMPONENT_EXPORT(UNGOOGLED) uint64_t PersonaSeedFromString(const std::string& raw);
 +
-+#ifndef COMPONENTS_UNGOOGLED_PERSONA_VALIDATOR_H_
-+#define COMPONENTS_UNGOOGLED_PERSONA_VALIDATOR_H_
-+
-+#include <cstdint>
-+#include <optional>
-+#include <string>
-+#include <vector>
-+
-+#include "base/component_export.h"
-+#include "components/ungoogled/persona_profile.h"
-+
-+namespace base {
-+class CommandLine;
-+}
-+
-+namespace ungoogled {
-+
-+// clearcote: persona coherence validator.
-+//
-+// A PersonaProfile is one machine. Every browser-visible value derived from it
-+// must agree with every other value derived from it, because a page can compare
-+// them inside one load with no baseline and no population data. This validator
-+// checks the RELATIONSHIPS between fields (screen vs work area, cores vs RAM,
-+// GPU vendor vs renderer vs WebGPU adapter, platform vs backend vs voices, ...),
-+// not fields in isolation. Every shipped coherence regression so far (r10
-+// pointer:coarse on a desktop, r11 advertised-but-null extensions, the 151-port
-+// version claim) was a relationship between two fields that were each fine on
-+// their own.
-+//
-+// Two severities:
-+//   kError   -- a contradiction real Chrome cannot produce. CI fails on these.
-+//   kWarning -- suspicious, or dependent on a product decision that has not
-+//               been taken (colour-depth buckets, heap-vs-RAM, WebGPU vs WebGL
-+//               texture limits). Reported, never fatal.
-+struct COMPONENT_EXPORT(UNGOOGLED) PersonaViolation {
-+  enum class Severity { kError, kWarning };
-+  Severity severity = Severity::kError;
-+  // Stable identifier, "<area>.<rule>", e.g. "screen.avail_within_screen".
-+  std::string invariant;
-+  // The concrete values that contradicted each other.
-+  std::string detail;
-+};
-+
-+struct PersonaValidationContext {
-+  // The --fingerprint-platform value the persona was derived under. kUnset
-+  // means the switch was absent: DerivePersona() then leaves the Windows-shaped
-+  // defaults in place regardless of host, so kUnset validates as Windows.
-+  PersonaPlatform platform = PersonaPlatform::kUnset;
-+  // Engine major (151 for this tree). 0 skips the engine-version check.
-+  unsigned engine_major = 0;
-+};
-+
-+// Runs every invariant and returns all violations (empty == coherent).
-+COMPONENT_EXPORT(UNGOOGLED)
-+std::vector<PersonaViolation> ValidatePersona(
-+    const PersonaProfile& p,
-+    const PersonaValidationContext& ctx);
-+
-+// True when |violations| contains at least one kError.
-+COMPONENT_EXPORT(UNGOOGLED)
-+bool HasPersonaErrors(const std::vector<PersonaViolation>& violations);
-+
-+// One-line, deterministic reproduction record: the seed and platform that
-+// produce this persona plus the key fields, so a failure can be re-derived
-+// exactly on any machine running the same binary.
-+COMPONENT_EXPORT(UNGOOGLED)
-+std::string DescribePersona(uint64_t seed,
-+                            PersonaPlatform platform,
-+                            const PersonaProfile& p);
-+
-+// Diagnostic entry point for CI, wired into the browser process's earliest
-+// startup callback.
-+//
-+//   --clearcote-validate-persona=<N>          seeds 1..N
-+//   --clearcote-validate-persona=<a,b,c>      explicit seeds (numeric, or any
-+//                                             string hashed exactly as
-+//                                             --fingerprint= would hash it)
-+//   --clearcote-validate-persona=current      the seed on this command line
-+//   --clearcote-validate-persona-out=<path>   write the report there instead
-+//                                             of stdout (a Windows GUI process
-+//                                             has no console to print to)
-+//
-+// The persona is derived under the SAME command line as a real launch, so
-+// --fingerprint-platform, --fingerprint-profile and the GPU switches all apply:
-+// the sweep validates the persona family this command line would actually
-+// serve. Returns the process exit code when the switch is present (0 = no
-+// errors, 3 = at least one error, 2 = bad arguments); std::nullopt when it is
-+// absent or this is not the browser process.
-+COMPONENT_EXPORT(UNGOOGLED)
-+std::optional<int> MaybeRunPersonaValidationCli(const base::CommandLine& cmd,
-+                                                const std::string& engine_version);
-+
-+}  // namespace ungoogled
-+
-+#endif  // COMPONENTS_UNGOOGLED_PERSONA_VALIDATOR_H_
+ // Process-wide singleton persona for this session. The first call reads the
+ // --fingerprint switch (numeric, or FNV-1a-hashed if non-numeric -- matching
+ // the per-site seed parse so browser + renderers agree) and derives the
+diff --git a/components/ungoogled/persona_validator.cc b/components/ungoogled/persona_validator.cc
+new file mode 100644
+index 0000000..33791d2
 --- /dev/null
 +++ b/components/ungoogled/persona_validator.cc
 @@ -0,0 +1,710 @@
@@ -880,31 +819,108 @@
 +}
 +
 +}  // namespace ungoogled
---- a/chrome/app/chrome_main_delegate.cc
-+++ b/chrome/app/chrome_main_delegate.cc
-@@ -82,6 +82,7 @@
- #include "components/variations/service/variations_network_clock.h"
- #include "components/variations/variations_ids_provider.h"
- #include "components/version_info/channel.h"
-+#include "components/ungoogled/persona_validator.h"  // clearcote: --clearcote-validate-persona
- #include "components/version_info/version_info.h"
- #include "content/public/app/initialize_mojo_core.h"
- #include "content/public/common/content_client.h"
-@@ -1094,6 +1095,17 @@
-   // before any other files are opened, see https://crbug.com/40259890.
-   const bool is_browser = !command_line.HasSwitch(switches::kProcessType);
- 
-+  // clearcote: --clearcote-validate-persona=<N|a,b,c|current> derives the persona this command
-+  // line would serve for each seed, runs the coherence invariants, prints the report (or writes
-+  // it to --clearcote-validate-persona-out=<file>), and exits: 0 clean, 3 contradictions. It runs
-+  // after the licence gate so validate mode is not a way around it. See persona_validator.h.
-+  if (is_browser) {
-+    if (const std::optional<int> validate_rc = ungoogled::MaybeRunPersonaValidationCli(
-+            command_line, std::string(version_info::GetVersionNumber()))) {
-+      return *validate_rc;
-+    }
-+  }
+diff --git a/components/ungoogled/persona_validator.h b/components/ungoogled/persona_validator.h
+new file mode 100644
+index 0000000..70b0805
+--- /dev/null
++++ b/components/ungoogled/persona_validator.h
+@@ -0,0 +1,99 @@
++// Copyright 2026 The ungoogled-chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
 +
-   // clearcote: the in-browser AI agent (--agent-llm-url) drives Chrome's Actor framework, which
-   // is gated behind features::kGlicActor -- left off at runtime by this build's variations config.
-   // When the agent is configured, auto-enable the feature (merging into any existing
++#ifndef COMPONENTS_UNGOOGLED_PERSONA_VALIDATOR_H_
++#define COMPONENTS_UNGOOGLED_PERSONA_VALIDATOR_H_
++
++#include <cstdint>
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/component_export.h"
++#include "components/ungoogled/persona_profile.h"
++
++namespace base {
++class CommandLine;
++}
++
++namespace ungoogled {
++
++// clearcote: persona coherence validator.
++//
++// A PersonaProfile is one machine. Every browser-visible value derived from it
++// must agree with every other value derived from it, because a page can compare
++// them inside one load with no baseline and no population data. This validator
++// checks the RELATIONSHIPS between fields (screen vs work area, cores vs RAM,
++// GPU vendor vs renderer vs WebGPU adapter, platform vs backend vs voices, ...),
++// not fields in isolation. Every shipped coherence regression so far (r10
++// pointer:coarse on a desktop, r11 advertised-but-null extensions, the 151-port
++// version claim) was a relationship between two fields that were each fine on
++// their own.
++//
++// Two severities:
++//   kError   -- a contradiction real Chrome cannot produce. CI fails on these.
++//   kWarning -- suspicious, or dependent on a product decision that has not
++//               been taken (colour-depth buckets, heap-vs-RAM, WebGPU vs WebGL
++//               texture limits). Reported, never fatal.
++struct COMPONENT_EXPORT(UNGOOGLED) PersonaViolation {
++  enum class Severity { kError, kWarning };
++  Severity severity = Severity::kError;
++  // Stable identifier, "<area>.<rule>", e.g. "screen.avail_within_screen".
++  std::string invariant;
++  // The concrete values that contradicted each other.
++  std::string detail;
++};
++
++struct PersonaValidationContext {
++  // The --fingerprint-platform value the persona was derived under. kUnset
++  // means the switch was absent: DerivePersona() then leaves the Windows-shaped
++  // defaults in place regardless of host, so kUnset validates as Windows.
++  PersonaPlatform platform = PersonaPlatform::kUnset;
++  // Engine major (151 for this tree). 0 skips the engine-version check.
++  unsigned engine_major = 0;
++};
++
++// Runs every invariant and returns all violations (empty == coherent).
++COMPONENT_EXPORT(UNGOOGLED)
++std::vector<PersonaViolation> ValidatePersona(
++    const PersonaProfile& p,
++    const PersonaValidationContext& ctx);
++
++// True when |violations| contains at least one kError.
++COMPONENT_EXPORT(UNGOOGLED)
++bool HasPersonaErrors(const std::vector<PersonaViolation>& violations);
++
++// One-line, deterministic reproduction record: the seed and platform that
++// produce this persona plus the key fields, so a failure can be re-derived
++// exactly on any machine running the same binary.
++COMPONENT_EXPORT(UNGOOGLED)
++std::string DescribePersona(uint64_t seed,
++                            PersonaPlatform platform,
++                            const PersonaProfile& p);
++
++// Diagnostic entry point for CI, wired into the browser process's earliest
++// startup callback.
++//
++//   --clearcote-validate-persona=<N>          seeds 1..N
++//   --clearcote-validate-persona=<a,b,c>      explicit seeds (numeric, or any
++//                                             string hashed exactly as
++//                                             --fingerprint= would hash it)
++//   --clearcote-validate-persona=current      the seed on this command line
++//   --clearcote-validate-persona-out=<path>   write the report there instead
++//                                             of stdout (a Windows GUI process
++//                                             has no console to print to)
++//
++// The persona is derived under the SAME command line as a real launch, so
++// --fingerprint-platform, --fingerprint-profile and the GPU switches all apply:
++// the sweep validates the persona family this command line would actually
++// serve. Returns the process exit code when the switch is present (0 = no
++// errors, 3 = at least one error, 2 = bad arguments); std::nullopt when it is
++// absent or this is not the browser process.
++COMPONENT_EXPORT(UNGOOGLED)
++std::optional<int> MaybeRunPersonaValidationCli(const base::CommandLine& cmd,
++                                                const std::string& engine_version);
++
++}  // namespace ungoogled
++
++#endif  // COMPONENTS_UNGOOGLED_PERSONA_VALIDATOR_H_

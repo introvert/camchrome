@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-index 5d240afc3e..a0c88ce093 100644
+index 46eac99..c4da2f6 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 @@ -180,6 +180,12 @@ class CORE_EXPORT CanvasRenderingContext
@@ -16,7 +16,7 @@ index 5d240afc3e..a0c88ce093 100644
    // TODO(fserb): remove AsV8RenderingContext and AsV8OffscreenRenderingContext.
    virtual V8RenderingContext* AsV8RenderingContext() { NOTREACHED(); }
 diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-index 2a5404e4cf..1cefaf1a8e 100644
+index 3da40c3..04f250e 100644
 --- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 +++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 @@ -32,8 +32,10 @@
@@ -53,7 +53,7 @@ index 2a5404e4cf..1cefaf1a8e 100644
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/local_frame_client.h"
  #include "third_party/blink/renderer/core/frame/local_frame_view.h"
-@@ -1458,7 +1467,88 @@ String HTMLCanvasElement::ToDataURLInternal(
+@@ -1434,7 +1443,88 @@ String HTMLCanvasElement::ToDataURLInternal(
        ImageEncoderUtils::ToEncodingMimeType(mime_type);
  
    scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(source_buffer);
@@ -143,7 +143,7 @@ index 2a5404e4cf..1cefaf1a8e 100644
          ImageDataBuffer::Create(image_bitmap);
      if (!data_buffer)
 diff --git a/third_party/blink/renderer/core/html/canvas/text_metrics.h b/third_party/blink/renderer/core/html/canvas/text_metrics.h
-index 7b3147047c..3c7fb5e7e6 100644
+index 7b31470..3c7fb5e 100644
 --- a/third_party/blink/renderer/core/html/canvas/text_metrics.h
 +++ b/third_party/blink/renderer/core/html/canvas/text_metrics.h
 @@ -112,6 +112,21 @@ class CORE_EXPORT TextMetrics final : public ScriptWrappable {
@@ -169,30 +169,30 @@ index 7b3147047c..3c7fb5e7e6 100644
    void Update(const Font*,
                const TextDirection& direction,
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 9c3fdddd54..563e22e897 100644
+index 0bbf295..803a7a0 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-@@ -14,6 +14,7 @@
- 
+@@ -18,6 +18,7 @@
+ #include "base/byte_size.h"
  #include "base/check.h"
  #include "base/check_op.h"
 +#include "base/command_line.h"
  #include "base/location.h"
  #include "base/memory/scoped_refptr.h"
  #include "base/memory/weak_ptr.h"
-@@ -27,6 +28,11 @@
- #include "cc/paint/paint_flags.h"
- #include "cc/paint/paint_image.h"
+@@ -37,6 +38,11 @@
+ #include "cc/paint/paint_image_builder.h"
+ #include "cc/paint/paint_op_buffer.h"
  #include "cc/paint/record_paint_canvas.h"
-+#include "components/ungoogled/ungoogled_switches.h"
-+#include "components/ungoogled/farble_seed.h"
 +#include <cstring>
++#include "components/ungoogled/farble_seed.h"
++#include "components/ungoogled/ungoogled_switches.h"
 +#include "third_party/blink/renderer/platform/canvas_bridge/canvas_bridge_client.h"
 +#include "third_party/blink/renderer/platform/canvas_bridge/canvas_bridge_codec.h"
+ #include "cc/paint/skia_paint_canvas.h"
+ #include "components/viz/common/resources/shared_image_format.h"
  #include "components/viz/common/resources/shared_image_format_utils.h"
- #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
- #include "third_party/blink/public/common/features.h"
-@@ -117,6 +123,7 @@
+@@ -137,6 +143,7 @@
  
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
@@ -200,7 +200,7 @@ index 9c3fdddd54..563e22e897 100644
  
  namespace blink {
  
-@@ -404,6 +411,85 @@ ImageData* BaseRenderingContext2D::getImageData(
+@@ -716,6 +723,85 @@ ImageData* BaseRenderingContext2D::getImageData(
  }
  perfetto::EventContext GetEventContext();
  
@@ -286,7 +286,7 @@ index 9c3fdddd54..563e22e897 100644
  ImageData* BaseRenderingContext2D::getImageDataInternal(
      int sx,
      int sy,
-@@ -544,6 +630,23 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -856,6 +942,23 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
    if (!image_data)
      return nullptr;
  
@@ -310,7 +310,7 @@ index 9c3fdddd54..563e22e897 100644
    // Read pixels into |image_data|.
    if (snapshot) {
      gfx::Rect snapshot_rect{snapshot->Size()};
-@@ -564,8 +667,16 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -876,8 +979,16 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
            snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
        DCHECK(!bounds.intersect(SkIRect::MakeXYWH(sx, sy, sw, sh)));
      }
@@ -329,7 +329,7 @@ index 9c3fdddd54..563e22e897 100644
      }
    }
  
-@@ -717,6 +828,9 @@ V8CanvasTextAlign BaseRenderingContext2D::textAlign() const {
+@@ -1029,6 +1140,9 @@ V8CanvasTextAlign BaseRenderingContext2D::textAlign() const {
  }
  
  void BaseRenderingContext2D::setTextAlign(const V8CanvasTextAlign align) {
@@ -339,7 +339,7 @@ index 9c3fdddd54..563e22e897 100644
    GetState().SetTextAlign(align.AsEnum());
  }
  
-@@ -726,6 +840,9 @@ V8CanvasTextBaseline BaseRenderingContext2D::textBaseline() const {
+@@ -1038,6 +1152,9 @@ V8CanvasTextBaseline BaseRenderingContext2D::textBaseline() const {
  
  void BaseRenderingContext2D::setTextBaseline(
      const V8CanvasTextBaseline baseline) {
@@ -349,7 +349,7 @@ index 9c3fdddd54..563e22e897 100644
    GetState().SetTextBaseline(baseline.AsEnum());
  }
  
-@@ -886,6 +1001,9 @@ void BaseRenderingContext2D::setFont(const String& new_font) {
+@@ -1223,6 +1340,9 @@ void BaseRenderingContext2D::setFont(const String& new_font) {
    // The parse succeeded. Re-fetch `GetState()` as `ResolveFont()` can execute
    // script and reset the state stack.
    GetState().SetUnparsedFont(new_font);
@@ -359,12 +359,7 @@ index 9c3fdddd54..563e22e897 100644
  }
  
  static inline TextDirection ToTextDirection(
-@@ -945,11 +1062,14 @@ void BaseRenderingContext2D::setDirection(const V8CanvasDirection direction) {
-                       WebFeature::kCanvasTextDirectionSetInherit);
-   }
- 
-   CanvasRenderingContext2DState& state = GetState();
-   state.SetDirection(direction.AsEnum());
+@@ -1273,6 +1393,9 @@ void BaseRenderingContext2D::setDirection(const V8CanvasDirection direction) {
  }
  
  void BaseRenderingContext2D::fillText(const String& text, double x, double y) {
@@ -374,7 +369,7 @@ index 9c3fdddd54..563e22e897 100644
    CanvasRenderingContext2DState& state = GetState();
    DrawTextInternal(text, x, y, CanvasRenderingContext2DState::kFillPaintType,
                     state.GetTextAlign(), state.GetTextBaseline(), 0,
-@@ -1006,6 +1130,7 @@ void BaseRenderingContext2D::fillTextCluster(
+@@ -1329,6 +1452,7 @@ void BaseRenderingContext2D::fillTextCluster(
  void BaseRenderingContext2D::strokeText(const String& text,
                                          double x,
                                          double y) {
@@ -382,7 +377,7 @@ index 9c3fdddd54..563e22e897 100644
    CanvasRenderingContext2DState& state = GetState();
    DrawTextInternal(text, x, y, CanvasRenderingContext2DState::kStrokePaintType,
                     state.GetTextAlign(), state.GetTextBaseline(), 0,
-@@ -1016,6 +1141,7 @@ void BaseRenderingContext2D::strokeText(const String& text,
+@@ -1339,6 +1463,7 @@ void BaseRenderingContext2D::strokeText(const String& text,
                                          double x,
                                          double y,
                                          double max_width) {
@@ -390,7 +385,7 @@ index 9c3fdddd54..563e22e897 100644
    CanvasRenderingContext2DState& state = GetState();
    DrawTextInternal(text, x, y, CanvasRenderingContext2DState::kStrokePaintType,
                     state.GetTextAlign(), state.GetTextBaseline(), 0,
-@@ -1266,15 +1392,44 @@ TextMetrics* BaseRenderingContext2D::measureText(const String& text) {
+@@ -1589,15 +1714,44 @@ TextMetrics* BaseRenderingContext2D::measureText(const String& text) {
        font, direction, state.GetTextBaseline(), state.GetTextAlign(), text,
        host->GetPlainTextPainter());
  
@@ -441,10 +436,10 @@ index 9c3fdddd54..563e22e897 100644
    }
    return text_metrics;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
-index 71c52b0ba1..6236addd2c 100644
+index ecf3031..bc10134 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
-@@ -376,6 +376,16 @@ class MODULES_EXPORT BaseRenderingContext2D
+@@ -431,6 +431,16 @@ class MODULES_EXPORT BaseRenderingContext2D
    size_t max_recorded_op_bytes_ = 0;
    size_t max_pinned_image_bytes_ = 0;
    int num_readbacks_performed_ = 0;
@@ -462,7 +457,7 @@ index 71c52b0ba1..6236addd2c 100644
    base::RepeatingClosure on_restore_failed_callback_for_testing_;
    Vector<scoped_refptr<const cc::AnimatedImageFrameIndexMap>>
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index c68848fc8a..930ad80ccc 100644
+index 0d2d486..7317065 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 @@ -394,6 +394,7 @@ Canvas2DRecorderContext::~Canvas2DRecorderContext() {
@@ -490,7 +485,7 @@ index c68848fc8a..930ad80ccc 100644
      if (state.IsUnparsedStrokeColor(v8_string)) {
        return;
      }
-@@ -1049,6 +1053,8 @@ void Canvas2DRecorderContext::setFillStyle(v8::Isolate* isolate,
+@@ -1050,6 +1054,8 @@ void Canvas2DRecorderContext::setFillStyle(v8::Isolate* isolate,
    // details on this.
    if (value->IsString()) {
      v8::Local<v8::String> v8_string = value.As<v8::String>();
@@ -499,7 +494,7 @@ index c68848fc8a..930ad80ccc 100644
      if (state.IsUnparsedFillColor(v8_string)) {
        return;
      }
-@@ -1106,6 +1112,7 @@ double Canvas2DRecorderContext::lineWidth() const {
+@@ -1107,6 +1113,7 @@ double Canvas2DRecorderContext::lineWidth() const {
  }
  
  void Canvas2DRecorderContext::setLineWidth(double width) {
@@ -507,7 +502,7 @@ index c68848fc8a..930ad80ccc 100644
    if (!std::isfinite(width) || width <= 0) {
      return;
    }
-@@ -1121,6 +1128,7 @@ String Canvas2DRecorderContext::lineCap() const {
+@@ -1122,6 +1129,7 @@ String Canvas2DRecorderContext::lineCap() const {
  }
  
  void Canvas2DRecorderContext::setLineCap(const String& s) {
@@ -515,7 +510,7 @@ index c68848fc8a..930ad80ccc 100644
    LineCap cap;
    if (!ParseLineCap(s, cap)) {
      return;
-@@ -1137,6 +1145,7 @@ String Canvas2DRecorderContext::lineJoin() const {
+@@ -1138,6 +1146,7 @@ String Canvas2DRecorderContext::lineJoin() const {
  }
  
  void Canvas2DRecorderContext::setLineJoin(const String& s) {
@@ -523,7 +518,7 @@ index c68848fc8a..930ad80ccc 100644
    LineJoin join;
    if (!ParseLineJoin(s, join)) {
      return;
-@@ -1268,6 +1277,7 @@ double Canvas2DRecorderContext::globalAlpha() const {
+@@ -1269,6 +1278,7 @@ double Canvas2DRecorderContext::globalAlpha() const {
  }
  
  void Canvas2DRecorderContext::setGlobalAlpha(double alpha) {
@@ -531,7 +526,7 @@ index c68848fc8a..930ad80ccc 100644
    if (!(alpha >= 0 && alpha <= 1)) {
      return;
    }
-@@ -1297,6 +1307,7 @@ String Canvas2DRecorderContext::globalCompositeOperation() const {
+@@ -1298,6 +1308,7 @@ String Canvas2DRecorderContext::globalCompositeOperation() const {
  
  void Canvas2DRecorderContext::setGlobalCompositeOperation(
      const String& operation) {
@@ -539,7 +534,7 @@ index c68848fc8a..930ad80ccc 100644
    CompositeOperator op = kCompositeSourceOver;
    BlendMode blend_mode = BlendMode::kNormal;
    if (!ParseCanvasCompositeAndBlendMode(operation, op, blend_mode)) {
-@@ -1357,6 +1368,7 @@ void Canvas2DRecorderContext::setFilter(
+@@ -1358,6 +1369,7 @@ void Canvas2DRecorderContext::setFilter(
  }
  
  void Canvas2DRecorderContext::scale(double sx, double sy) {
@@ -547,7 +542,7 @@ index c68848fc8a..930ad80ccc 100644
    // TODO(crbug.com/40153853): Investigate the performance impact of simply
    // calling the 3d version of this function
    cc::PaintCanvas* c = GetOrCreatePaintCanvas();
-@@ -1387,6 +1399,7 @@ void Canvas2DRecorderContext::scale(double sx, double sy) {
+@@ -1388,6 +1400,7 @@ void Canvas2DRecorderContext::scale(double sx, double sy) {
  }
  
  void Canvas2DRecorderContext::rotate(double angle_in_radians) {
@@ -555,7 +550,7 @@ index c68848fc8a..930ad80ccc 100644
    cc::PaintCanvas* c = GetOrCreatePaintCanvas();
    if (!c) {
      return;
-@@ -1413,6 +1426,7 @@ void Canvas2DRecorderContext::rotate(double angle_in_radians) {
+@@ -1414,6 +1427,7 @@ void Canvas2DRecorderContext::rotate(double angle_in_radians) {
  }
  
  void Canvas2DRecorderContext::translate(double tx, double ty) {
@@ -563,7 +558,7 @@ index c68848fc8a..930ad80ccc 100644
    // TODO(crbug.com/40153853): Investigate the performance impact of simply
    // calling the 3d version of this function
    cc::PaintCanvas* c = GetOrCreatePaintCanvas();
-@@ -1452,6 +1466,7 @@ void Canvas2DRecorderContext::transform(double m11,
+@@ -1453,6 +1467,7 @@ void Canvas2DRecorderContext::transform(double m11,
                                          double m22,
                                          double dx,
                                          double dy) {
@@ -571,7 +566,7 @@ index c68848fc8a..930ad80ccc 100644
    cc::PaintCanvas* c = GetOrCreatePaintCanvas();
    if (!c) {
      return;
-@@ -1494,6 +1509,7 @@ void Canvas2DRecorderContext::transform(double m11,
+@@ -1495,6 +1510,7 @@ void Canvas2DRecorderContext::transform(double m11,
  // |effective_zoom_| in resetTransform instead of setTransform, to avoid
  // integrating it twice if we have resetTransform and setTransform API calls.
  void Canvas2DRecorderContext::resetTransform() {
@@ -579,7 +574,7 @@ index c68848fc8a..930ad80ccc 100644
    cc::PaintCanvas* c = GetOrCreatePaintCanvas();
    if (!c) {
      return;
-@@ -1536,6 +1552,7 @@ void Canvas2DRecorderContext::setTransform(double m11,
+@@ -1537,6 +1553,7 @@ void Canvas2DRecorderContext::setTransform(double m11,
                                             double m22,
                                             double dx,
                                             double dy) {
@@ -587,7 +582,7 @@ index c68848fc8a..930ad80ccc 100644
    if (!std::isfinite(m11) || !std::isfinite(m21) || !std::isfinite(dx) ||
        !std::isfinite(m12) || !std::isfinite(m22) || !std::isfinite(dy)) {
      return;
-@@ -1574,6 +1591,7 @@ AffineTransform Canvas2DRecorderContext::GetTransform() const {
+@@ -1575,6 +1592,7 @@ AffineTransform Canvas2DRecorderContext::GetTransform() const {
  }
  
  void Canvas2DRecorderContext::beginPath() {
@@ -595,7 +590,7 @@ index c68848fc8a..930ad80ccc 100644
    Clear();
  }
  
-@@ -1679,10 +1697,12 @@ static SkPathFillType CanvasFillRuleToSkiaFillType(
+@@ -1680,10 +1698,12 @@ static SkPathFillType CanvasFillRuleToSkiaFillType(
  }
  
  void Canvas2DRecorderContext::fill() {
@@ -608,7 +603,7 @@ index c68848fc8a..930ad80ccc 100644
    FillImpl(CanvasFillRuleToSkiaFillType(winding));
  }
  
-@@ -1707,6 +1727,7 @@ void Canvas2DRecorderContext::FillPathImpl(Path2D* dom_path,
+@@ -1708,6 +1728,7 @@ void Canvas2DRecorderContext::FillPathImpl(Path2D* dom_path,
  }
  
  void Canvas2DRecorderContext::stroke() {
@@ -616,33 +611,35 @@ index c68848fc8a..930ad80ccc 100644
    DrawPathInternal(*this, CanvasRenderingContext2DState::kStrokePaintType,
                     SkPathFillType::kWinding, UsePaintCache::kDisabled);
  }
-@@ -1720,6 +1741,8 @@ void Canvas2DRecorderContext::fillRect(double x,
+@@ -1721,6 +1742,8 @@ void Canvas2DRecorderContext::fillRect(double x,
                                         double y,
                                         double width,
                                         double height) {
 +  RecordBridgeOp(10u /* Canvas2DOp::kFillRect */, std::string(),
 +                 {x, y, width, height});
-   if (!ValidateRectForCanvas(x, y, width, height)) {
+   if (!CanvasRenderingContext::ValidateRectForCanvas(x, y, width, height)) {
      return;
    }
-@@ -1783,6 +1806,7 @@ void Canvas2DRecorderContext::strokeRect(double x,
+@@ -1784,6 +1807,8 @@ void Canvas2DRecorderContext::strokeRect(double x,
                                           double y,
                                           double width,
                                           double height) {
-+  RecordBridgeOp(11u /* Canvas2DOp::kStrokeRect */, std::string(), {x, y, width, height});
-   if (!ValidateRectForCanvas(x, y, width, height)) {
++  RecordBridgeOp(11u /* Canvas2DOp::kStrokeRect */, std::string(),
++                 {x, y, width, height});
+   if (!CanvasRenderingContext::ValidateRectForCanvas(x, y, width, height)) {
      return;
    }
-@@ -1941,6 +1965,7 @@ void Canvas2DRecorderContext::clearRect(double x,
+@@ -1942,6 +1967,8 @@ void Canvas2DRecorderContext::clearRect(double x,
                                          double y,
                                          double width,
                                          double height) {
-+  RecordBridgeOp(12u /* Canvas2DOp::kClearRect */, std::string(), {x, y, width, height});
-   if (!ValidateRectForCanvas(x, y, width, height)) {
++  RecordBridgeOp(12u /* Canvas2DOp::kClearRect */, std::string(),
++                 {x, y, width, height});
+   if (!CanvasRenderingContext::ValidateRectForCanvas(x, y, width, height)) {
      return;
    }
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.cc
-index 8c8b5f5cb0..8220fe36c5 100644
+index 8c8b5f5..8220fe3 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.cc
 @@ -75,6 +75,7 @@ String StrFloatCat(StringView leading, float value, StringView trailing) {
@@ -718,7 +715,7 @@ index 8c8b5f5cb0..8220fe36c5 100644
    float y = base::saturated_cast<float>(double_y);
    float width = base::saturated_cast<float>(double_width);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.h
-index 117bddcc7b..d6ddb8afea 100644
+index 117bddc..d6ddb8a 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.h
 @@ -176,6 +176,10 @@ class MODULES_EXPORT CanvasPath : public GarbageCollectedMixin {
@@ -733,7 +730,7 @@ index 117bddcc7b..d6ddb8afea 100644
    explicit CanvasPath(const Path& path) : path_builder_(path) {
      path_builder_.SetIsVolatile(true);
 diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
-index 6f1be11038..12c9bc6729 100644
+index 834fab0..112416d 100644
 --- a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
 +++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
 @@ -32,9 +32,12 @@
@@ -749,7 +746,7 @@ index 6f1be11038..12c9bc6729 100644
  #include "third_party/blink/renderer/platform/image-encoders/image_encoder_utils.h"
  #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
  #include "third_party/blink/renderer/platform/wtf/text/base64.h"
-@@ -139,8 +142,15 @@ base::span<const uint8_t> ImageDataBuffer::PixelData() const {
+@@ -140,8 +143,15 @@ base::span<const uint8_t> ImageDataBuffer::PixelData() const {
  
  bool ImageDataBuffer::EncodeImage(const ImageEncodingMimeType mime_type,
                                    const double& quality,
@@ -768,7 +765,7 @@ index 6f1be11038..12c9bc6729 100644
  
  String ImageDataBuffer::ToDataURL(const ImageEncodingMimeType mime_type,
 diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.h b/third_party/blink/renderer/platform/graphics/image_data_buffer.h
-index 7788473df7..c9cdddc5bb 100644
+index 7788473..c9cdddc 100644
 --- a/third_party/blink/renderer/platform/graphics/image_data_buffer.h
 +++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.h
 @@ -28,6 +28,7 @@
@@ -790,7 +787,7 @@ index 7788473df7..c9cdddc5bb 100644
    base::span<const uint8_t> PixelData() const;
  
 diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
-index d5473cf30a..b0af835803 100644
+index d5473cf..b0af835 100644
 --- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
 +++ b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
 @@ -4,9 +4,12 @@
@@ -1073,7 +1070,7 @@ index d5473cf30a..b0af835803 100644
  
  }  // namespace blink
 diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.h b/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
-index c7edd4dbeb..c08c75400b 100644
+index c7edd4d..c08c754 100644
 --- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
 +++ b/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
 @@ -38,7 +38,15 @@ class PLATFORM_EXPORT StaticBitmapImage : public Image {
@@ -1094,7 +1091,7 @@ index c7edd4dbeb..c08c75400b 100644
    bool IsStaticBitmapImage() const override { return true; }
  
 diff --git a/third_party/blink/renderer/platform/image-encoders/image_encoder.cc b/third_party/blink/renderer/platform/image-encoders/image_encoder.cc
-index 75347647cc..bb01d416b4 100644
+index 7534764..bb01d41 100644
 --- a/third_party/blink/renderer/platform/image-encoders/image_encoder.cc
 +++ b/third_party/blink/renderer/platform/image-encoders/image_encoder.cc
 @@ -45,10 +45,14 @@ bool ImageEncoder::Encode(Vector<unsigned char>* dst,
@@ -1116,7 +1113,7 @@ index 75347647cc..bb01d416b4 100644
    switch (mime_type) {
      case kMimeTypeJpeg: {
 diff --git a/third_party/blink/renderer/platform/image-encoders/image_encoder.h b/third_party/blink/renderer/platform/image-encoders/image_encoder.h
-index e81e7a554e..7add2a6a75 100644
+index 8bc96bf..ffe3395 100644
 --- a/third_party/blink/renderer/platform/image-encoders/image_encoder.h
 +++ b/third_party/blink/renderer/platform/image-encoders/image_encoder.h
 @@ -5,6 +5,8 @@

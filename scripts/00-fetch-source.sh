@@ -71,6 +71,19 @@ if [ "$TARGET" = mac ]; then
   # Rust symlink layout Chromium's rust bootstrap expects.
   rust_name="$([ "$host_arch" = arm64 ] && echo aarch64-apple-darwin || echo x86_64-apple-darwin)"
   rust_dir="$SRC/third_party/rust-toolchain"
+
+  # Chromium 157's Crubit needs the rustc-dev component, whose archive has a
+  # two-component prefix (rustc-dev-nightly-*/rustc-dev). downloads.py's generic
+  # unpack leaves its sysroot lib empty here, so re-extract it explicitly.
+  rustcdev_tar="$(awk '/^\[rustc-dev\]/{f=1} f&&/^download_filename/{sub(/^download_filename *= */,""); print; exit}' "$WORK/$OVERLAY/downloads-$host_arch.ini")"
+  if [ -n "$rustcdev_tar" ] && [ -f "$WORK/download_cache/$rustcdev_tar" ]; then
+    rustcdev_tmp="$(mktemp -d)"
+    tar -xJf "$WORK/download_cache/$rustcdev_tar" -C "$rustcdev_tmp"
+    rm -rf "$rust_dir/rustc-dev"
+    mkdir -p "$rust_dir/rustc-dev"
+    cp -R "$rustcdev_tmp"/*/rustc-dev/. "$rust_dir/rustc-dev/"
+    rm -rf "$rustcdev_tmp"
+  fi
   rust_bin_dir="$rust_dir/bin"
   rust_lib_dir="$rust_dir/rust-std-$rust_name/lib/rustlib/$rust_name/lib"
   rustc_lib_dir="$rust_dir/rustc/lib/rustlib/$rust_name/lib"
@@ -80,6 +93,20 @@ if [ "$TARGET" = mac ]; then
   ln -sf "$rust_dir/rustfmt-preview/bin/rustfmt" "$rust_bin_dir/rustfmt"
   ln -sfn "$rust_lib_dir" "$rustc_lib_dir"
   ln -sfn "$rust_dir/rustc/lib" "$rust_dir/rustfmt-preview/lib"
+
+  # Chromium 157: Crubit builds cc_bindings_from_rs against rustc_private, so the
+  # rustc-dev crates and libLLVM must be moved into the host sysroot and the
+  # toolchain root must be usable as a sysroot. The 156 overlay has neither
+  # directory, so both steps are conditional.
+  rm -rf "$rust_dir/lib/rustlib"
+  ln -sfn "$rust_dir/rustc/lib/rustlib" "$rust_dir/lib/rustlib"
+  if [ -d "$rust_dir/rustc-dev/lib/rustlib/$rust_name/lib" ]; then
+    for f in "$rust_dir/rustc-dev/lib/rustlib/$rust_name/lib"/*; do
+      [ -e "$f" ] && mv "$f" "$rust_lib_dir/"
+    done
+  fi
+  llvm_dylib="$rust_dir/llvm-tools-preview/lib/rustlib/$rust_name/lib/libLLVM.dylib"
+  [ -f "$llvm_dylib" ] && mv "$llvm_dylib" "$rust_lib_dir/libLLVM.dylib"
 
   # LLVM ships install_name_tool as llvm-install-name-tool.
   ln -sf llvm-install-name-tool \
