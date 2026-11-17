@@ -63,7 +63,8 @@ fi
 python3 -m py_compile tools/*.py || err "py_compile"
 for t in tools/stealth_audit.py tools/fingerprint_selftest.py tools/site_checks.py; do
   [ -f "$t" ] || continue
-  python3 "$t" --help >/dev/null || err "$t --help"
+  [ -x "$t" ] || err "$t is not executable"
+  "./$t" --help >/dev/null || err "$t --help"
 done
 
 # --- workflows parse ----------------------------------------------------------------
