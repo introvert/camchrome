@@ -58,7 +58,7 @@ The `sites` job runs only when you tick **run_sites**. It needs:
 | Persona validator | `chrome --clearcote-validate-persona=64` (974) | 64 derived personas satisfy every invariant |
 | Relay self-test | `socks5_udp_relay_selftest` via `tools/socks5_udp_proxy.py` (990) | named origins and proxies round-trip; refusing or unreachable proxies fail the connect |
 | Fingerprint self-test | `tools/fingerprint_selftest.py` for the host, Windows and Android personas | no FAIL |
-| Network self-test | `tools/network_selftest.py` | SOCKS5 and HTTP proxy auth, QUIC over the relay, WebRTC exit IP via the relay, humanized click, rect/shadow checks, no-farble, portable profile |
+| Network self-test | `tools/network_selftest.py` | SOCKS5 and HTTP proxy auth, QUIC over the relay, WebRTC exit IP via the relay, humanized click/typing/drag/scroll, rect/shadow checks, no-farble, portable profile |
 | Site matrix (optional) | `tools/site_checks.py --socks5-udp` | the pass conditions in [TEST-MATRIX.md](TEST-MATRIX.md) |
 
 Reports are uploaded as workflow artifacts: `camchrome-linux-x64` (the browser plus

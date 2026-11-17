@@ -13,7 +13,7 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 |---|---|---|
 | ungoogled-chromium base (Linux, Windows) | `157.0.8103.78-1` | pinned in `UPSTREAM` |
 | ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | pinned, built and audited on macOS arm64 |
-| Fingerprint patches (`patches/`) | 69 patches | verified against 157: built on macOS; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
+| Fingerprint patches (`patches/`) | 70 patches | verified against 157: built on macOS; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
 | Clearcote stealth audit | 365 checks | **100/100 · 236/236 scored checks agree · 0 findings** |
 
 The shipped and audited binary is Chromium `157.0.8103.78` — the latest ungoogled-chromium
@@ -24,7 +24,7 @@ Linux binary has been linked or audited yet. Windows is not ported.
 The patches in `patches/` come from
 [Clearcote](https://github.com/clearcotelabs/clearcote-browser) at commit
 `ac40bdc` (BSD-3-Clause; see `LICENSE.clearcote` and `CREDITS.md`), rebased from 151 to
-157 and extended with patches 986–992 (see below). They cover canvas, WebGL, WebGPU,
+157 and extended with patches 986–993 (see below). They cover canvas, WebGL, WebGPU,
 audio, fonts, GPU info, screen, timezone/locale, WebRTC, client hints, `navigator.webdriver`,
 headless and CDP `Runtime.enable` signals, and more.
 
@@ -62,6 +62,18 @@ locally with `tools/socks5_udp_proxy.py` (a SOCKS5 proxy with UDP ASSOCIATE).
 
 Launch the window phone-sized so the layout viewport matches the persona screen, e.g.
 `--window-size=412,915` for the Pixel 7 row.
+
+### What 993 adds (human input)
+
+| Patch | Fix |
+|---|---|
+| `993-humanized-typing-scroll-drag` | `Browser.humanizedType`, `Browser.humanizedScroll` and `Browser.humanizedDrag` next to 130's `humanizedClick`: human typing rhythm with Shift handling and corrected typos, per-OS wheel/trackpad/swipe scrolling, and drags, all as trusted input without attaching to the page |
+
+```python
+browser.call("Browser.humanizedClickSelector", {"targetId": tid, "selector": "#email"})
+browser.call("Browser.humanizedType", {"targetId": tid, "text": "me@example.com", "typoRate": 0.03})
+browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
+```
 
 ## Customizing the persona
 

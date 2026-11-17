@@ -67,3 +67,4 @@
 990-quic-over-socks5-udp.patch
 991-webrtc-relay-exit-ip.patch
 992-android-persona-mobile-behaviour.patch
+993-humanized-typing-scroll-drag.patch

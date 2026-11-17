@@ -1,0 +1,1112 @@
+# 993-humanized-typing-scroll-drag.patch
+#
+# camchrome: the human input engine beyond clicks. 130 added Browser.humanizedClick (a
+# Bezier/min-jerk pointer path with tremor and eased timing, routed as real input). This adds
+# three browser-level CDP commands on the same principle -- events are built as WebInputEvents
+# and routed through the browser's input path, so pages see isTrusted input, no debugger is
+# attached to the page, and navigator.webdriver stays false:
+#
+#   Browser.humanizedType   {targetId, text, cpm?, typoRate?}
+#       Per-key RawKeyDown/Char/KeyUp with log-normal inter-key gaps, 40-170 ms dwell and
+#       natural rollover; Shift is pressed before and released after capitals and symbols
+#       (held across runs of them); longer gaps after spaces, punctuation and newlines; a rare
+#       thinking pause; optional neighbouring-key typos noticed and fixed with Backspace.
+#       Text outside the US layout is committed as IME text. Keys go to the focused widget,
+#       including out-of-process iframes.
+#
+#   Browser.humanizedScroll {targetId, x?, y?, deltaX?, deltaY, style?}
+#       Reaches (x, y) first, then scrolls. style "auto" follows the persona OS: wheel notches
+#       for Windows (100 px) and Linux (120 px) in flicks of 2-6 with began/changed/ended
+#       phases as Aura sends them; a macOS trackpad gesture (precise deltas, bell-shaped
+#       stroke, decaying momentum phase); finger swipes for Android (touch, via 992).
+#
+#   Browser.humanizedDrag   {targetId, fromX, fromY, toX, toY, duration?}
+#       Reach, press, human path with the button held, short hold, release. A touch swipe on
+#       an Android persona.
+#
+# All three continue from where the previous humanized pointer move ended (130's per-target
+# cursor), so a script's pointer never teleports.
+#
+# Tests: tools/network_selftest.py (group "page") types into an input, checks trusted keys,
+# Shift on capitals and uneven gaps, corrected typos, a drag onto a target and wheel scrolling.
+--- a/third_party/blink/public/devtools_protocol/domains/Browser.pdl
++++ b/third_party/blink/public/devtools_protocol/domains/Browser.pdl
+@@ -401,6 +401,48 @@
+       number x
+       number y
+ 
++  # camchrome: type text into whatever has focus in the target with human
++  # timing: per-key down/up with dwell and rollover, Shift held for capitals
++  # and symbols, longer gaps after spaces and punctuation, occasional pauses
++  # and (optionally) a neighbouring-key typo corrected with Backspace.
++  # Characters outside the US layout are committed as IME text. Browser-level
++  # like humanizedClick: no debugger attach, trusted events.
++  experimental command humanizedType
++    parameters
++      string targetId
++      string text
++      # Characters per minute (default 300, about 60 words per minute).
++      optional number cpm
++      # Chance per letter of a corrected typo, 0 to 0.5 (default 0).
++      optional number typoRate
++
++  # camchrome: scroll like a person. Moves the pointer to (x, y) first (default:
++  # where the last humanized move ended), then scrolls by (deltaX, deltaY) CSS
++  # px; positive deltaY scrolls down. style "auto" (default) follows the
++  # persona OS: "trackpad" (precise deltas, momentum) for macOS, "swipe"
++  # (finger drags, touch on an Android persona) for Android, "wheel" (100 px
++  # notches on Windows, 120 px on Linux, in flicks) otherwise.
++  experimental command humanizedScroll
++    parameters
++      string targetId
++      optional number x
++      optional number y
++      optional number deltaX
++      number deltaY
++      optional string style
++
++  # camchrome: press at (fromX, fromY), follow a human path to (toX, toY) and
++  # release. On an Android persona this is a touch swipe.
++  experimental command humanizedDrag
++    parameters
++      string targetId
++      number fromX
++      number fromY
++      number toX
++      number toY
++      # Seconds for the pressed part of the move (default 0.5).
++      optional number duration
++
+   # clearcote: run a native in-browser AI agent task. Drives Chrome's Actor
+   # framework + AIPageContent with a user-configured OpenAI-compatible LLM
+   # (e.g. OpenRouter -- see --agent-llm-url / --agent-llm-key / --agent-model).
+--- a/content/browser/devtools/protocol_config.json
++++ b/content/browser/devtools/protocol_config.json
+@@ -19,8 +19,8 @@
+             },
+             {
+                 "domain": "Browser",
+-                "include": ["getVersion", "getHistograms", "getHistogram", "getBrowserCommandLine", "grantPermissions", "setDownloadBehavior", "cancelDownload", "resetPermissions", "crash", "crashGpuProcess", "setPermission", "getGlobalPrivacyControl", "setGlobalPrivacyControl", "addMockCamera", "humanizedClick", "humanizedClickSelector", "agentRunTask"],
+-                "async": ["grantPermissions", "resetPermissions", "setPermission", "humanizedClick", "humanizedClickSelector", "agentRunTask"]
++                "include": ["getVersion", "getHistograms", "getHistogram", "getBrowserCommandLine", "grantPermissions", "setDownloadBehavior", "cancelDownload", "resetPermissions", "crash", "crashGpuProcess", "setPermission", "getGlobalPrivacyControl", "setGlobalPrivacyControl", "addMockCamera", "humanizedClick", "humanizedClickSelector", "humanizedType", "humanizedScroll", "humanizedDrag", "agentRunTask"],
++                "async": ["grantPermissions", "resetPermissions", "setPermission", "humanizedClick", "humanizedClickSelector", "humanizedType", "humanizedScroll", "humanizedDrag", "agentRunTask"]
+             },
+             {
+                 "domain": "DOM",
+--- a/content/browser/devtools/protocol/browser_handler.h
++++ b/content/browser/devtools/protocol/browser_handler.h
+@@ -121,6 +121,26 @@
+       std::optional<bool> in_no_click,
+       std::optional<bool> in_visualize,
+       std::unique_ptr<HumanizedClickSelectorCallback> callback) override;
++  // camchrome: human typing, scrolling and dragging (humanized_input.h).
++  void HumanizedType(const std::string& in_target_id,
++                     const std::string& in_text,
++                     std::optional<double> in_cpm,
++                     std::optional<double> in_typo_rate,
++                     std::unique_ptr<HumanizedTypeCallback> callback) override;
++  void HumanizedScroll(const std::string& in_target_id,
++                       std::optional<double> in_x,
++                       std::optional<double> in_y,
++                       std::optional<double> in_delta_x,
++                       double in_delta_y,
++                       std::optional<std::string> in_style,
++                       std::unique_ptr<HumanizedScrollCallback> callback) override;
++  void HumanizedDrag(const std::string& in_target_id,
++                     double in_from_x,
++                     double in_from_y,
++                     double in_to_x,
++                     double in_to_y,
++                     std::optional<double> in_duration,
++                     std::unique_ptr<HumanizedDragCallback> callback) override;
+   // clearcote: native in-browser AI agent task (see Browser.agentRunTask).
+   void AgentRunTask(const std::string& in_target_id,
+                     const std::string& in_goal,
+--- a/content/browser/devtools/protocol/browser_handler.cc
++++ b/content/browser/devtools/protocol/browser_handler.cc
+@@ -34,6 +34,7 @@
+ #include "content/browser/devtools/devtools_manager.h"
+ #include "content/browser/devtools/devtools_session.h"
+ #include "content/browser/devtools/protocol/devtools_download_manager_delegate.h"
++#include "content/browser/devtools/protocol/humanized_input.h"
+ #include <map>
+ 
+ #include "base/no_destructor.h"
+@@ -1230,6 +1231,129 @@
+       10);
+ }
+ 
++namespace {
++
++// The root widget of a target's page, or an error for the callback.
++base::WeakPtr<RenderWidgetHostImpl> HumanizedRoot(const std::string& target_id,
++                                                  std::string* error) {
++  scoped_refptr<DevToolsAgentHost> host = DevToolsAgentHost::GetForId(target_id);
++  WebContents* web_contents = host ? host->GetWebContents() : nullptr;
++  RenderWidgetHost* rwh =
++      web_contents && web_contents->GetRenderWidgetHostView()
++          ? web_contents->GetRenderWidgetHostView()->GetRenderWidgetHost()
++          : nullptr;
++  if (!rwh) {
++    *error = !host ? "No target with given targetId"
++                   : !web_contents ? "Target has no WebContents"
++                                   : "No active RenderWidgetHost";
++    return nullptr;
++  }
++  return static_cast<RenderWidgetHostImpl*>(rwh)->GetWeakPtr();
++}
++
++template <typename Callback>
++HumanizedDone AnswerWhenDone(std::unique_ptr<Callback> callback) {
++  return base::BindOnce(
++      [](std::unique_ptr<Callback> cb, const std::string& error) {
++        if (error.empty()) {
++          cb->sendSuccess();
++        } else {
++          cb->sendFailure(Response::ServerError(error));
++        }
++      },
++      std::move(callback));
++}
++
++}  // namespace
++
++void BrowserHandler::HumanizedType(
++    const std::string& in_target_id,
++    const std::string& in_text,
++    std::optional<double> in_cpm,
++    std::optional<double> in_typo_rate,
++    std::unique_ptr<HumanizedTypeCallback> callback) {
++  std::string error;
++  base::WeakPtr<RenderWidgetHostImpl> root = HumanizedRoot(in_target_id, &error);
++  if (!root) {
++    callback->sendFailure(Response::InvalidParams(error));
++    return;
++  }
++  HumanizedTypeOptions options;
++  options.cpm = in_cpm.value_or(options.cpm);
++  options.typo_rate = in_typo_rate.value_or(options.typo_rate);
++  StartHumanizedType(std::move(root), in_text, options,
++                     AnswerWhenDone(std::move(callback)));
++}
++
++void BrowserHandler::HumanizedScroll(
++    const std::string& in_target_id,
++    std::optional<double> in_x,
++    std::optional<double> in_y,
++    std::optional<double> in_delta_x,
++    double in_delta_y,
++    std::optional<std::string> in_style,
++    std::unique_ptr<HumanizedScrollCallback> callback) {
++  std::string error;
++  base::WeakPtr<RenderWidgetHostImpl> root = HumanizedRoot(in_target_id, &error);
++  if (!root) {
++    callback->sendFailure(Response::InvalidParams(error));
++    return;
++  }
++  const std::string style_name = in_style.value_or("auto");
++  HumanizedScrollStyle style;
++  if (style_name == "auto") {
++    style = HumanizedScrollStyle::kAuto;
++  } else if (style_name == "wheel") {
++    style = HumanizedScrollStyle::kWheel;
++  } else if (style_name == "trackpad") {
++    style = HumanizedScrollStyle::kTrackpad;
++  } else if (style_name == "swipe") {
++    style = HumanizedScrollStyle::kSwipe;
++  } else {
++    callback->sendFailure(Response::InvalidParams(
++        "style must be auto, wheel, trackpad or swipe"));
++    return;
++  }
++  gfx::PointF& cursor = LastHumanizedCursorPos(in_target_id);
++  const gfx::PointF start = cursor;
++  gfx::PointF at = start;
++  if (in_x.has_value() && in_y.has_value()) {
++    at = gfx::PointF(static_cast<float>(*in_x), static_cast<float>(*in_y));
++  } else if (start.IsOrigin() && root->GetView()) {
++    // No pointer position yet: scroll over the middle of the viewport.
++    const gfx::Size size = root->GetView()->GetVisibleViewportSize();
++    at = gfx::PointF(size.width() / 2.0f, size.height() / 2.0f);
++  }
++  cursor = at;
++  StartHumanizedScroll(std::move(root), start, at, in_delta_x.value_or(0),
++                       in_delta_y, style, AnswerWhenDone(std::move(callback)));
++}
++
++void BrowserHandler::HumanizedDrag(
++    const std::string& in_target_id,
++    double in_from_x,
++    double in_from_y,
++    double in_to_x,
++    double in_to_y,
++    std::optional<double> in_duration,
++    std::unique_ptr<HumanizedDragCallback> callback) {
++  std::string error;
++  base::WeakPtr<RenderWidgetHostImpl> root = HumanizedRoot(in_target_id, &error);
++  if (!root) {
++    callback->sendFailure(Response::InvalidParams(error));
++    return;
++  }
++  gfx::PointF& cursor = LastHumanizedCursorPos(in_target_id);
++  const gfx::PointF start = cursor;
++  const gfx::PointF to(static_cast<float>(in_to_x), static_cast<float>(in_to_y));
++  cursor = to;
++  StartHumanizedDrag(
++      std::move(root), start,
++      gfx::PointF(static_cast<float>(in_from_x), static_cast<float>(in_from_y)),
++      to, std::clamp(in_duration.value_or(0.5), 0.05, 10.0),
++      AnswerWhenDone(std::move(callback)));
++}
++
+ void BrowserHandler::AgentRunTask(
+     const std::string& in_target_id,
+     const std::string& in_goal,
+--- a/content/browser/BUILD.gn
++++ b/content/browser/BUILD.gn
+@@ -839,6 +839,8 @@
+     "devtools/protocol/background_service_handler.h",
+     "devtools/protocol/browser_handler.cc",
+     "devtools/protocol/browser_handler.h",
++    "devtools/protocol/humanized_input.cc",
++    "devtools/protocol/humanized_input.h",
+     "devtools/protocol/humanized_cursor_overlay_mac.h",
+     "devtools/protocol/debugger_handler.cc",
+     "devtools/protocol/debugger_handler.h",
+--- /dev/null
++++ b/content/browser/devtools/protocol/humanized_input.h
+@@ -0,0 +1,76 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CONTENT_BROWSER_DEVTOOLS_PROTOCOL_HUMANIZED_INPUT_H_
++#define CONTENT_BROWSER_DEVTOOLS_PROTOCOL_HUMANIZED_INPUT_H_
++
++#include <string>
++
++#include "base/functional/callback.h"
++#include "base/memory/weak_ptr.h"
++#include "ui/gfx/geometry/point_f.h"
++
++namespace content {
++
++class RenderWidgetHostImpl;
++
++namespace protocol {
++
++// camchrome (993): the human input engine behind Browser.humanizedType,
++// Browser.humanizedScroll and Browser.humanizedDrag. Like humanizedClick (130),
++// every event is built here as real WebInputEvents and routed through the
++// browser's input path (no debugger marker), so pages see isTrusted input with
++// human timing. Each Start* call owns itself until `done` runs; `done` gets an
++// empty string on success or an error message.
++using HumanizedDone = base::OnceCallback<void(const std::string& error)>;
++
++struct HumanizedTypeOptions {
++  // Characters per minute; 300 is about 60 words per minute.
++  double cpm = 300;
++  // Chance per letter of hitting a neighbouring key first, then correcting it
++  // with Backspace. 0 disables typos.
++  double typo_rate = 0;
++};
++
++// Types `text` (UTF-8) into whatever has focus in the page: per-key down/up
++// with dwell and rollover, Shift held for capitals and symbols, longer gaps
++// after spaces and punctuation, occasional pauses, optional corrected typos.
++// Characters outside the US layout are committed as IME text.
++void StartHumanizedType(base::WeakPtr<RenderWidgetHostImpl> root,
++                        const std::string& text,
++                        const HumanizedTypeOptions& options,
++                        HumanizedDone done);
++
++// How a scroll is produced. kAuto picks from the persona platform: trackpad
++// for macOS, a finger swipe for Android, wheel notches otherwise.
++enum class HumanizedScrollStyle { kAuto, kWheel, kTrackpad, kSwipe };
++
++// Moves the pointer from `cursor` to `at` (if they differ), then scrolls by
++// (delta_x, delta_y) CSS px (positive delta_y scrolls the page down).
++// Wheel: notches of 100 px (Windows personas) or 120 px (Linux) in flicks with
++// began/changed/ended phases. Trackpad: precise deltas with a gesture and a
++// decaying momentum phase. Swipe: finger drags (touch on an Android persona,
++// see 992), each at most half the viewport.
++void StartHumanizedScroll(base::WeakPtr<RenderWidgetHostImpl> root,
++                          gfx::PointF cursor,
++                          gfx::PointF at,
++                          double delta_x,
++                          double delta_y,
++                          HumanizedScrollStyle style,
++                          HumanizedDone done);
++
++// Moves the pointer from `cursor` to `from`, presses, follows a human path to
++// `to` over `duration_seconds`, holds briefly and releases. On an Android
++// persona the emulator turns this into a touch swipe.
++void StartHumanizedDrag(base::WeakPtr<RenderWidgetHostImpl> root,
++                        gfx::PointF cursor,
++                        gfx::PointF from,
++                        gfx::PointF to,
++                        double duration_seconds,
++                        HumanizedDone done);
++
++}  // namespace protocol
++}  // namespace content
++
++#endif  // CONTENT_BROWSER_DEVTOOLS_PROTOCOL_HUMANIZED_INPUT_H_
+--- /dev/null
++++ b/content/browser/devtools/protocol/humanized_input.cc
+@@ -0,0 +1,755 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "content/browser/devtools/protocol/humanized_input.h"
++
++#include <algorithm>
++#include <cmath>
++#include <optional>
++#include <utility>
++#include <variant>
++#include <vector>
++
++#include "base/functional/bind.h"
++#include "base/rand_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/time/time.h"
++#include "base/timer/timer.h"
++#include "build/build_config.h"
++#include "components/input/native_web_keyboard_event.h"
++#include "components/input/render_widget_host_input_event_router.h"
++#include "components/ungoogled/persona_profile.h"
++#include "content/browser/renderer_host/render_widget_host_delegate.h"
++#include "content/browser/renderer_host/render_widget_host_impl.h"
++#include "content/browser/renderer_host/render_widget_host_view_base.h"
++#include "third_party/blink/public/common/input/web_input_event.h"
++#include "third_party/blink/public/common/input/web_mouse_event.h"
++#include "third_party/blink/public/common/input/web_mouse_wheel_event.h"
++#include "ui/events/base_event_utils.h"
++#include "ui/events/event_constants.h"
++#include "ui/events/keycodes/dom/dom_code.h"
++#include "ui/events/keycodes/dom/dom_key.h"
++#include "ui/events/keycodes/dom/keycode_converter.h"
++#include "ui/events/keycodes/keyboard_code_conversion.h"
++#include "ui/events/keycodes/keyboard_codes.h"
++#include "ui/gfx/geometry/size.h"
++#include "ui/gfx/range/range.h"
++#include "ui/latency/latency_info.h"
++
++namespace content::protocol {
++
++namespace {
++
++constexpr double kPi = 3.14159265358979323846;
++
++// Normal, clamped to [lo, hi].
++double Gauss(double mean, double sigma, double lo, double hi) {
++  const double u1 = std::max(1e-9, base::RandDouble());
++  const double u2 = base::RandDouble();
++  const double z = std::sqrt(-2.0 * std::log(u1)) * std::cos(2.0 * kPi * u2);
++  return std::clamp(mean + z * sigma, lo, hi);
++}
++
++// Log-normal with the given median, clamped to [lo, hi]. Human inter-key and
++// inter-gesture gaps are right-skewed like this.
++double LogNormal(double median, double sigma, double lo, double hi) {
++  return std::clamp(median * std::exp(Gauss(0, sigma, -3, 3)), lo, hi);
++}
++
++double Uniform(double lo, double hi) {
++  return lo + (hi - lo) * base::RandDouble();
++}
++
++using Payload = std::variant<blink::WebMouseEvent,
++                             blink::WebMouseWheelEvent,
++                             input::NativeWebKeyboardEvent,
++                             std::u16string>;
++
++struct Item {
++  double at_ms;
++  Payload payload;
++};
++
++// Plays a list of timed input events through the browser input path, then
++// reports and deletes itself.
++class Timeline {
++ public:
++  static void Run(base::WeakPtr<RenderWidgetHostImpl> root,
++                  std::vector<Item> items,
++                  HumanizedDone done) {
++    std::stable_sort(items.begin(), items.end(),
++                     [](const Item& a, const Item& b) {
++                       return a.at_ms < b.at_ms;
++                     });
++    (new Timeline(std::move(root), std::move(items), std::move(done)))->Next();
++  }
++
++ private:
++  Timeline(base::WeakPtr<RenderWidgetHostImpl> root,
++           std::vector<Item> items,
++           HumanizedDone done)
++      : root_(std::move(root)),
++        items_(std::move(items)),
++        done_(std::move(done)) {}
++  ~Timeline() = default;
++
++  void Next() {
++    if (!root_) {
++      Finish("the target page went away");
++      return;
++    }
++    if (index_ >= items_.size()) {
++      Finish(std::string());
++      return;
++    }
++    Dispatch(items_[index_].payload);
++    ++index_;
++    if (index_ >= items_.size()) {
++      Finish(std::string());
++      return;
++    }
++    const double wait_ms =
++        std::max(0.0, items_[index_].at_ms - items_[index_ - 1].at_ms);
++    timer_.Start(FROM_HERE,
++                 base::Microseconds(static_cast<int64_t>(wait_ms * 1000)),
++                 base::BindOnce(&Timeline::Next, base::Unretained(this)));
++  }
++
++  RenderWidgetHostImpl* Focused() {
++    RenderWidgetHostImpl* focused =
++        root_->delegate()
++            ? root_->delegate()->GetFocusedRenderWidgetHost(root_.get())
++            : nullptr;
++    return focused ? focused : root_.get();
++  }
++
++  void Dispatch(Payload& payload) {
++    RenderWidgetHostViewBase* root_view = root_->GetView();
++    input::RenderWidgetHostInputEventRouter* router =
++        root_->delegate() ? root_->delegate()->GetInputEventRouter() : nullptr;
++    const base::TimeTicks now = ui::EventTimeForNow();
++    ui::LatencyInfo latency;
++    latency.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT);
++    // Pointer events go through the cross-process router so they reach
++    // out-of-process iframes, exactly like humanizedClick (130).
++    if (auto* mouse = std::get_if<blink::WebMouseEvent>(&payload)) {
++      mouse->SetTimeStamp(now);
++      if (root_view && router) {
++        router->RouteMouseEvent(root_view, mouse, latency);
++      } else {
++        root_->ForwardMouseEvent(*mouse);
++      }
++    } else if (auto* wheel = std::get_if<blink::WebMouseWheelEvent>(&payload)) {
++      wheel->SetTimeStamp(now);
++      if (root_view && router) {
++        router->RouteMouseWheelEvent(root_view, wheel, latency);
++      } else {
++        root_->ForwardWheelEvent(*wheel);
++      }
++    } else if (auto* key =
++                   std::get_if<input::NativeWebKeyboardEvent>(&payload)) {
++      key->SetTimeStamp(now);
++      Focused()->ForwardKeyboardEvent(*key);
++    } else if (auto* text = std::get_if<std::u16string>(&payload)) {
++      Focused()->ImeCommitText(*text, {}, gfx::Range::InvalidRange(), 0);
++    }
++  }
++
++  void Finish(const std::string& error) {
++    if (done_) {
++      std::move(done_).Run(error);
++    }
++    delete this;
++  }
++
++  base::WeakPtr<RenderWidgetHostImpl> root_;
++  std::vector<Item> items_;
++  size_t index_ = 0;
++  HumanizedDone done_;
++  base::OneShotTimer timer_;
++};
++
++// ---- pointer -------------------------------------------------------------
++
++gfx::PointF CubicBezier(const gfx::PointF& p0,
++                        const gfx::PointF& p1,
++                        const gfx::PointF& p2,
++                        const gfx::PointF& p3,
++                        double t) {
++  const double u = 1.0 - t;
++  const double a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t,
++               d = t * t * t;
++  return gfx::PointF(
++      static_cast<float>(a * p0.x() + b * p1.x() + c * p2.x() + d * p3.x()),
++      static_cast<float>(a * p0.y() + b * p1.y() + c * p2.y() + d * p3.y()));
++}
++
++blink::WebMouseEvent Mouse(blink::WebInputEvent::Type type,
++                           gfx::PointF p,
++                           bool button_down) {
++  blink::WebMouseEvent event(
++      type,
++      button_down ? blink::WebInputEvent::kLeftButtonDown
++                  : blink::WebInputEvent::kNoModifiers,
++      base::TimeTicks());
++  event.SetPositionInWidget(p.x(), p.y());
++  event.SetPositionInScreen(p.x(), p.y());
++  const bool is_button = type == blink::WebInputEvent::Type::kMouseDown ||
++                         type == blink::WebInputEvent::Type::kMouseUp;
++  event.button = (is_button || button_down)
++                     ? blink::WebMouseEvent::Button::kLeft
++                     : blink::WebMouseEvent::Button::kNoButton;
++  event.click_count = is_button ? 1 : 0;
++  return event;
++}
++
++// A reach from `a` to `b`: one or two bowed Bezier sub-movements with a
++// minimum-jerk velocity profile, a small over/undershoot and correction on
++// long moves, ~120 Hz samples with jittered spacing and sub-pixel tremor.
++// Appends mouse moves and returns the time of the last one.
++double AppendMove(std::vector<Item>& items,
++                  double t,
++                  gfx::PointF a,
++                  gfx::PointF b,
++                  double duration_s,
++                  bool button_down) {
++  const double dist = std::hypot(b.x() - a.x(), b.y() - a.y());
++  if (dist < 1.0) {
++    return t;
++  }
++  const double duration = std::clamp(duration_s, 0.08, 10.0);
++  const int steps = std::max(8, static_cast<int>(duration * 120.0));
++  const double dt = duration * 1000.0 / steps;
++  auto min_jerk = [](double s) {
++    return s * s * s * (10.0 - 15.0 * s + 6.0 * s * s);
++  };
++  auto sub = [&](gfx::PointF from, gfx::PointF to, int n) {
++    const double sdx = to.x() - from.x(), sdy = to.y() - from.y();
++    const double sdist = std::hypot(sdx, sdy);
++    const double nx = sdist > 0 ? -sdy / sdist : 0, ny = sdist > 0 ? sdx / sdist : 0;
++    const double bow = Uniform(-0.09, 0.09) * sdist;
++    const gfx::PointF c1(static_cast<float>(from.x() + sdx * 0.33 + nx * bow),
++                         static_cast<float>(from.y() + sdy * 0.33 + ny * bow));
++    const gfx::PointF c2(static_cast<float>(from.x() + sdx * 0.66 + nx * bow),
++                         static_cast<float>(from.y() + sdy * 0.66 + ny * bow));
++    for (int i = 1; i <= n; ++i) {
++      gfx::PointF p = CubicBezier(from, c1, c2, to,
++                                  min_jerk(static_cast<double>(i) / n));
++      p.set_x(static_cast<float>(p.x() + Gauss(0, 0.4, -2, 2)));
++      p.set_y(static_cast<float>(p.y() + Gauss(0, 0.4, -2, 2)));
++      t += dt * Gauss(1.0, 0.05, 0.6, 1.4);
++      items.push_back(
++          {t, Mouse(blink::WebInputEvent::Type::kMouseMove, p, button_down)});
++    }
++  };
++  if (dist > 60.0) {
++    const double frac = Uniform(0.82, 0.96);
++    const double spread = std::min(14.0, dist * 0.05);
++    const gfx::PointF over(
++        static_cast<float>(a.x() + (b.x() - a.x()) * frac + Uniform(-1, 1) * spread),
++        static_cast<float>(a.y() + (b.y() - a.y()) * frac + Uniform(-1, 1) * spread));
++    const int n1 = std::max(4, static_cast<int>(steps * 0.7));
++    sub(a, over, n1);
++    sub(over, b, std::max(3, steps - n1));
++  } else {
++    sub(a, b, steps);
++  }
++  t += dt;
++  items.push_back(
++      {t, Mouse(blink::WebInputEvent::Type::kMouseMove, b, button_down)});
++  return t;
++}
++
++// Fitts-like reach time for an approach move.
++double ReachSeconds(gfx::PointF a, gfx::PointF b) {
++  const double dist = std::hypot(b.x() - a.x(), b.y() - a.y());
++  return std::clamp(0.22 + 0.11 * std::log2(1.0 + dist / 18.0), 0.2, 1.2) *
++         Gauss(1.0, 0.1, 0.75, 1.3);
++}
++
++// Press at `from`, follow a path to `to`, release. Returns the release time.
++double AppendDrag(std::vector<Item>& items,
++                  double t,
++                  gfx::PointF from,
++                  gfx::PointF to,
++                  double duration_s) {
++  items.push_back({t, Mouse(blink::WebInputEvent::Type::kMouseDown, from, false)});
++  t += Gauss(70, 25, 25, 160);  // settle before moving
++  t = AppendMove(items, t, from, to, duration_s, /*button_down=*/true);
++  t += Gauss(60, 25, 15, 160);  // hold at the end
++  items.push_back({t, Mouse(blink::WebInputEvent::Type::kMouseUp, to, false)});
++  return t;
++}
++
++// ---- keyboard ------------------------------------------------------------
++
++input::NativeWebKeyboardEvent Key(blink::WebInputEvent::Type type,
++                                  int modifiers,
++                                  ui::DomCode code,
++                                  ui::DomKey dom_key,
++                                  char16_t text,
++                                  char16_t unmodified) {
++  input::NativeWebKeyboardEvent event(type, modifiers, base::TimeTicks());
++  event.windows_key_code = ui::DomCodeToUsLayoutKeyboardCode(code);
++  event.native_key_code = ui::KeycodeConverter::DomCodeToNativeKeycode(code);
++  event.dom_code = static_cast<int>(code);
++  event.dom_key = static_cast<int>(dom_key);
++  if (text) {
++    event.text[0] = text;
++    event.unmodified_text[0] = unmodified;
++  }
++  // No native event behind it: don't hand an unhandled key back to the
++  // browser's accelerator handling.
++  event.skip_if_unhandled = true;
++  return event;
++}
++
++struct UsKey {
++  ui::DomCode code;
++  bool shift;
++  char16_t text;        // what the key types (0 for none)
++  char16_t unmodified;  // the same key without Shift
++};
++
++std::optional<UsKey> UsKeyFor(char16_t c) {
++  if (c == u'\n' || c == u'\r') {
++    return UsKey{ui::DomCode::ENTER, false, u'\r', u'\r'};
++  }
++  if (c == u'\t') {
++    return UsKey{ui::DomCode::TAB, false, u'\t', u'\t'};
++  }
++  if (c < 0x20 || c > 0x7e) {
++    return std::nullopt;
++  }
++  const ui::DomCode code =
++      ui::UsLayoutDomKeyToDomCode(ui::DomKey::FromCharacter(c));
++  if (code == ui::DomCode::NONE) {
++    return std::nullopt;
++  }
++  const char16_t plain = ui::DomCodeToUsLayoutCharacter(code, ui::EF_NONE);
++  if (plain == c) {
++    return UsKey{code, false, c, c};
++  }
++  if (ui::DomCodeToUsLayoutCharacter(code, ui::EF_SHIFT_DOWN) == c) {
++    return UsKey{code, true, c, plain};
++  }
++  return std::nullopt;
++}
++
++// A neighbouring key on a QWERTY board, same case; 0 if `c` is not a letter.
++char16_t Neighbour(char16_t c) {
++  static constexpr const char* kRows[] = {"qwertyuiop", "asdfghjkl",
++                                          "zxcvbnm"};
++  const bool upper = c >= u'A' && c <= u'Z';
++  const char lower = static_cast<char>(upper ? c - u'A' + u'a' : c);
++  for (const char* row : kRows) {
++    const std::string_view r(row);
++    const size_t i = r.find(lower);
++    if (i == std::string_view::npos) {
++      continue;
++    }
++    size_t j;
++    if (i == 0) {
++      j = 1;
++    } else if (i + 1 == r.size()) {
++      j = i - 1;
++    } else {
++      j = base::RandDouble() < 0.5 ? i - 1 : i + 1;
++    }
++    const char n = r[j];
++    return upper ? static_cast<char16_t>(n - 'a' + 'A')
++                 : static_cast<char16_t>(n);
++  }
++  return 0;
++}
++
++class TypeBuilder {
++ public:
++  explicit TypeBuilder(double cpm) : median_gap_ms_(60000.0 / cpm) {}
++
++  // Presses and releases `key`; Shift is pressed first if needed and released
++  // after unless `keep_shift`. Returns nothing; advances `t_`.
++  void Press(const UsKey& key, bool keep_shift) {
++    if (key.shift && !shift_down_) {
++      items_.push_back({t_, Key(blink::WebInputEvent::Type::kRawKeyDown,
++                                blink::WebInputEvent::kShiftKey |
++                                    blink::WebInputEvent::kIsLeft,
++                                ui::DomCode::SHIFT_LEFT, ui::DomKey::SHIFT, 0,
++                                0)});
++      shift_down_ = true;
++      t_ += Gauss(70, 20, 30, 140);
++    } else if (!key.shift && shift_down_) {
++      ReleaseShift();
++    }
++    const int mods = shift_down_ ? blink::WebInputEvent::kShiftKey
++                                 : blink::WebInputEvent::kNoModifiers;
++    const ui::DomKey dom_key =
++        key.code == ui::DomCode::ENTER  ? ui::DomKey::ENTER
++        : key.code == ui::DomCode::TAB  ? ui::DomKey::TAB
++                                        : ui::DomKey::FromCharacter(key.text);
++    items_.push_back({t_, Key(blink::WebInputEvent::Type::kRawKeyDown, mods,
++                              key.code, dom_key, key.text, key.unmodified)});
++    items_.push_back({t_, Key(blink::WebInputEvent::Type::kChar, mods, key.code,
++                              dom_key, key.text, key.unmodified)});
++    const double up = t_ + Gauss(88, 22, 40, 170);
++    items_.push_back({up, Key(blink::WebInputEvent::Type::kKeyUp, mods,
++                              key.code, dom_key, key.text, key.unmodified)});
++    last_up_ = std::max(last_up_, up);
++    if (shift_down_ && !keep_shift) {
++      t_ = up;
++      ReleaseShift();
++    }
++  }
++
++  void Backspace() {
++    if (shift_down_) {
++      ReleaseShift();
++    }
++    items_.push_back({t_, Key(blink::WebInputEvent::Type::kRawKeyDown,
++                              blink::WebInputEvent::kNoModifiers,
++                              ui::DomCode::BACKSPACE, ui::DomKey::BACKSPACE, 0,
++                              0)});
++    const double up = t_ + Gauss(80, 20, 40, 150);
++    items_.push_back({up, Key(blink::WebInputEvent::Type::kKeyUp,
++                              blink::WebInputEvent::kNoModifiers,
++                              ui::DomCode::BACKSPACE, ui::DomKey::BACKSPACE, 0,
++                              0)});
++    last_up_ = std::max(last_up_, up);
++  }
++
++  void Commit(const std::u16string& text) {
++    if (shift_down_) {
++      ReleaseShift();
++    }
++    items_.push_back({t_, text});
++  }
++
++  // Waits a human inter-key gap after `previous`.
++  void Gap(char16_t previous, double factor = 1.0) {
++    double gap = LogNormal(median_gap_ms_, 0.35, median_gap_ms_ * 0.35,
++                           median_gap_ms_ * 6) *
++                 factor;
++    if (previous == u' ') {
++      gap *= 1.15;
++    } else if (previous == u'.' || previous == u',' || previous == u';' ||
++               previous == u':' || previous == u'!' || previous == u'?') {
++      gap *= 2.2;
++    } else if (previous == u'\n') {
++      gap *= 2.5;
++    }
++    if (base::RandDouble() < 0.015) {
++      gap += LogNormal(700, 0.5, 300, 3000);  // a pause to think
++    }
++    t_ += gap;
++  }
++
++  void Wait(double ms) { t_ += ms; }
++  double median_gap_ms() const { return median_gap_ms_; }
++
++  std::vector<Item> Take() {
++    if (shift_down_) {
++      ReleaseShift();
++    }
++    return std::move(items_);
++  }
++
++ private:
++  void ReleaseShift() {
++    const double at = std::max(t_, last_up_) + Gauss(25, 12, 5, 70);
++    items_.push_back({at, Key(blink::WebInputEvent::Type::kKeyUp,
++                              blink::WebInputEvent::kIsLeft,
++                              ui::DomCode::SHIFT_LEFT, ui::DomKey::SHIFT, 0,
++                              0)});
++    shift_down_ = false;
++    // The next key must not go down while Shift is still held.
++    t_ = std::max(t_, at + Gauss(20, 8, 5, 50));
++  }
++
++  const double median_gap_ms_;
++  double t_ = 0;
++  double last_up_ = 0;
++  bool shift_down_ = false;
++  std::vector<Item> items_;
++};
++
++// The OS whose input devices the page should see: the persona's, else the
++// host's.
++ungoogled::PersonaPlatform InputPlatform() {
++  ungoogled::PersonaPlatform p = ungoogled::GetPersonaPlatform();
++  if (p != ungoogled::PersonaPlatform::kUnset) {
++    return p;
++  }
++#if BUILDFLAG(IS_WIN)
++  return ungoogled::PersonaPlatform::kWindows;
++#elif BUILDFLAG(IS_MAC)
++  return ungoogled::PersonaPlatform::kMacOS;
++#elif BUILDFLAG(IS_ANDROID)
++  return ungoogled::PersonaPlatform::kAndroid;
++#else
++  return ungoogled::PersonaPlatform::kLinux;
++#endif
++}
++
++blink::WebMouseWheelEvent Wheel(gfx::PointF p,
++                                double dx,
++                                double dy,
++                                double ticks_x,
++                                double ticks_y,
++                                blink::WebMouseWheelEvent::Phase phase,
++                                blink::WebMouseWheelEvent::Phase momentum,
++                                bool precise) {
++  blink::WebMouseWheelEvent event(blink::WebInputEvent::Type::kMouseWheel,
++                                  blink::WebInputEvent::kNoModifiers,
++                                  base::TimeTicks());
++  event.SetPositionInWidget(p.x(), p.y());
++  event.SetPositionInScreen(p.x(), p.y());
++  event.delta_x = static_cast<float>(dx);
++  event.delta_y = static_cast<float>(dy);
++  event.wheel_ticks_x = static_cast<float>(ticks_x);
++  event.wheel_ticks_y = static_cast<float>(ticks_y);
++  event.phase = phase;
++  event.momentum_phase = momentum;
++  event.delta_units = precise ? ui::ScrollGranularity::kScrollByPrecisePixel
++                              : ui::ScrollGranularity::kScrollByPixel;
++  return event;
++}
++
++// Discrete wheel notches in flicks of 2-6, each flick framed by began/changed
++// and a zero-delta ended event like Aura's wheel phase handler adds.
++double AppendWheel(std::vector<Item>& items,
++                   double t,
++                   gfx::PointF at,
++                   double delta_x,
++                   double delta_y,
++                   double notch_px) {
++  using W = blink::WebMouseWheelEvent;
++  // WebMouseWheelEvent deltas are content offsets: positive scrolls up/left.
++  for (int axis = 0; axis < 2; ++axis) {
++    const double delta = axis == 0 ? delta_y : delta_x;
++    int notches = static_cast<int>(std::lround(std::fabs(delta) / notch_px));
++    const double sign = delta > 0 ? -1.0 : 1.0;
++    while (notches > 0) {
++      const int flick =
++          std::min(notches, 2 + static_cast<int>(base::RandDouble() * 5));
++      for (int i = 0; i < flick; ++i) {
++        const double d = sign * notch_px;
++        items.push_back(
++            {t, axis == 0 ? Wheel(at, 0, d, 0, sign, i == 0 ? W::kPhaseBegan : W::kPhaseChanged,
++                                  W::kPhaseNone, false)
++                          : Wheel(at, d, 0, sign, 0, i == 0 ? W::kPhaseBegan : W::kPhaseChanged,
++                                  W::kPhaseNone, false)});
++        t += Gauss(38, 14, 12, 90);
++      }
++      t += 100;  // Aura ends the wheel sequence after 100 ms without events
++      items.push_back(
++          {t, Wheel(at, 0, 0, 0, 0, W::kPhaseEnded, W::kPhaseNone, false)});
++      notches -= flick;
++      if (notches > 0) {
++        t += LogNormal(320, 0.4, 120, 1200);
++      }
++    }
++  }
++  return t;
++}
++
++// Trackpad two-finger scroll: precise deltas with a bell-shaped gesture and a
++// decaying momentum phase, split into gestures of at most ~700 px.
++double AppendTrackpad(std::vector<Item>& items,
++                      double t,
++                      gfx::PointF at,
++                      double delta_x,
++                      double delta_y) {
++  using W = blink::WebMouseWheelEvent;
++  constexpr double kPixelsPerTick = 40.0;  // macOS precise-delta tick
++  double rem_x = delta_x, rem_y = delta_y;
++  while (std::fabs(rem_x) >= 1 || std::fabs(rem_y) >= 1) {
++    const double len = std::hypot(rem_x, rem_y);
++    const double part = std::min(1.0, Uniform(450, 700) / len);
++    const double gx = rem_x * part, gy = rem_y * part;
++    rem_x -= gx;
++    rem_y -= gy;
++    // Weights: a finger stroke (sin^1.5 bell) then momentum decaying by ~0.9
++    // per frame; scaled so the whole gesture moves exactly (gx, gy).
++    const int n = 6 + static_cast<int>(base::RandDouble() * 7);
++    std::vector<double> stroke, momentum;
++    for (int i = 0; i < n; ++i) {
++      stroke.push_back(std::pow(std::sin(kPi * (i + 0.5) / n), 1.5));
++    }
++    double v = stroke[n / 2] * Uniform(0.7, 1.0);
++    const double decay = Uniform(0.88, 0.93);
++    while (v > 0.02) {
++      momentum.push_back(v);
++      v *= decay;
++    }
++    double total = 0;
++    for (double w : stroke) total += w;
++    for (double w : momentum) total += w;
++    auto emit = [&](double w, W::Phase phase, W::Phase mphase) {
++      const double dx = -gx * w / total, dy = -gy * w / total;
++      items.push_back({t, Wheel(at, dx, dy, dx / kPixelsPerTick,
++                                dy / kPixelsPerTick, phase, mphase, true)});
++      t += Gauss(16.7, 1.5, 12, 24);
++    };
++    items.push_back({t, Wheel(at, 0, 0, 0, 0, W::kPhaseMayBegin, W::kPhaseNone, true)});
++    t += Gauss(30, 10, 10, 60);
++    for (int i = 0; i < n; ++i) {
++      emit(stroke[i], i == 0 ? W::kPhaseBegan : W::kPhaseChanged, W::kPhaseNone);
++    }
++    items.push_back({t, Wheel(at, 0, 0, 0, 0, W::kPhaseEnded, W::kPhaseNone, true)});
++    t += Gauss(16.7, 1.5, 12, 24);
++    for (size_t i = 0; i < momentum.size(); ++i) {
++      emit(momentum[i], W::kPhaseNone,
++           i == 0 ? W::kPhaseBegan : W::kPhaseChanged);
++    }
++    items.push_back({t, Wheel(at, 0, 0, 0, 0, W::kPhaseNone, W::kPhaseEnded, true)});
++    if (std::fabs(rem_x) >= 1 || std::fabs(rem_y) >= 1) {
++      t += LogNormal(380, 0.35, 150, 1200);
++    }
++  }
++  return t;
++}
++
++// Finger swipes: to scroll the page down the finger moves up. Each swipe
++// covers at most 45% of the viewport and starts near `at`.
++double AppendSwipes(std::vector<Item>& items,
++                    double t,
++                    gfx::PointF at,
++                    double delta_x,
++                    double delta_y,
++                    gfx::Size viewport) {
++  const double vw = std::max(100, viewport.width());
++  const double vh = std::max(100, viewport.height());
++  double rem_x = delta_x, rem_y = delta_y;
++  while (std::fabs(rem_x) >= 2 || std::fabs(rem_y) >= 2) {
++    const double sx = std::clamp(rem_x, -0.45 * vw, 0.45 * vw);
++    const double sy = std::clamp(rem_y, -0.45 * vh, 0.45 * vh);
++    rem_x -= sx;
++    rem_y -= sy;
++    auto clampx = [&](double x) { return std::clamp(x, 8.0, vw - 8.0); };
++    auto clampy = [&](double y) { return std::clamp(y, 8.0, vh - 8.0); };
++    const gfx::PointF from(
++        static_cast<float>(clampx(at.x() + sx / 2 + Gauss(0, 6, -20, 20))),
++        static_cast<float>(clampy(at.y() + sy / 2 + Gauss(0, 6, -20, 20))));
++    const gfx::PointF to(
++        static_cast<float>(clampx(from.x() - sx + Gauss(0, 8, -25, 25))),
++        static_cast<float>(clampy(from.y() - sy)));
++    t = AppendDrag(items, t, from, to, Uniform(0.2, 0.38));
++    if (std::fabs(rem_x) >= 2 || std::fabs(rem_y) >= 2) {
++      t += LogNormal(450, 0.35, 200, 1500);
++    }
++  }
++  return t;
++}
++
++}  // namespace
++
++void StartHumanizedType(base::WeakPtr<RenderWidgetHostImpl> root,
++                        const std::string& text,
++                        const HumanizedTypeOptions& options,
++                        HumanizedDone done) {
++  const std::u16string text16 = base::UTF8ToUTF16(text);
++  TypeBuilder b(std::clamp(options.cpm, 30.0, 1500.0));
++  const double typo_rate = std::clamp(options.typo_rate, 0.0, 0.5);
++  for (size_t i = 0; i < text16.size(); ++i) {
++    const char16_t c = text16[i];
++    if (i > 0) {
++      b.Gap(text16[i - 1]);
++    }
++    const std::optional<UsKey> key = UsKeyFor(c);
++    if (!key) {
++      // Outside the US layout (accents, CJK, emoji): commit as IME text, a
++      // surrogate pair in one go.
++      size_t len = 1;
++      if (c >= 0xD800 && c <= 0xDBFF && i + 1 < text16.size()) {
++        len = 2;
++      }
++      b.Commit(text16.substr(i, len));
++      i += len - 1;
++      continue;
++    }
++    const std::optional<UsKey> next =
++        i + 1 < text16.size() ? UsKeyFor(text16[i + 1]) : std::nullopt;
++    const bool keep_shift = key->shift && next && next->shift;
++    const char16_t wrong = Neighbour(c);
++    if (wrong && typo_rate > 0 && base::RandDouble() < typo_rate) {
++      if (const std::optional<UsKey> wrong_key = UsKeyFor(wrong)) {
++        b.Press(*wrong_key, /*keep_shift=*/false);
++        b.Wait(LogNormal(280, 0.35, 120, 900));  // notice the mistake
++        b.Backspace();
++        b.Wait(LogNormal(b.median_gap_ms(), 0.3, 60, 600));
++      }
++    }
++    b.Press(*key, keep_shift);
++  }
++  Timeline::Run(std::move(root), b.Take(), std::move(done));
++}
++
++void StartHumanizedScroll(base::WeakPtr<RenderWidgetHostImpl> root,
++                          gfx::PointF cursor,
++                          gfx::PointF at,
++                          double delta_x,
++                          double delta_y,
++                          HumanizedScrollStyle style,
++                          HumanizedDone done) {
++  if (!root) {
++    std::move(done).Run("the target page went away");
++    return;
++  }
++  const ungoogled::PersonaPlatform platform = InputPlatform();
++  if (style == HumanizedScrollStyle::kAuto) {
++    style = platform == ungoogled::PersonaPlatform::kMacOS
++                ? HumanizedScrollStyle::kTrackpad
++            : platform == ungoogled::PersonaPlatform::kAndroid
++                ? HumanizedScrollStyle::kSwipe
++                : HumanizedScrollStyle::kWheel;
++  }
++  std::vector<Item> items;
++  double t = 0;
++  if (std::hypot(at.x() - cursor.x(), at.y() - cursor.y()) > 2) {
++    t = AppendMove(items, t, cursor, at, ReachSeconds(cursor, at), false);
++    t += LogNormal(160, 0.35, 60, 600);
++  }
++  switch (style) {
++    case HumanizedScrollStyle::kTrackpad:
++      AppendTrackpad(items, t, at, delta_x, delta_y);
++      break;
++    case HumanizedScrollStyle::kSwipe: {
++      const gfx::Size viewport =
++          root->GetView() ? root->GetView()->GetVisibleViewportSize()
++                          : gfx::Size(400, 800);
++      AppendSwipes(items, t, at, delta_x, delta_y, viewport);
++      break;
++    }
++    case HumanizedScrollStyle::kWheel:
++    case HumanizedScrollStyle::kAuto: {
++      // Chrome's default wheel step: 100 px on Windows (3 lines of 33.3 px),
++      // 120 px on Linux (X11/Wayland), 40 px for a macOS line wheel.
++      const double notch =
++          platform == ungoogled::PersonaPlatform::kWindows ? 100.0
++          : platform == ungoogled::PersonaPlatform::kMacOS ? 40.0
++                                                           : 120.0;
++      AppendWheel(items, t, at, delta_x, delta_y, notch);
++      break;
++    }
++  }
++  Timeline::Run(std::move(root), std::move(items), std::move(done));
++}
++
++void StartHumanizedDrag(base::WeakPtr<RenderWidgetHostImpl> root,
++                        gfx::PointF cursor,
++                        gfx::PointF from,
++                        gfx::PointF to,
++                        double duration_seconds,
++                        HumanizedDone done) {
++  std::vector<Item> items;
++  double t = 0;
++  if (std::hypot(from.x() - cursor.x(), from.y() - cursor.y()) > 2) {
++    t = AppendMove(items, t, cursor, from, ReachSeconds(cursor, from), false);
++    t += LogNormal(140, 0.35, 50, 500);
++  }
++  AppendDrag(items, t, from, to, duration_seconds);
++  Timeline::Run(std::move(root), std::move(items), std::move(done));
++}
++
++}  // namespace content::protocol

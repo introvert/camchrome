@@ -1,7 +1,7 @@
 # Clearcote patch set
 
 These are the **Clearcote fingerprint patches**, rebased by camchrome to Chromium 157, plus
-camchrome's own 986–992. They are plain unified diffs against the Chromium revision pinned in
+camchrome's own 986–993. They are plain unified diffs against the Chromium revision pinned in
 [`../UPSTREAM`](../UPSTREAM) (`PATCHES_BASE`), applied **after** the ungoogled-chromium base
 and the platform overlay (see [`../scripts/01-apply-patches.sh`](../scripts/01-apply-patches.sh)
 and the Build section of [`../README.md`](../README.md)).
@@ -96,6 +96,7 @@ crash the renderer.
 | `990-quic-over-socks5-udp` | **camchrome addition.** With `--socks5-udp` and a single SOCKS5 proxy, QUIC (HTTP/3) is carried over the proxy's UDP ASSOCIATE relay instead of being refused. The origin is never resolved locally: the QUIC job connects to a placeholder in 198.18.0.0/15 and every datagram is sent with ATYP=DOMAINNAME, so the proxy resolves it. Proxied QUIC sessions never migrate; a proxy that refuses UDP fails the QUIC job and the request stays on TCP. Also: a named relay proxy is resolved instead of falling back to a direct socket, and the relay never delivers to private/loopback/link-local destinations. Self-test target `socks5_udp_relay_selftest`. |
 | `991-webrtc-relay-exit-ip` | **camchrome addition.** With the relay on (`--socks5-udp`, SOCKS5 proxy) and no IP-literal `--webrtc-ip` (absent or `auto`), WebRTC runs real STUN through the relay, so the srflx candidate is the proxy's exit IP with nothing to configure; host candidates and the srflx related address are suppressed. An explicit `--webrtc-ip=<ip>` keeps 100's fabricated candidate. |
 | `992-android-persona-mobile-behaviour` | **camchrome addition.** An Android persona behaves like a phone. The main-frame widget turns mouse input into touch with the mobile gesture config (the DevTools device-mode path; CDP mouse events go through it too, and a DevTools client turning its own emulation off does not undo it). On a machine without orientation/motion sensors, deviceorientation and devicemotion stream a seeded model of a handset held in a hand (tilt, sway, tremor, sensor-service rounding; gravity and rotation rate agree with the angles); a real or DevTools-overridden sensor still wins. Fonts answer with the named families and aliases of AOSP 13/14 `fonts.xml`, rendered through metric clones, and desktop-only families are absent. Tests: `tools/fingerprint_selftest.py --platform android`. |
+| `993-humanized-typing-scroll-drag` | **camchrome addition.** Three browser-level CDP commands next to 130's `humanizedClick`, built as real input events and routed like it (trusted, no page debugger): `Browser.humanizedType` (per-key timing with dwell, rollover, Shift for capitals/symbols, longer gaps after punctuation, optional corrected typos, IME commit for non-US characters), `Browser.humanizedScroll` (persona-OS style: 100/120 px wheel notches in phased flicks, macOS trackpad stroke plus momentum, Android finger swipes) and `Browser.humanizedDrag` (reach, press, path, release). Tests: `tools/network_selftest.py --only page`. |
 
 `900`/`905` are Windows cross-build mechanics; `01-apply-patches.sh` skips them for the macOS target. They also apply on Linux (verified on 157), where they are inert.
 

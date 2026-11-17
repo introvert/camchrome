@@ -9,7 +9,7 @@ test covers it, and where nothing does.
 |---|---|---|---|
 | **Self-test** (`tools/fingerprint_selftest.py`, new) | Up to 53 local checks (47 on a host-platform persona; the rest depend on `--platform`, `--cores` and the like), each named after the patch it covers. Three launches (seed A twice, seed B once), two sites (`127.0.0.1` and `localhost`), probes in the window, an iframe and a dedicated worker, plus request headers recorded by its own server. | A built binary. No network. | `tools/fingerprint_selftest.py [--platform windows]` |
 | **Clearcote audit** (`tools/stealth_audit.py`) | 365 remote coherence checks, 236 scored. The acceptance test. | Network, headful, ideally a GPU. | `tools/stealth_audit.py --seed demo --interact` |
-| **Network self-test** (`tools/network_selftest.py`) | 11 local checks for the patches one page load can't reach: SOCKS5 and HTTP proxy auth, QUIC over the SOCKS5 relay (with a no-relay control), WebRTC exit IP via the relay, humanized click, rects, shadow root, no-farble, portable profile. Needs `aioquic` for QUIC. | A camchrome build; loopback only. | `tools/network_selftest.py` |
+| **Network self-test** (`tools/network_selftest.py`) | 15 local checks for the patches one page load can't reach: SOCKS5 and HTTP proxy auth, QUIC over the SOCKS5 relay (with a no-relay control), WebRTC exit IP via the relay, humanized click, typing, drag and wheel scroll, rects, shadow root, no-farble, portable profile. Needs `aioquic` for QUIC. | A camchrome build; loopback only. | `tools/network_selftest.py` |
 | **Relay self-test** (`socks5_udp_relay_selftest`) | Net-level checks of the 990 relay socket against `tools/socks5_udp_proxy.py`. Built and run in CI (`build.yml`, compile linux-x64). | Only `//net`, no browser. | `tools/socks5_udp_proxy.py --run-selftest-binary …` |
 | **Public check sites** (`tools/site_checks.py`, new) | browserleaks QUIC/JA4, Twilio WebRTC, fingerprint.com, deviceandbrowserinfo, ProxyShard checker, pixelscan, browserscan, antcpt reCAPTCHA. See [TEST-MATRIX.md](TEST-MATRIX.md). | Network, a residential proxy with SOCKS5 UDP for the QUIC/WebRTC rows. | `tools/site_checks.py --proxy socks5://… --socks5-udp …` |
 
@@ -58,6 +58,7 @@ review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
 | 110 Runtime.enable | CDP tell | indirectly (the harness uses `Runtime.evaluate`) | Automation surface | — |
 | 120 headless | headless tell | ✓ `ua-no-headless` (when run `--headless`) | Automation surface | — |
 | 130 humanized input | `Browser.humanizedClick*` CDP commands | ✓ `humanized-click` (network_selftest): trusted click on the target after ≥5 moves | Input & behaviour | — |
+| 993 humanized typing, scroll, drag | `Browser.humanizedType`, `humanizedScroll`, `humanizedDrag` | ✓ `humanized-type`, `humanized-type-corrects-typos`, `humanized-drag`, `humanized-scroll-wheel` (network_selftest) | Input & behaviour | — |
 | 140 screen | `screen.*`, outer window | ✓ `avail-within-screen`, `window-fits-screen`, `color-depth-24-or-30` | Screen & display | — |
 | 141 / 142 media queries, touch | pointer/hover, device-size | ✓ `mq-device-size-equals-screen`, `no-touch-means-fine-pointer` | Screen & display | — |
 | 145 storage quota | `storage.estimate()` | ✓ `storage-quota-present` | Capability surfaces | — |

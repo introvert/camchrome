@@ -18,6 +18,11 @@ Checks (each names the patch it covers):
   quic-socks5-no-relay        990       control: without --socks5-udp no QUIC packet leaves at all
   webrtc-relay-exit-ip        973, 991  STUN through the relay; srflx present, no host candidate
   humanized-click             130       Browser.humanizedClickSelector: trusted click after a path
+  humanized-type              993       Browser.humanizedType: trusted keys, Shift for capitals,
+                                        uneven human gaps
+  humanized-type-corrects-typos 993     typos are corrected with Backspace; the text ends right
+  humanized-drag              993       Browser.humanizedDrag: press, path, release on target
+  humanized-scroll-wheel      993       Browser.humanizedScroll: wheel notches scroll the page
   no-fake-shadow-root         960       Element.prototype has no fakeShadowRoot
   rects-not-noised            050       getClientRects()[0] equals getBoundingClientRect()
   no-farble-switch            220       --cc-no-farble: canvas reads equal across sites
@@ -65,6 +70,21 @@ window.moves = 0; window.clicks = [];
 addEventListener('mousemove', () => window.moves++);
 document.getElementById('btn').addEventListener('click', e =>
   window.clicks.push({trusted: e.isTrusted, x: e.clientX, y: e.clientY, moves: window.moves}));
+</script>
+<input id="txt" style="position:absolute;left:40px;top:120px;width:300px">
+<div id="drag" style="position:absolute;left:40px;top:200px;width:60px;height:60px;background:#ccc"></div>
+<div style="height:5000px"></div>
+<script>
+window.keys = []; window.wheels = [];
+window.drag = {down: null, moves: 0, up: null};
+addEventListener('keydown', e => keys.push({k: e.key, t: e.timeStamp, trusted: e.isTrusted,
+                                            shift: e.shiftKey}), true);
+addEventListener('wheel', e => wheels.push({dy: e.deltaY, mode: e.deltaMode, t: e.timeStamp,
+                                            trusted: e.isTrusted}), {passive: true});
+document.getElementById('drag').addEventListener('pointerdown', e =>
+  drag.down = [e.clientX, e.clientY, e.pointerType, e.isTrusted]);
+addEventListener('pointermove', e => { if (e.buttons) drag.moves++; });
+addEventListener('pointerup', e => drag.up = [e.clientX, e.clientY]);
 </script>"""
 
 
@@ -438,11 +458,72 @@ def check_page_and_input(args, rep, http, seed):
                   and clicks[0]["moves"] >= 5
                   and 400 <= clicks[0]["x"] <= 520 and 300 <= clicks[0]["y"] <= 340)
             rep.add("humanized-click", "130", ok, err or clicks)
+            check_humanized_input(rep, cdp, browser_cdp, tid)
         finally:
             browser_cdp.close()
         cdp.close()
     finally:
         b.stop()
+
+
+def browser_call(browser_cdp, method, params) -> str:
+    """Runs a Browser.* command; returns "" or the error text."""
+    try:
+        browser_cdp.call(method, params)
+        return ""
+    except RuntimeError as e:
+        return str(e)
+
+
+def check_humanized_input(rep, cdp, browser_cdp, tid):
+    """993: typing, a drag and wheel scrolling through the human input engine."""
+    import statistics
+    text = "Hello, World 42!"
+    cdp.evaluate("document.getElementById('txt').focus(); window.keys = []; 1")
+    err = browser_call(browser_cdp, "Browser.humanizedType",
+                       {"targetId": tid, "text": text, "cpm": 600})
+    time.sleep(0.3)
+    value = cdp.evaluate("document.getElementById('txt').value")
+    keys = cdp.evaluate("window.keys")
+    gaps = [b["t"] - a["t"] for a, b in zip(keys, keys[1:]) if b["k"] != "Shift"]
+    shift_ok = all(k["shift"] for k in keys if k["k"] in ("H", "W", "!"))
+    ok = (not err and value == text and keys and all(k["trusted"] for k in keys) and shift_ok
+          and len(gaps) > 5 and statistics.pstdev(gaps) > 5
+          and 30 <= statistics.median(gaps) <= 400)
+    rep.add("humanized-type", "993", ok,
+            err or {"value": value, "median_gap": gaps and statistics.median(gaps),
+                    "shift_ok": shift_ok})
+
+    cdp.evaluate("document.getElementById('txt').value = ''; window.keys = []; 1")
+    text = "quick brown foxes jump"
+    err = browser_call(browser_cdp, "Browser.humanizedType",
+                       {"targetId": tid, "text": text, "cpm": 900, "typoRate": 0.4})
+    time.sleep(0.3)
+    value = cdp.evaluate("document.getElementById('txt').value")
+    backspaces = cdp.evaluate("window.keys.filter(k => k.k === 'Backspace').length")
+    rep.add("humanized-type-corrects-typos", "993",
+            not err and value == text and backspaces >= 1,
+            err or {"value": value, "backspaces": backspaces})
+
+    err = browser_call(browser_cdp, "Browser.humanizedDrag",
+                       {"targetId": tid, "fromX": 70, "fromY": 230, "toX": 300, "toY": 260,
+                        "duration": 0.4})
+    time.sleep(0.3)
+    d = cdp.evaluate("window.drag")
+    ok = (not err and d["down"] and d["down"][3] and d["moves"] >= 5 and d["up"]
+          and abs(d["up"][0] - 300) <= 2 and abs(d["up"][1] - 260) <= 2)
+    rep.add("humanized-drag", "993", ok, err or d)
+
+    err = browser_call(browser_cdp, "Browser.humanizedScroll",
+                       {"targetId": tid, "x": 600, "y": 400, "deltaY": 600, "style": "wheel"})
+    time.sleep(1.5)
+    y = cdp.evaluate("scrollY")
+    wheels = cdp.evaluate("window.wheels")
+    notches = [w for w in wheels if w["dy"]]
+    ok = (not err and 400 <= y <= 800 and len(notches) >= 4
+          and all(w["trusted"] and w["dy"] > 0 for w in notches))
+    rep.add("humanized-scroll-wheel", "993", ok,
+            err or {"scrollY": y, "notches": [w["dy"] for w in notches]})
 
 
 def canvas_reads(args, flags, http) -> list[str]:
