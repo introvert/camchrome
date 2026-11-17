@@ -112,6 +112,10 @@ out/Default/gn gen out/Default --fail-on-unused-args
 unset CC CXX AR LDFLAGS
 [ "${GN_ONLY:-0}" = 1 ] && { echo "OK: gn gen done (GN_ONLY=1, not building)"; exit 0; }
 
+# bindgen (Rust FFI generation) refuses to run with TARGET in the environment ("saw TARGET
+# in environment, remove to avoid bindgen failures"). Keep the shell variables, drop the export.
+export -n TARGET TARGET_CPU 2>/dev/null || true
+
 # NINJA_TARGETS overrides what is built (CI uses it to compile only the patched files,
 # e.g. NINJA_TARGETS="../../components/ungoogled/persona_profile.cc^ ...").
 if [ -n "${NINJA_TARGETS:-}" ]; then
