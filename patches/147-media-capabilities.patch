@@ -120,7 +120,7 @@ index 1dea63eee6..37382ec77c 100644
 +      info->setSupported(cc.supported);
 +      info->setSmooth(cc.supported && cc.smooth);
 +      info->setPowerEfficient(cc.supported && cc.power_efficient);
-+      if (type == OperationType::kEncoding) {
++      if (type == QueryType::kWebrtcEncoding) {
 +        pending_cb->resolver->DowncastTo<MediaCapabilitiesInfo>()->Resolve(
 +            info);
 +      } else {

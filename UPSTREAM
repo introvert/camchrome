@@ -2,12 +2,14 @@
 
 # ungoogled-chromium tag -> pins the Chromium source tarball (Linux + Windows)
 UG_TAG=157.0.8103.78-1
-# Platform overlays. macOS lags: its newest tag is Chromium 156.
+# Platform overlays. macOS now publishes 157.0.8103.78-1.1; the patch series and
+# the audited build are still on the previous tag (156). Moving UGM_TAG to 157 and
+# setting PATCHES_BASE=157.0.8103.78 is the next rebase (see NOTES.md).
 UGW_TAG=157.0.8103.78-1.1
 UGM_TAG=156.0.8078.79-1.1
 
 # Fingerprint patch set vendored into patches/, from clearcotelabs/clearcote-browser
-# (BSD-3-Clause). Written against Chromium 151.0.7922.108; rebased to the macOS
-# target (156.0.8078.79) in this tree. Linux/Windows (157) rebase is still open work.
+# (BSD-3-Clause). Written against Chromium 151.0.7922.108; rebased to 156.0.8078.79
+# for macOS here, with 987-989 added. Linux/Windows (157) rebase is still open.
 CLEARCOTE_COMMIT=ac40bdcaeba73d71984c83656a899246a25cb5ba
 PATCHES_BASE=156.0.8078.79

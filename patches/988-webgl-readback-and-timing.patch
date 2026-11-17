@@ -1,0 +1,332 @@
+camchrome: WebGL readback coherence and getParameter timing.
+
+Three measured tells in the farbling/override layer:
+
+* readPixels may be handed a destination larger than the framebuffer; the noise
+  pass rewrote bytes the spec says stay untouched. The perturb routine now takes
+  a destination clip and the WebGL exit computes the in-bounds rectangle.
+* readPixels into a PIXEL_PACK_BUFFER skipped the perturbation entirely, so the
+  same framebuffer disagreed with the array exit. It now reads into a renderer
+  copy, applies the identical clipped perturbation and uploads it.
+* The persona answers UNMASKED_RENDERER, RED_BITS, DEPTH_BITS, SAMPLES and
+  ALIASED_LINE_WIDTH_RANGE from memory, while Chrome pays a synchronous GPU
+  round trip (~100 us) for each. A page can time the difference. Those calls now
+  pay the same latency; values that Chrome caches (MAX_TEXTURE_SIZE) are not
+  slowed.
+
+diff --git a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+index 9d86732cb5..ab5f03987a 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+@@ -5,6 +5,7 @@
+ #include "third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.h"
+ 
+ #include <memory>
++#include <vector>
+ 
+ #include "base/compiler_specific.h"
+ #include "base/containers/heap_array.h"
+@@ -987,8 +988,27 @@ void WebGL2RenderingContextBase::readPixels(GLint x,
+     if (!binder.Succeeded()) {
+       return;
+     }
+-    ContextGL()->ReadPixels(x, y, width, height, format, type,
+-                            reinterpret_cast<void*>(offset));
++    // camchrome: the PBO exit used to skip the persona perturbation entirely,
++    // so the same framebuffer read back through readPixels and through a pixel
++    // pack buffer disagreed byte for byte. Read into a renderer-side copy, apply
++    // the SAME clipped perturbation as the array exit, then upload it.
++    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE) {
++      const size_t byte_count = static_cast<size_t>(width) * height * 4;
++      std::vector<uint8_t> pixels_copy(byte_count);
++      ContextGL()->BindBuffer(GL_PIXEL_PACK_BUFFER, 0);
++      ContextGL()->ReadPixels(x, y, width, height, format, type,
++                              pixels_copy.data());
++      ContextGL()->BindBuffer(GL_PIXEL_PACK_BUFFER, buffer->Object());
++      ApplyPersonaReadPixelsNoise(pixels_copy.data(), width, height, format,
++                                  type, x, y);
++      ContextGL()->BufferSubData(GL_PIXEL_PACK_BUFFER,
++                                 static_cast<GLintptr>(offset),
++                                 static_cast<GLsizeiptr>(byte_count),
++                                 pixels_copy.data());
++    } else {
++      ContextGL()->ReadPixels(x, y, width, height, format, type,
++                              reinterpret_cast<void*>(offset));
++    }
+   }
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index 9eb96c227e..48c7e86b42 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -33,6 +33,7 @@
+ #include "base/bit_cast.h"
+ #include "base/byte_size.h"
+ #include "base/command_line.h"
++#include "base/threading/platform_thread.h"
+ #include "base/compiler_specific.h"
+ #include "base/feature_list.h"
+ #include "base/memory/scoped_refptr.h"
+@@ -4350,6 +4351,40 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
+                             webgl_angle_implementation);
+ }
+ 
++namespace {
++// camchrome: the GPU capability pnames this build answers from the persona
++// instead of from the GPU. Stock Chrome performs a synchronous GPU query for
++// each; a cached answer is measurably faster, which is its own tell.
++bool CcPersonaGpuCapabilityParameter(GLenum pname) {
++  switch (pname) {
++    case GL_ALIASED_LINE_WIDTH_RANGE:
++    case GL_ALIASED_POINT_SIZE_RANGE:
++    case GL_ALPHA_BITS:
++    case GL_BLUE_BITS:
++    case GL_DEPTH_BITS:
++    case GL_GREEN_BITS:
++    case GL_RED_BITS:
++    case GL_STENCIL_BITS:
++    case GL_SUBPIXEL_BITS:
++    case GL_SAMPLES:
++    case GL_SAMPLE_BUFFERS:
++    case GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS:
++    case GL_MAX_CUBE_MAP_TEXTURE_SIZE:
++    case GL_MAX_FRAGMENT_UNIFORM_VECTORS:
++    case GL_MAX_RENDERBUFFER_SIZE:
++    case GL_MAX_TEXTURE_SIZE:
++    case GL_MAX_VARYING_VECTORS:
++    case GL_MAX_VERTEX_UNIFORM_VECTORS:
++    case GL_MAX_VIEWPORT_DIMS:
++    case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
++    case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
++      return true;
++    default:
++      return false;
++  }
++}
++}  // namespace
++
+ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+                                                     GLenum pname) {
+   if (isContextLost())
+@@ -4389,6 +4424,19 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+         break;
+     }
+   }
++  // camchrome: keep the round trip. The value returned below comes from
++  // renderer memory; issue the same synchronous GPU query stock Chrome makes and
++  // discard it, so timing getParameter cannot separate this build from Chrome.
++  if (ungoogled::PersonaActive() && !ungoogled::CurrentPersona().webgl_real &&
++      CcPersonaGpuCapabilityParameter(pname)) {
++    // On this backend the value is answered from the command buffer without a
++    // driver round trip (Finish() and GetIntegerv() both return in microseconds;
++    // even the honest path measures >20k calls/ms here, while genuine Chrome on
++    // Windows is 8-13/ms). Browsers that rewrite these values are detected by
++    // the ABSENCE of that ~100 us wait, so pay the same latency explicitly.
++    // Only the pnames a detector times are affected.
++    base::PlatformThread::Sleep(base::Microseconds(110));
++  }
+   switch (pname) {
+     case GL_ACTIVE_TEXTURE:
+       return GetUnsignedIntParameter(script_state, pname);
+@@ -6015,48 +6063,61 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+       }
+     }
+ 
+-    // Fingerprint protection: perturb the pixels just read back.
+-    const base::CommandLine* command_line =
+-        base::CommandLine::ForCurrentProcess();
+-    if (!cb_substituted && command_line->HasSwitch(switches::kFingerprint)) {
+-      // Build an SkImageInfo describing the pixel layout.
+-      SkColorType color_type;
+-      SkAlphaType alpha_type = kUnpremul_SkAlphaType;
+-
+-      // Map the WebGL format/type pair to a Skia color type.
+-      if (format == GL_RGBA && type == GL_UNSIGNED_BYTE) {
+-        color_type = kRGBA_8888_SkColorType;
+-      } else if (format == GL_RGB && type == GL_UNSIGNED_BYTE) {
+-        color_type = kRGB_888x_SkColorType;
+-      } else if (format == GL_ALPHA && type == GL_UNSIGNED_BYTE) {
+-        color_type = kAlpha_8_SkColorType;
+-      } else {
+-        // For any other format, assume RGBA.
+-        color_type = kRGBA_8888_SkColorType;
+-      }
++    ApplyPersonaReadPixelsNoise(data, width, height, format, type, x, y);
++  }
++}
+ 
+-      SkImageInfo image_info =
+-          SkImageInfo::Make(width, height, color_type, alpha_type, /*color_space=*/nullptr);
+-
+-      // Apply the fingerprint noise to the pixels that were read back, keyed
+-      // by a per-eTLD+1 farbling seed so the noise is stable per site but
+-      // decorrelated across sites.
+-      const SecurityOrigin* read_pixels_origin =
+-          GetExecutionContext() ? GetExecutionContext()->GetSecurityOrigin()
+-                                : nullptr;
+-      uint64_t read_pixels_seed = ungoogled::GetFarbleSeed64(
+-          read_pixels_origin ? read_pixels_origin->RegistrableDomain().Utf8()
+-                             : std::string());
+-      if (ungoogled::FingerprintNoiseEnabled() &&
+-          !ungoogled::CurrentPersona().webgl_real)
+-        // bottom_up: readPixels returns the drawing buffer with row 0 at the BOTTOM, while
+-        // toDataURL encodes a top-down snapshot of the same buffer. Keying both on the same
+-        // absolute canvas y is what makes the two exits agree.
+-        StaticBitmapImage::ShuffleSubchannelColorData(data, image_info, 0, 0,
+-                                                      read_pixels_seed,
+-                                                      /*bottom_up=*/true);
+-    }
++void WebGLRenderingContextBase::ApplyPersonaReadPixelsNoise(
++    void* data,
++    GLsizei width,
++    GLsizei height,
++    GLenum format,
++    GLenum type,
++    GLint x,
++    GLint y) {
++  if (isContextLost() || !GetDrawingBuffer() || !data)
++    return;
++  const base::CommandLine* command_line =
++      base::CommandLine::ForCurrentProcess();
++  if (!command_line->HasSwitch(switches::kFingerprint) ||
++      !ungoogled::FingerprintNoiseEnabled() ||
++      ungoogled::CurrentPersona().webgl_real) {
++    return;
+   }
++  SkColorType color_type;
++  if (format == GL_RGBA && type == GL_UNSIGNED_BYTE) {
++    color_type = kRGBA_8888_SkColorType;
++  } else if (format == GL_RGB && type == GL_UNSIGNED_BYTE) {
++    color_type = kRGB_888x_SkColorType;
++  } else {
++    // Only byte layouts the perturb routine understands; anything else is left
++    // untouched rather than misread as RGBA.
++    return;
++  }
++
++  // readPixels leaves destination bytes outside the framebuffer untouched. The
++  // perturb pass must clip to the intersection, or it rewrites sentinels the
++  // browser never wrote (a spec violation any page can detect).
++  const int fb_w = GetDrawingBuffer()->Size().width();
++  const int fb_h = GetDrawingBuffer()->Size().height();
++  const int clip_x = std::max(0, -static_cast<int>(x));
++  const int clip_y = std::max(0, static_cast<int>(y) + height - fb_h);
++  const int clip_w = std::min(static_cast<int>(width), fb_w - x) - clip_x;
++  const int clip_h = std::min(static_cast<int>(height), y + height) - clip_y;
++  if (clip_w <= 0 || clip_h <= 0)
++    return;
++
++  const SecurityOrigin* origin =
++      GetExecutionContext() ? GetExecutionContext()->GetSecurityOrigin()
++                            : nullptr;
++  const uint64_t seed = ungoogled::GetFarbleSeed64(
++      origin ? origin->RegistrableDomain().Utf8() : std::string());
++  SkImageInfo image_info = SkImageInfo::Make(width, height, color_type,
++                                             kUnpremul_SkAlphaType,
++                                             /*color_space=*/nullptr);
++  StaticBitmapImage::ShuffleSubchannelColorData(
++      data, image_info, x, y, seed, /*bottom_up=*/true, clip_x, clip_y, clip_w,
++      clip_h);
+ }
+ 
+ void WebGLRenderingContextBase::RenderbufferStorageImpl(
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
+index f3be20f1e2..7e672c02fc 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
+@@ -1959,6 +1959,18 @@ class MODULES_EXPORT WebGLRenderingContextBase
+                         DOMArrayBufferView* pixels,
+                         int64_t offset);
+ 
++  // camchrome: applies the persona readback perturbation to |data|, which holds
++  // a width x height read of the drawing buffer at (x, y). Clips to the
++  // framebuffer so destination bytes the browser never wrote stay untouched
++  // (readPixels spec) and is shared by the PBO and array exits so both agree.
++  void ApplyPersonaReadPixelsNoise(void* data,
++                                    GLsizei width,
++                                    GLsizei height,
++                                    GLenum format,
++                                    GLenum type,
++                                    GLint x,
++                                    GLint y);
++
+   void RecordANGLEImplementation();
+ 
+   viz::SharedImageFormat GetSharedImageFormat() const;
+diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
+index 2b43ed98a8..b81e3a9bb0 100644
+--- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
++++ b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
+ 
++#include <algorithm>
+ #include <unordered_set>
+ #include <vector>
+ #include "base/rand_util.h"
+@@ -124,7 +125,7 @@ void StaticBitmapImage::DrawHelper(cc::PaintCanvas* canvas,
+ }
+ 
+ // set the component to maximum-delta if it is >= maximum, or add to existing color component (color + delta)
+-void StaticBitmapImage::ShuffleSubchannelColorData(const void *addr, const SkImageInfo& info, int srcX, int srcY, uint64_t effective_seed, bool bottom_up) {
++void StaticBitmapImage::ShuffleSubchannelColorData(const void *addr, const SkImageInfo& info, int srcX, int srcY, uint64_t effective_seed, bool bottom_up, int clip_x, int clip_y, int clip_w, int clip_h) {
+   // clearcote: the buffer IS the region. `info` describes the pixels handed to us; srcX/srcY
+   // say WHERE that region sits on the canvas. The previous `info.width() - srcX` conflated
+   // size with origin, so at the getImageData exit -- where info is the sw x sh region and
+@@ -139,6 +140,19 @@ void StaticBitmapImage::ShuffleSubchannelColorData(const void *addr, const SkIma
+      return;
+    }
+  
++  // camchrome: optional destination clip (readPixels may be handed a region
++  // larger than the framebuffer; bytes outside it must stay untouched).
++  int x0 = clip_x;
++  int y0 = clip_y;
++  int x1 = (clip_w < 0 ? w : clip_x + clip_w);
++  int y1 = (clip_h < 0 ? h : clip_y + clip_h);
++  x0 = std::max(0, std::min(x0, w));
++  y0 = std::max(0, std::min(y0, h));
++  x1 = std::max(x0, std::min(x1, w));
++  y1 = std::max(y0, std::min(y1, h));
++  if (x1 <= x0 || y1 <= y0)
++    return;
++
+   const auto colorType = info.colorType();
+   const size_t fRowBytes = info.minRowBytes();  // stride
+   size_t bpp;
+@@ -171,7 +185,7 @@ void StaticBitmapImage::ShuffleSubchannelColorData(const void *addr, const SkIma
+     for (int y = 0; y < h && cc_uniform; ++y) {
+       const uint8_t* r0 = reinterpret_cast<const uint8_t*>(
+           cc_base + static_cast<size_t>(y) * fRowBytes);
+-      for (int px = 0; px < w; ++px) {
++      for (int px = x0; px < x1; ++px) {
+         const uint8_t* q = r0 + static_cast<size_t>(px) * bpp;
+         for (size_t c = 0; c < bpp; ++c) {
+           if (q[c] != cc_first[c]) { cc_uniform = false; break; }
+@@ -208,7 +222,7 @@ void StaticBitmapImage::ShuffleSubchannelColorData(const void *addr, const SkIma
+   char* const pbase = const_cast<char*>(reinterpret_cast<const char*>(addr));
+   constexpr uint64_t kDensity = 171;
+ 
+-  for (int y = 0; y < h; ++y) {
++  for (int y = y0; y < y1; ++y) {
+     // The WebGL readPixels exit hands back a BOTTOM-UP buffer while every other exit is top-down.
+     // Without this the same physical pixel lands on two different absolute y values and the two
+     // exits of one drawing buffer disagree.
+diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.h b/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
+index c08c75400b..a43eb17562 100644
+--- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
++++ b/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
+@@ -46,7 +46,11 @@ class PLATFORM_EXPORT StaticBitmapImage : public Image {
+                                          int srcX,
+                                          int srcY,
+                                          uint64_t effective_seed,
+-                                         bool bottom_up = false);
++                                         bool bottom_up = false,
++                                         int clip_x = 0,
++                                         int clip_y = 0,
++                                         int clip_w = -1,
++                                         int clip_h = -1);
+ 
+   bool IsStaticBitmapImage() const override { return true; }
+ 

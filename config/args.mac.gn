@@ -1,4 +1,4 @@
-# camchrome build configuration — macOS, built natively on macOS (untested).
+# camchrome build configuration — macOS arm64, built and audited on macOS 26.1.
 #
 # The de-Google block is copied from args.linux.gn. Target and release settings follow
 # ungoogled-chromium-macos's flags.macos.gn. scripts/02-build.sh rewrites pgo_data_path to the

@@ -1,0 +1,86 @@
+camchrome: cpuPerformance tier and connection client hints follow the persona.
+
+* navigator.cpuPerformance came from the host CPU model's tier, so a persona
+  reporting six cores on an Apple M4 still claimed "ultra". It now uses
+  Chromium's cores-only thresholds on the persona's reported core count.
+* navigator.connection.rtt/downlink/effectiveType were overridden in the page
+  while the Sec-CH-RTT/Downlink/ECT headers kept the host NQE values, so the
+  network stack and the page disagreed — readable from one page load.
+
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 6183f481e4..ef68a0d848 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -9725,6 +9725,22 @@ std::optional<int> ChromeContentBrowserClient::GetCpuPerformanceTierOverride(
+       return value;
+     }
+   }
++  // camchrome: navigator.cpuPerformance must be the tier Chromium would assign
++  // to the core count the persona REPORTS, not the host CPU model's tier. On a
++  // 10-core Apple M4 the model path yields "ultra" for a 6-core persona, which
++  // the audit flags as a contradiction. Same cores-only thresholds Chromium uses.
++  if (ungoogled::PersonaActive()) {
++    const unsigned cores = ungoogled::CurrentPersona().hardware_concurrency;
++    if (cores != 0) {
++      if (cores <= 2)
++        return 1;
++      if (cores <= 4)
++        return 2;
++      if (cores <= 12)
++        return 3;
++      return 4;
++    }
++  }
+   return ContentBrowserClient::GetCpuPerformanceTierOverride(browser_context);
+ }
+ 
+diff --git a/third_party/blink/renderer/core/loader/frame_fetch_context.cc b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
+index 6aed41d045..b046eb1fc0 100644
+--- a/third_party/blink/renderer/core/loader/frame_fetch_context.cc
++++ b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
+@@ -701,8 +701,13 @@ void FrameFetchContext::AddClientHintsIfNecessary(
+       http_rtt = GetNetworkStateNotifier().HttpRtt();
+     }
+ 
+-    uint32_t rtt = GetNetworkStateNotifier().RoundRtt(
+-        request.Url().Host().ToString(), http_rtt);
++    // camchrome: the wire must carry the same value JavaScript reports. The
++    // persona overrides navigator.connection.rtt/downlink; without this the
++    // header kept the host NQE estimate and contradicted the page.
++    uint32_t rtt = ungoogled::PersonaActive()
++                       ? ungoogled::CurrentPersona().netinfo_rtt_ms
++                       : GetNetworkStateNotifier().RoundRtt(
++                             request.Url().Host().ToString(), http_rtt);
+     request.SetHttpHeaderField(http_names::kRtt_DEPRECATED,
+                                AtomicString(String::Number(rtt)));
+   }
+@@ -716,8 +721,11 @@ void FrameFetchContext::AddClientHintsIfNecessary(
+       throughput_mbps = GetNetworkStateNotifier().DownlinkThroughputMbps();
+     }
+ 
+-    double mbps = GetNetworkStateNotifier().RoundMbps(
+-        request.Url().Host().ToString(), throughput_mbps);
++    double mbps =
++        ungoogled::PersonaActive()
++            ? ungoogled::CurrentPersona().netinfo_downlink_mbps
++            : GetNetworkStateNotifier().RoundMbps(
++                  request.Url().Host().ToString(), throughput_mbps);
+     request.SetHttpHeaderField(http_names::kDownlink_DEPRECATED,
+                                AtomicString(String::Number(mbps)));
+   }
+@@ -731,10 +739,13 @@ void FrameFetchContext::AddClientHintsIfNecessary(
+       holdback_ect = GetNetworkStateNotifier().EffectiveType();
+     }
+ 
++    // navigator.connection.effectiveType is pinned to "4g" by the persona.
+     request.SetHttpHeaderField(
+         http_names::kEct_DEPRECATED,
+-        AtomicString(NetworkStateNotifier::EffectiveConnectionTypeToString(
+-            holdback_ect.value())));
++        AtomicString(ungoogled::PersonaActive()
++                         ? String("4g")
++                         : NetworkStateNotifier::EffectiveConnectionTypeToString(
++                               holdback_ect.value())));
+   }
+ 
+   // Only send User Agent hints if the info is available

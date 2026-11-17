@@ -61,3 +61,6 @@
 984-socks5-auth-implementation.patch
 985-webgl-stencil-masks.patch
 986-canvas-alpha-and-grey-coherence.patch
+987-engine-version-and-macos-persona.patch
+988-webgl-readback-and-timing.patch
+989-cpu-tier-and-netinfo-hints.patch

@@ -1,0 +1,327 @@
+camchrome: engine-version coherence and a real macOS persona.
+
+The seed derivation claimed a frozen Chrome 151 while this engine is 156, and a
+--fingerprint-platform=macos persona still carried Windows ANGLE/D3D11 strings,
+SAPI voices, Realtek devices and a Windows screen pool. Both are directly
+readable contradictions: image/jxl in Accept betrays a newer engine, ANGLE's
+shader dialect betrays the real backend, and the audit cross-checks every one of
+these fields against the platform claim.
+
+* Every version surface (UA, UA-CH brands/fullVersionList, persona) now derives
+  from version_info::GetVersionNumber(), so a Chromium major bump cannot leave a
+  stale claim behind. The seed draw is preserved for identity stability.
+* macOS personas get Apple Silicon hardware tiers (never below the host's real
+  core count, which the audit measures with workers), Retina screens, the ANGLE
+  Metal GPU strings and the limit/extension table that backend actually reports,
+  macOS voices and MacBook audio devices. An imported profile stays authoritative.
+* navigator.cpuPerformance is derived from the reported core count instead of
+  the host CPU model.
+* navigator.connection's persona rtt/downlink/ect are used for the Sec-CH
+  headers too, so the wire and the page agree.
+
+diff --git a/components/ungoogled/BUILD.gn b/components/ungoogled/BUILD.gn
+index 2ffc58b40a..e950e8d089 100644
+--- a/components/ungoogled/BUILD.gn
++++ b/components/ungoogled/BUILD.gn
+@@ -21,6 +21,7 @@ component("ungoogled_switches") {
+ 
+   deps = [
+     "//base",
++    "//components/version_info",
+     "//crypto",
+     "//third_party/zlib/google:compression_utils",
+   ]
+diff --git a/components/ungoogled/persona_profile.cc b/components/ungoogled/persona_profile.cc
+index f4ffc4bced..7d8912bd46 100644
+--- a/components/ungoogled/persona_profile.cc
++++ b/components/ungoogled/persona_profile.cc
+@@ -17,12 +17,23 @@
+ #include "base/json/json_reader.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
++#include "base/system/sys_info.h"
+ #include "base/values.h"
+ #include "components/ungoogled/ungoogled_switches.h"
++#include "components/version_info/version_info.h"
+ #include "third_party/zlib/google/compression_utils.h"
+ #include <optional>
+ 
+ namespace ungoogled {
++
++const char* EngineVersionNumber() {
++  // Process-lifetime: the build's own version, never a seed table entry. Claiming
++  // a Chrome major the engine is not is the single cheapest contradiction to
++  // detect (the engine's feature set and the wire's Accept header both leak it).
++  static const std::string kVersion(version_info::GetVersionNumber());
++  return kVersion.c_str();
++}
++
+ namespace {
+ 
+ template <typename T>
+@@ -82,6 +93,77 @@ constexpr std::array<WeightedEntry<ScreenSize>, 9> kScreens = {{
+     {{3840, 2160, 2120}, 0.10},
+ }};
+ 
++// camchrome: macOS screens (scaled point size Chrome reports) and the menu bar.
++// Retina panels are 2x, so devicePixelRatio is 2 and screen.width is the scaled
++// point size, not the panel's physical pixels.
++struct MacScreen {
++  int w;
++  int h;
++  int avail_h;
++};
++constexpr std::array<MacScreen, 6> kMacScreens = {{
++    {1512, 982, 957},   // 13.6" MacBook Air (M2)
++    {1440, 900, 875},   // 13.3" MacBook Air (M1)
++    {1728, 1117, 1092}, // 14" MacBook Pro
++    {1920, 1080, 1055}, // external display, HiDPI
++    {2560, 1440, 1415}, // 27" 5K, scaled
++    {1680, 1050, 1025}, // 16" MacBook Pro, scaled
++}};
++
++// camchrome: Apple Silicon tiers. hardwareConcurrency is checked against the
++// host's measured worker parallelism, so a persona is never allowed to claim
++// fewer cores than the machine really has (see the fixup in DerivePersona).
++struct MacHw {
++  unsigned cores;
++  float mem_gb;
++};
++constexpr std::array<MacHw, 7> kMacHw = {{
++    {8, 8.0f}, {8, 16.0f}, {10, 16.0f}, {10, 24.0f},
++    {12, 24.0f}, {12, 32.0f}, {16, 48.0f},
++}};
++
++// camchrome: the ANGLE Metal limit/extension table, captured from this engine's
++// own Metal backend on Apple Silicon. Spoofing the strings while leaving a D3D11
++// limit table in place is exactly the incoherence the audit reads.
++constexpr const char* kMacGl1Extensions[] = {
++    "ANGLE_instanced_arrays", "EXT_blend_minmax", "EXT_clip_control",
++    "EXT_color_buffer_half_float", "EXT_depth_clamp",
++    "EXT_disjoint_timer_query", "EXT_float_blend", "EXT_frag_depth",
++    "EXT_polygon_offset_clamp", "EXT_shader_texture_lod",
++    "EXT_texture_compression_bptc", "EXT_texture_compression_rgtc",
++    "EXT_texture_filter_anisotropic", "EXT_texture_mirror_clamp_to_edge",
++    "EXT_sRGB", "KHR_parallel_shader_compile", "OES_element_index_uint",
++    "OES_fbo_render_mipmap", "OES_standard_derivatives", "OES_texture_float",
++    "OES_texture_float_linear", "OES_texture_half_float",
++    "OES_texture_half_float_linear", "OES_vertex_array_object",
++    "WEBGL_blend_func_extended", "WEBGL_color_buffer_float",
++    "WEBGL_compressed_texture_astc", "WEBGL_compressed_texture_etc",
++    "WEBGL_compressed_texture_etc1", "WEBGL_compressed_texture_pvrtc",
++    "WEBGL_compressed_texture_s3tc", "WEBGL_compressed_texture_s3tc_srgb",
++    "WEBGL_debug_renderer_info", "WEBGL_debug_shaders", "WEBGL_depth_texture",
++    "WEBGL_draw_buffers", "WEBGL_lose_context", "WEBGL_multi_draw",
++    "WEBGL_polygon_mode",
++};
++constexpr const char* kMacGl2Extensions[] = {
++    "EXT_clip_control", "EXT_color_buffer_float",
++    "EXT_color_buffer_half_float", "EXT_conservative_depth", "EXT_depth_clamp",
++    "EXT_disjoint_timer_query_webgl2", "EXT_float_blend",
++    "EXT_polygon_offset_clamp", "EXT_render_snorm",
++    "EXT_texture_compression_bptc", "EXT_texture_compression_rgtc",
++    "EXT_texture_filter_anisotropic", "EXT_texture_mirror_clamp_to_edge",
++    "EXT_texture_norm16", "KHR_parallel_shader_compile",
++    "NV_shader_noperspective_interpolation", "OES_draw_buffers_indexed",
++    "OES_sample_variables", "OES_shader_multisample_interpolation",
++    "OES_texture_float_linear", "WEBGL_blend_func_extended",
++    "WEBGL_clip_cull_distance", "WEBGL_compressed_texture_astc",
++    "WEBGL_compressed_texture_etc", "WEBGL_compressed_texture_etc1",
++    "WEBGL_compressed_texture_pvrtc", "WEBGL_compressed_texture_s3tc",
++    "WEBGL_compressed_texture_s3tc_srgb", "WEBGL_debug_renderer_info",
++    "WEBGL_debug_shaders", "WEBGL_lose_context", "WEBGL_multi_draw",
++    "WEBGL_polygon_mode", "WEBGL_provoking_vertex",
++    "WEBGL_render_shared_exponent", "WEBGL_stencil_texturing",
++};
++
+ // Hardware tiers: pick a tier first, then draw cores + RAM from that tier's
+ // constrained pools so the (cores, RAM) pair is one a real desktop ships. Flat
+ // independent sampling produces off-distribution combos (e.g. 20 cores + 16 GB,
+@@ -786,10 +868,22 @@ PersonaProfile DerivePersona(uint64_t seed) {
+   PersonaProfile p;
+   p.persona_seed = mixed;
+ 
+-  // Identity.
+-  const ChromeVer& cv = WeightedPick(rng, kChromeVersions);
+-  p.chrome_major_version = cv.major;
+-  p.chrome_full_version = cv.full;
++  // Identity. The draw is kept so every later seed-derived field is unchanged,
++  // but the CLAIM comes from the engine: Chrome major must equal the built major,
++  // and the engine's feature set (e.g. image/jxl in Accept) reveals it anyway.
++  (void)WeightedPick(rng, kChromeVersions);
++  p.chrome_full_version = EngineVersionNumber();
++  {
++    unsigned engine_major = 0;
++    const size_t dot = p.chrome_full_version.find('.');
++    if (base::StringToUint(
++            p.chrome_full_version.substr(
++                0, dot == std::string::npos ? p.chrome_full_version.size() : dot),
++            &engine_major) &&
++        engine_major) {
++      p.chrome_major_version = engine_major;
++    }
++  }
+ 
+   // Hardware: tier first, then correlated cores + RAM.
+   std::array<double, kHwTiers.size()> tier_weights;
+@@ -1021,6 +1115,118 @@ PersonaProfile DerivePersona(uint64_t seed) {
+     // enumerateDevices: phone-shaped roster.
+     p.media_devices = AndroidMediaDevices(rng);
+   }
++  // camchrome: macOS persona. The derivation above is Windows-shaped (ANGLE
++  // Direct3D, SAPI voices, WASAPI devices, Windows screen pool); under a macOS
++  // claim each of those is provable incoherence. Rewrite them to what Chrome on
++  // Apple Silicon reports. An imported capture is authoritative and untouched.
++  if (GetPersonaPlatform() == PersonaPlatform::kMacOS &&
++      !DecodedProfileSwitch()) {
++    const MacScreen& ms = kMacScreens[rng() % std::size(kMacScreens)];
++    p.screen_width = ms.w;
++    p.screen_height = ms.h;
++    p.avail_screen_width = ms.w;
++    p.avail_screen_height = ms.avail_h;
++    p.device_pixel_ratio = 2.0;
++    p.color_depth = 24;
++
++    // The host's real core count is measured by the audit's worker test, so a
++    // claim below it is provably false. Pick an Apple tier at or above it.
++    const int real_cores =
++        static_cast<int>(base::SysInfo::NumberOfProcessors());
++    std::vector<MacHw> hw;
++    for (const MacHw& h : kMacHw) {
++      if (static_cast<int>(h.cores) >= real_cores)
++        hw.push_back(h);
++    }
++    if (hw.empty()) {
++      p.hardware_concurrency = static_cast<unsigned>(std::max(1, real_cores));
++      p.device_memory_gb = 32.0f;
++    } else {
++      const MacHw& h = hw[rng() % hw.size()];
++      p.hardware_concurrency = h.cores;
++      p.device_memory_gb = h.mem_gb;
++    }
++
++    // GPU: ANGLE Metal on Apple Silicon. Limits/extensions below are the ones
++    // this backend reports, so strings, limits and pixels describe one device.
++    static constexpr const char* kAppleGpus[] = {
++        "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)",
++        "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
++        "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)",
++        "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
++    };
++    p.webgl_vendor = "Google Inc. (Apple)";
++    p.webgl_renderer = kAppleGpus[rng() % std::size(kAppleGpus)];
++    p.webgl_max_texture_size = 16384;
++    p.webgl_max_cube_map_texture_size = 16384;
++    p.webgl_max_renderbuffer_size = 16384;
++    p.webgl_max_viewport_dim = 16384;
++    p.webgl_max_vertex_uniform_vectors = 1024;
++    p.webgl_max_fragment_uniform_vectors = 1024;
++    p.webgl_max_varying_vectors = 30;
++    p.webgl_max_combined_texture_image_units = 32;
++    p.webgl_max_3d_texture_size = 2048;
++    p.webgl_max_array_texture_layers = 2048;
++    p.webgl_max_draw_buffers = 8;
++    p.webgl_max_color_attachments = 8;
++    p.webgl_max_samples = 4;
++    p.webgl_max_vertex_uniform_blocks = 16;
++    p.webgl_max_fragment_uniform_blocks = 16;
++    p.webgl_max_combined_uniform_blocks = 32;
++    p.webgl_max_uniform_buffer_bindings = 32;
++    p.webgl_max_texture_lod_bias = 15.0f;
++    p.webgl_max_element_index = 4294967294LL;
++    p.webgl_max_vertex_uniform_components = 4096;
++    p.webgl_max_fragment_uniform_components = 4096;
++    p.webgl_subpixel_bits = 4;
++    p.webgl_sample_buffers = 1;
++    p.webgl_samples = 4;
++    p.webgl_aliased_line_width_range_min = 1;
++    p.webgl_aliased_line_width_range_max = 1;
++    p.webgl_aliased_point_size_range_min = 1;
++    p.webgl_aliased_point_size_range_max = 511;
++    p.webgl_red_bits = 8;
++    p.webgl_green_bits = 8;
++    p.webgl_blue_bits = 8;
++    p.webgl_alpha_bits = 8;
++    p.webgl_depth_bits = 24;
++    p.webgl_stencil_bits = 8;
++    p.webgl_extensions.assign(std::begin(kMacGl1Extensions),
++                              std::end(kMacGl1Extensions));
++    p.webgl2_extensions.assign(std::begin(kMacGl2Extensions),
++                               std::end(kMacGl2Extensions));
++    p.webgpu_vendor = "apple";
++    p.webgpu_architecture = "metal-3";
++    p.webgpu_features.clear();
++
++    // TTS: macOS ships a speech engine, so an empty list is itself implausible
++    // under a macOS claim (and a Windows SAPI name is worse). These are the
++    // real macOS voice names and com.apple.speech URIs Chrome enumerates.
++    p.voices = {
++        {"com.apple.speech.synthesis.voice.Samantha", "Samantha", "en-US", true,
++         true},
++        {"com.apple.speech.synthesis.voice.Alex", "Alex", "en-US", true, false},
++        {"com.apple.speech.synthesis.voice.Daniel", "Daniel", "en-GB", true,
++         false},
++        {"com.apple.speech.synthesis.voice.Karen", "Karen", "en-AU", true,
++         false},
++        {"com.apple.speech.synthesis.voice.Moira", "Moira", "en-IE", true,
++         false},
++        {"com.apple.speech.synthesis.voice.Tessa", "Tessa", "en-ZA", true,
++         false},
++    };
++
++    // enumerateDevices: MacBook audio shape, not Realtek/WASAPI.
++    const std::string mac_mic = "cc-mic-" + base::NumberToString(rng());
++    const std::string mac_spk = "cc-spk-" + base::NumberToString(rng());
++    const std::string mac_grp = "cc-grp-" + base::NumberToString(rng());
++    p.media_devices = {
++        {"audioinput", "Default - MacBook Pro Microphone", "default", mac_grp},
++        {"audioinput", "MacBook Pro Microphone", mac_mic, mac_grp},
++        {"audiooutput", "Default - MacBook Pro Speakers", "default", mac_grp},
++        {"audiooutput", "MacBook Pro Speakers", mac_spk, mac_grp},
++    };
++  }
+   if (cmd->HasSwitch(switches::kFingerprintGpuVendor))
+     p.webgl_vendor = cmd->GetSwitchValueASCII(switches::kFingerprintGpuVendor);
+   if (cmd->HasSwitch(switches::kFingerprintGpuRenderer))
+diff --git a/components/ungoogled/persona_profile.h b/components/ungoogled/persona_profile.h
+index 4570246f41..223f29a712 100644
+--- a/components/ungoogled/persona_profile.h
++++ b/components/ungoogled/persona_profile.h
+@@ -340,6 +340,12 @@ COMPONENT_EXPORT(UNGOOGLED) void PersonaHeapLimitBounds(const PersonaProfile& p,
+ // persona; later calls return the same one. Thread-safe (std::call_once).
+ COMPONENT_EXPORT(UNGOOGLED) const PersonaProfile& CurrentPersona();
+ 
++// camchrome: this build's own Chrome version (e.g. "156.0.8078.79"). Every
++// surface that names a browser version must derive from this -- the persona's
++// UA/UA-CH claim, the reduced UA token and the Client Hints full version list --
++// so the engine and the claim can never drift apart between Chromium majors.
++COMPONENT_EXPORT(UNGOOGLED) const char* EngineVersionNumber();
++
+ // clearcote: the device pixel ratio this persona presents, or 0 when there is no
+ // override and the caller should fall back to the real display value. Resolution
+ // order is flag > persona > none, which is what window.devicePixelRatio returns.
+diff --git a/third_party/blink/common/user_agent/user_agent_metadata.cc b/third_party/blink/common/user_agent/user_agent_metadata.cc
+index 1e5267c892..7f7c741ca6 100644
+--- a/third_party/blink/common/user_agent/user_agent_metadata.cc
++++ b/third_party/blink/common/user_agent/user_agent_metadata.cc
+@@ -330,7 +330,8 @@ std::string GetChromiumVersion() {
+     }
+     // 2. Non-Chrome brand (Edge/Opera/Vivaldi) -> use latest Chromium version
+     if (brand != "chrome" && !brand.empty()) {
+-      return kChromiumVersions[0];
++      // camchrome: the base Chromium version is the engine's, never a frozen table.
++      return ungoogled::EngineVersionNumber();
+     }
+   }
+ 
+@@ -344,8 +345,8 @@ std::string GetChromiumVersion() {
+       return v;
+   }
+ 
+-  // 4. Return first version
+-  return kChromiumVersions[0];
++  // 4. No persona: claim the engine's own version.
++  return ungoogled::EngineVersionNumber();
+ }
+ 
+ // Helper to extract major version from full version string

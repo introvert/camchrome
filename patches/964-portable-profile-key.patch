@@ -83,7 +83,7 @@ profiles were already portable.
 +#endif  // COMPONENTS_UNGOOGLED_PORTABLE_KEY_PROVIDER_H_
 --- a/components/ungoogled/portable_key_provider.cc
 +++ b/components/ungoogled/portable_key_provider.cc
-@@ -0,0 +1,109 @@
+@@ -0,0 +1,116 @@
 +// clearcote: portable profile encryption key (clearcote-browser#12).
 +
 +#include "components/ungoogled/portable_key_provider.h"

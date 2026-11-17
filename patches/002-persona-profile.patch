@@ -1,5 +1,4 @@
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 18b487e..679a79c 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -21,6 +21,7 @@
@@ -10,10 +9,18 @@ index 18b487e..679a79c 100644
  #include "base/containers/fixed_flat_map.h"
  #include "base/containers/fixed_flat_set.h"
  #include "base/containers/to_vector.h"
-@@ -4643,6 +4644,33 @@ content::TtsPlatform* ChromeContentBrowserClient::GetTtsPlatform() {
+@@ -4643,6 +4644,7 @@
  #else
    return nullptr;
  #endif
++
+ }
+ 
+ void ChromeContentBrowserClient::OverrideWebPreferences(
+@@ -4652,6 +4654,33 @@
+   Profile* profile =
+       Profile::FromBrowserContext(web_contents->GetBrowserContext());
+   PrefService* prefs = profile->GetPrefs();
 +
 +  // clearcote: Android persona mobile-layout path. When the persona is mobile
 +  // (--fingerprint-platform=android sets CurrentPersona().mobile), turn on
@@ -41,9 +48,10 @@ index 18b487e..679a79c 100644
 +    web_prefs->available_hover_types =
 +        static_cast<int>(blink::mojom::HoverType::kHoverNone);
 +  }
- }
  
- void ChromeContentBrowserClient::OverrideWebPreferences(
+ // Fill font preferences. These are not registered on Android unless we're built
+ // with extensions (the chrome.fontSettings API can change these).
+
 diff --git a/components/ungoogled/persona_profile.cc b/components/ungoogled/persona_profile.cc
 new file mode 100644
 index 0000000..d3a308f

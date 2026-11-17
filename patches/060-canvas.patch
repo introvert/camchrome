@@ -107,7 +107,7 @@ index 2a5404e4cf..1cefaf1a8e 100644
 +      size_t row_bytes = image_info.minRowBytes();
 +      size_t buffer_size = image_info.computeMinByteSize();
 +
-+      if (buffer_size > 0 && buffer_size <= partition_alloc::MaxDirectMapped()) {
++      if (buffer_size > 0 && buffer_size <= (size_t{1} << 35)) {
 +        std::vector<uint8_t> pixel_buffer(buffer_size);
 +
 +        PaintImage original_paint_image =
@@ -349,14 +349,20 @@ index 9c3fdddd54..563e22e897 100644
    GetState().SetTextBaseline(baseline.AsEnum());
  }
  
-@@ -945,11 +1062,18 @@ void BaseRenderingContext2D::setDirection(const V8CanvasDirection direction) {
-                       WebFeature::kCanvasTextDirectionSetInherit);
-   }
- 
+@@ -886,6 +1001,9 @@ void BaseRenderingContext2D::setFont(const String& new_font) {
+   // The parse succeeded. Re-fetch `GetState()` as `ResolveFont()` can execute
+   // script and reset the state stack.
+   GetState().SetUnparsedFont(new_font);
 +  RecordBridgeOp(
 +      static_cast<uint32_t>(blink::canvas_bridge::Canvas2DOp::kSetFont),
 +      new_font.Utf8(), {});
-+
+ }
+ 
+ static inline TextDirection ToTextDirection(
+@@ -945,11 +1062,14 @@ void BaseRenderingContext2D::setDirection(const V8CanvasDirection direction) {
+                       WebFeature::kCanvasTextDirectionSetInherit);
+   }
+ 
    CanvasRenderingContext2DState& state = GetState();
    state.SetDirection(direction.AsEnum());
  }
