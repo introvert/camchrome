@@ -1,0 +1,471 @@
+# 992-android-persona-mobile-behaviour.patch
+#
+# camchrome: an Android persona (--fingerprint-platform=android) answered like a phone (UA,
+# UA-CH mobile, portrait screen, coarse pointer, touch points, mobile web prefs from 002)
+# but did not behave like one. This closes the three behavioural gaps:
+#
+# (A) Mouse becomes touch. RenderWidgetHostImpl::Init() turns on the TouchEmulator for the
+#     main frame widget with the GENERIC_MOBILE gesture config -- the path DevTools device
+#     mode uses for Emulation.setEmitTouchEventsForMouse. Pages see touchstart/touchend,
+#     pointerType "touch" and tap-synthesised clicks; CDP Input.dispatchMouseEvent goes
+#     through the same emulator, so automation clicks become taps too. emulation_handler.cc
+#     re-enables it instead of disabling it when a DevTools client turns its own touch
+#     emulation off or detaches.
+#
+# (B) A phone held in a hand. On a machine with no orientation/motion sensors the Android
+#     persona used to fire one deviceorientation event with null angles and devicemotion
+#     with null vectors -- a desktop's answer. held_device_sensor.{h,cc} models a portrait
+#     handset tilted 35-65 degrees towards the face (posture from the persona seed) with arm
+#     sway, physiological tremor and per-sample noise, quantised the way the sensor service
+#     rounds real readings (0.1 deg, 0.1 m/s^2, 0.1 deg/s). Gravity, rotation rate and the
+#     angles derive from one motion so they agree. A connected (or DevTools-overridden)
+#     sensor still wins; the model only fills the no-reading case.
+#
+# (C) Handset fonts. font_cache.cc gets an "android" platform list: the named families and
+#     aliases in AOSP 13/14 /system/etc/fonts.xml (sans-serif-*, serif, monospace, casual,
+#     cursive, Roboto, Noto Serif, Droid Sans Mono, Cutive Mono, Coming Soon, Dancing Script,
+#     Carrois Gothic SC, and the Arial/Helvetica/Tahoma/Verdana/Times/Georgia/... aliases).
+#     The Noto script and emoji fallbacks have no name and do not match by family on a phone,
+#     so they are not listed. Desktop-only "basic" families (Helvetica Neue, Sans,
+#     BlinkMacSystemFont) no longer pass through for an Android persona. Each handset family
+#     renders through a metric clone (Arimo/Tinos/Cousine/Comic Neue/Liberation Sans Narrow).
+#
+# Not covered: the Generic Sensor API classes (Accelerometer, Gyroscope) still report no
+# sensor; Android DRM robustness levels; the window must still be launched phone-sized
+# (--window-size) for the layout viewport to match the persona screen.
+#
+# Tests: tools/fingerprint_selftest.py --platform android checks touch feature detection,
+# that a CDP mouse click arrives as touchstart + pointerdown:touch, streaming orientation,
+# gravity magnitude and the handset font set; desktop personas check a click stays a mouse.
+--- a/content/browser/renderer_host/render_widget_host_impl.cc
++++ b/content/browser/renderer_host/render_widget_host_impl.cc
+@@ -55,6 +55,7 @@
+ #include "components/input/switches.h"
+ #include "components/input/timeout_monitor.h"
+ #include "components/input/utils.h"
++#include "components/ungoogled/persona_profile.h"
+ #include "components/viz/common/features.h"
+ #include "components/viz/common/frame_sinks/copy_output_result.h"
+ #include "components/viz/host/host_frame_sink_manager.h"
+@@ -156,6 +157,7 @@
+ #include "ui/display/screen.h"
+ #include "ui/events/blink/web_input_event_traits.h"
+ #include "ui/events/event.h"
++#include "ui/events/gesture_detection/gesture_provider_config_helper.h"
+ #include "ui/events/keycodes/dom/dom_code.h"
+ #include "ui/gfx/color_space.h"
+ #include "ui/gfx/geometry/rect.h"
+@@ -840,6 +842,21 @@
+   // run them here after we clear it.
+   SendScreenRects();
+   SynchronizeVisualProperties();
++  // camchrome: an Android persona behaves like a phone, not only answers like
++  // one. Mouse input on the main frame is turned into touch input with the
++  // mobile gesture config, the same path DevTools device mode uses
++  // (Emulation.setEmitTouchEventsForMouse), so pages see touchstart/touchend,
++  // pointerType "touch" and tap-synthesised clicks instead of mouse events.
++  // CDP Input.dispatchMouseEvent goes through the same emulator.
++  if (owner_delegate_ && ungoogled::PersonaActive() &&
++      ungoogled::CurrentPersona().mobile) {
++    if (auto* touch_emulator =
++            GetTouchEmulator(/*create_if_necessary=*/true)) {
++      touch_emulator->Enable(
++          input::TouchEmulator::Mode::kEmulatingTouchFromMouse,
++          ui::GestureProviderConfigType::GENERIC_MOBILE);
++    }
++  }
+   // Show/Hide state is not given to the renderer while we are
+   // `waiting_for_init_`, but Init() signals that the renderer is ready to
+   // receive them. This call will inform the renderer that the widget is shown.
+--- a/content/browser/devtools/protocol/emulation_handler.cc
++++ b/content/browser/devtools/protocol/emulation_handler.cc
+@@ -18,6 +18,7 @@
+ #include "base/types/expected_macros.h"
+ #include "build/build_config.h"
+ #include "components/download/public/common/download_url_parameters.h"
++#include "components/ungoogled/persona_profile.h"
+ #include "content/browser/compute_pressure/web_contents_pressure_manager_proxy.h"
+ #include "content/browser/device_posture/device_posture_provider_impl.h"
+ #include "content/browser/devtools/devtools_agent_host_impl.h"
+@@ -1134,6 +1135,15 @@
+           input::TouchEmulator::Mode::kEmulatingTouchFromMouse,
+           TouchEmulationConfigurationToType(touch_emulation_configuration_));
+     }
++  } else if (ungoogled::PersonaActive() && ungoogled::CurrentPersona().mobile) {
++    // camchrome: an Android persona keeps its mouse-to-touch conversion when a
++    // DevTools client turns its own emulation off or detaches.
++    if (auto* touch_emulator = host_->GetRenderWidgetHost()->GetTouchEmulator(
++            /*create_if_necessary=*/true)) {
++      touch_emulator->Enable(
++          input::TouchEmulator::Mode::kEmulatingTouchFromMouse,
++          ui::GestureProviderConfigType::GENERIC_MOBILE);
++    }
+   } else {
+     if (auto* touch_emulator = host_->GetRenderWidgetHost()->GetTouchEmulator(
+             /*create_if_necessary=*/true)) {
+--- a/third_party/blink/renderer/modules/device_orientation/BUILD.gn
++++ b/third_party/blink/renderer/modules/device_orientation/BUILD.gn
+@@ -36,8 +36,11 @@
+     "device_sensor_event_pump.h",
+     "dom_window_device_motion.h",
+     "dom_window_device_orientation.h",
++    "held_device_sensor.cc",
++    "held_device_sensor.h",
+   ]
+   deps = [
++    "//components/ungoogled:ungoogled_switches",
+     "//services/device/public/cpp/generic_sensor",
+     "//services/device/public/mojom:generic_sensor",
+     "//third_party/blink/renderer/modules/permissions",
+--- a/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc
++++ b/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc
+@@ -14,6 +14,7 @@
+ #include "third_party/blink/renderer/core/frame/platform_event_controller.h"
+ #include "third_party/blink/renderer/modules/device_orientation/device_orientation_data.h"
+ #include "third_party/blink/renderer/modules/device_orientation/device_sensor_entry.h"
++#include "third_party/blink/renderer/modules/device_orientation/held_device_sensor.h"
+ #include "third_party/blink/renderer/platform/heap/persistent.h"
+ #include "third_party/blink/renderer/platform/wtf/functional.h"
+ 
+@@ -204,6 +205,14 @@
+ 
+     if (!std::isnan(reading.orientation_euler.y.value()))
+       gamma = reading.orientation_euler.y;
++  } else if (ShouldSynthesizeHeldDevice()) {
++    // camchrome (992): an Android persona on a sensorless machine reports a
++    // phone held in a hand instead of "no sensor". A real (or DevTools
++    // overridden) sensor still wins: this only fills the no-reading case.
++    const HeldDeviceReading held = HeldDeviceReadingNow();
++    alpha = held.alpha;
++    beta = held.beta;
++    gamma = held.gamma;
+   }
+ 
+   return DeviceOrientationData::Create(alpha, beta, gamma, absolute);
+--- a/third_party/blink/renderer/modules/device_orientation/device_motion_event_pump.cc
++++ b/third_party/blink/renderer/modules/device_orientation/device_motion_event_pump.cc
+@@ -18,6 +18,7 @@
+ #include "third_party/blink/renderer/modules/device_orientation/device_motion_event_pump.h"
+ #include "third_party/blink/renderer/modules/device_orientation/device_motion_event_rotation_rate.h"
+ #include "third_party/blink/renderer/modules/device_orientation/device_sensor_entry.h"
++#include "third_party/blink/renderer/modules/device_orientation/held_device_sensor.h"
+ #include "third_party/blink/renderer/platform/wtf/functional.h"
+ 
+ namespace {
+@@ -126,6 +127,23 @@
+ }
+ 
+ DeviceMotionData* DeviceMotionEventPump::GetDataFromSharedMemory() {
++  // camchrome (992): an Android persona on a machine with none of the three
++  // motion sensors reports a phone held in a hand instead of null vectors. Any
++  // connected (or DevTools overridden) sensor keeps the upstream path.
++  if (!accelerometer_->IsConnected() &&
++      !linear_acceleration_sensor_->IsConnected() &&
++      !gyroscope_->IsConnected() && ShouldSynthesizeHeldDevice()) {
++    const HeldDeviceReading held = HeldDeviceReadingNow();
++    return DeviceMotionData::Create(
++        DeviceMotionEventAcceleration::Create(held.accel_x, held.accel_y,
++                                              held.accel_z),
++        DeviceMotionEventAcceleration::Create(held.accel_g_x, held.accel_g_y,
++                                              held.accel_g_z),
++        DeviceMotionEventRotationRate::Create(
++            held.rotation_alpha, held.rotation_beta, held.rotation_gamma),
++        kDefaultPumpDelayMilliseconds);
++  }
++
+   DeviceMotionEventAcceleration* acceleration = nullptr;
+   DeviceMotionEventAcceleration* acceleration_including_gravity = nullptr;
+   DeviceMotionEventRotationRate* rotation_rate = nullptr;
+--- /dev/null
++++ b/third_party/blink/renderer/modules/device_orientation/held_device_sensor.h
+@@ -0,0 +1,53 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_DEVICE_ORIENTATION_HELD_DEVICE_SENSOR_H_
++#define THIRD_PARTY_BLINK_RENDERER_MODULES_DEVICE_ORIENTATION_HELD_DEVICE_SENSOR_H_
++
++#include <cstdint>
++
++#include "third_party/blink/renderer/modules/modules_export.h"
++
++namespace blink {
++
++// camchrome (992): readings of a phone held in a hand, for an Android persona
++// on a machine that has no orientation or motion sensors.
++//
++// A desktop answers deviceorientation with one event whose alpha/beta/gamma
++// are all null and devicemotion with null vectors; a phone fires a steady
++// stream of small, ever-changing readings. The model is a portrait handset
++// tilted towards the face (posture picked from the persona seed) with slow
++// arm sway, faster physiological tremor and per-sample sensor noise, then
++// quantised the way Chrome's sensor service rounds real readings (0.1 degree
++// for Euler angles, 0.1 m/s^2 for acceleration, 0.1 degree/s for rotation).
++// Gravity, rotation rate and the angles all come from the same motion, so
++// they agree with each other the way a real device's do.
++struct HeldDeviceReading {
++  // deviceorientation, degrees.
++  double alpha = 0;
++  double beta = 0;
++  double gamma = 0;
++  // devicemotion, m/s^2 and degrees/s.
++  double accel_x = 0, accel_y = 0, accel_z = 0;
++  double accel_g_x = 0, accel_g_y = 0, accel_g_z = 0;
++  double rotation_alpha = 0, rotation_beta = 0, rotation_gamma = 0;
++};
++
++// True when the active persona is a phone (--fingerprint-platform=android),
++// i.e. when the pumps should fall back to HeldDeviceReadingNow() instead of
++// reporting "no sensor".
++MODULES_EXPORT bool ShouldSynthesizeHeldDevice();
++
++// The reading at the current time. Calls a few milliseconds apart move
++// smoothly; the posture is stable for a persona.
++MODULES_EXPORT HeldDeviceReading HeldDeviceReadingNow();
++
++// The same, at `seconds` on the model's clock and for `seed`; exposed for the
++// persona validator and tests.
++MODULES_EXPORT HeldDeviceReading HeldDeviceReadingAt(double seconds,
++                                                     uint64_t seed);
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_DEVICE_ORIENTATION_HELD_DEVICE_SENSOR_H_
+--- /dev/null
++++ b/third_party/blink/renderer/modules/device_orientation/held_device_sensor.cc
+@@ -0,0 +1,169 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "third_party/blink/renderer/modules/device_orientation/held_device_sensor.h"
++
++#include <array>
++#include <cmath>
++
++#include "base/time/time.h"
++#include "components/ungoogled/persona_profile.h"
++
++namespace blink {
++
++namespace {
++
++constexpr double kPi = 3.14159265358979323846;
++constexpr double kTwoPi = 2 * kPi;
++constexpr double kGravity = 9.80665;
++// The sensor service's rounding of real readings
++// (services/device/generic_sensor/platform_sensor_util.h).
++constexpr double kEulerRounding = 0.1;          // degrees
++constexpr double kAccelerationRounding = 0.1;   // m/s^2
++constexpr double kRotationRounding = 0.1;       // degrees/s
++// Readings are produced on a 60 Hz grid like the pump's timer, so noise is
++// per sample and not per call.
++constexpr double kSampleHz = 60.0;
++
++uint64_t Mix(uint64_t x) {
++  x += 0x9e3779b97f4a7c15ULL;
++  x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
++  x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
++  return x ^ (x >> 31);
++}
++
++// Uniform in [0, 1).
++double Unit(uint64_t seed, uint64_t salt) {
++  return static_cast<double>(Mix(seed ^ Mix(salt)) >> 11) * 0x1.0p-53;
++}
++
++// Roughly normal, mean 0, standard deviation 1 (Irwin-Hall of four).
++double Noise(uint64_t seed, uint64_t sample, uint64_t channel) {
++  double sum = 0;
++  for (uint64_t k = 0; k < 4; ++k) {
++    sum += Unit(seed, (sample << 8) ^ (channel << 3) ^ k);
++  }
++  return (sum - 2.0) * std::sqrt(3.0);
++}
++
++double Round(double value, double multiple) {
++  // + 0.0 turns a rounded -0 into 0, which is what a real reading reports.
++  return std::round(value / multiple) * multiple + 0.0;
++}
++
++// One axis of motion: a sum of sines (slow arm sway, breathing, tremor).
++struct Wave {
++  double amplitude;  // degrees
++  double hz;
++};
++
++// Value and time derivative (per second) of a wave sum with seeded phases.
++void WaveSum(const Wave* waves,
++             size_t count,
++             double t,
++             uint64_t seed,
++             uint64_t axis,
++             double* value,
++             double* rate) {
++  *value = 0;
++  *rate = 0;
++  for (size_t i = 0; i < count; ++i) {
++    const double phase = kTwoPi * Unit(seed, (axis << 4) | i);
++    // Each persona's hand is a little different: +-15% on every frequency.
++    const double hz = waves[i].hz * (0.85 + 0.3 * Unit(seed, 0x100 + (axis << 4) + i));
++    const double w = kTwoPi * hz;
++    *value += waves[i].amplitude * std::sin(w * t + phase);
++    *rate += waves[i].amplitude * w * std::cos(w * t + phase);
++  }
++}
++
++constexpr std::array<Wave, 4> kBetaWaves = {{
++    {2.2, 0.07}, {0.9, 0.31}, {0.05, 8.6}, {0.025, 11.2}}};
++constexpr std::array<Wave, 4> kGammaWaves = {{
++    {1.8, 0.09}, {0.7, 0.27}, {0.04, 9.1}, {0.02, 10.4}}};
++constexpr std::array<Wave, 3> kAlphaWaves = {{
++    {3.5, 0.04}, {0.8, 0.23}, {0.03, 9.7}}};
++// Hand translation shows up as linear acceleration of a few cm/s^2.
++constexpr std::array<Wave, 3> kLinearWaves = {{
++    {0.035, 0.6}, {0.02, 1.7}, {0.012, 9.0}}};
++
++}  // namespace
++
++bool ShouldSynthesizeHeldDevice() {
++  return ungoogled::PersonaActive() && ungoogled::CurrentPersona().mobile;
++}
++
++HeldDeviceReading HeldDeviceReadingAt(double t, uint64_t seed) {
++  // Posture: portrait, tilted 35-65 degrees towards the face, a slight roll,
++  // any compass heading.
++  const double beta0 = 35.0 + 30.0 * Unit(seed, 1);
++  const double gamma0 = -6.0 + 12.0 * Unit(seed, 2);
++  const double alpha0 = 360.0 * Unit(seed, 3);
++  const uint64_t sample = static_cast<uint64_t>(std::floor(t * kSampleHz));
++
++  double beta, beta_rate, gamma, gamma_rate, alpha, alpha_rate;
++  WaveSum(kBetaWaves.data(), kBetaWaves.size(), t, seed, 1, &beta, &beta_rate);
++  WaveSum(kGammaWaves.data(), kGammaWaves.size(), t, seed, 2, &gamma,
++          &gamma_rate);
++  WaveSum(kAlphaWaves.data(), kAlphaWaves.size(), t, seed, 3, &alpha,
++          &alpha_rate);
++  beta += beta0 + 0.04 * Noise(seed, sample, 1);
++  gamma += gamma0 + 0.04 * Noise(seed, sample, 2);
++  alpha = std::fmod(alpha0 + alpha + 0.04 * Noise(seed, sample, 3), 360.0);
++  if (alpha < 0) {
++    alpha += 360.0;
++  }
++
++  HeldDeviceReading r;
++  r.alpha = Round(alpha, kEulerRounding);
++  r.beta = Round(beta, kEulerRounding);
++  r.gamma = Round(gamma, kEulerRounding);
++  if (r.alpha >= 360.0) {
++    r.alpha -= 360.0;
++  }
++
++  // Gyroscope: the same motion's angular rate plus gyro noise.
++  r.rotation_alpha = Round(alpha_rate + 0.15 * Noise(seed, sample, 4),
++                           kRotationRounding);
++  r.rotation_beta = Round(beta_rate + 0.15 * Noise(seed, sample, 5),
++                          kRotationRounding);
++  r.rotation_gamma = Round(gamma_rate + 0.15 * Noise(seed, sample, 6),
++                           kRotationRounding);
++
++  // Linear acceleration (gravity removed): hand translation plus noise.
++  double lx, ly, lz, unused;
++  WaveSum(kLinearWaves.data(), kLinearWaves.size(), t, seed, 7, &lx, &unused);
++  WaveSum(kLinearWaves.data(), kLinearWaves.size(), t, seed, 8, &ly, &unused);
++  WaveSum(kLinearWaves.data(), kLinearWaves.size(), t, seed, 9, &lz, &unused);
++  lx += 0.03 * Noise(seed, sample, 7);
++  ly += 0.03 * Noise(seed, sample, 8);
++  lz += 0.03 * Noise(seed, sample, 9);
++
++  // Gravity in device coordinates from the (unrounded) tilt, Android's axes:
++  // flat face up is (0, 0, +g), upright portrait is (0, +g, 0), and tilting
++  // the right edge down (positive gamma) makes x negative.
++  const double b = beta * kPi / 180.0;
++  const double g = gamma * kPi / 180.0;
++  const double gx = -kGravity * std::cos(b) * std::sin(g);
++  const double gy = kGravity * std::sin(b);
++  const double gz = kGravity * std::cos(b) * std::cos(g);
++
++  r.accel_x = Round(lx, kAccelerationRounding);
++  r.accel_y = Round(ly, kAccelerationRounding);
++  r.accel_z = Round(lz, kAccelerationRounding);
++  r.accel_g_x = Round(gx + lx, kAccelerationRounding);
++  r.accel_g_y = Round(gy + ly, kAccelerationRounding);
++  r.accel_g_z = Round(gz + lz, kAccelerationRounding);
++  return r;
++}
++
++HeldDeviceReading HeldDeviceReadingNow() {
++  const ungoogled::PersonaProfile& persona = ungoogled::CurrentPersona();
++  // Monotonic clock since boot, the same in every renderer of the session, so
++  // two frames listening at once see the same phone.
++  const double t = (base::TimeTicks::Now() - base::TimeTicks()).InSecondsF();
++  return HeldDeviceReadingAt(t, Mix(persona.persona_seed ^ 0x992));
++}
++
++}  // namespace blink
+--- a/third_party/blink/renderer/platform/fonts/font_cache.cc
++++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
+@@ -370,6 +370,27 @@
+       "Noto Sans Adlam", "Noto Sans Vai", "Noto Sans Yi", "Noto Sans Coptic", "Noto Sans Cham",
+       "Noto Sans Tifinagh"
+     };
++  } else if (platform == "android") {
++    // camchrome (992): Chrome on Android matches a CSS family name only against the
++    // NAMED families and aliases in /system/etc/fonts.xml; the Noto script and emoji
++    // fallbacks carry no name and never match by family. This is the AOSP Android
++    // 13/14 set that every handset ships (OEM extras such as Google Sans on Pixel or
++    // SamsungOne on Galaxy are deliberately left out, so the list stays true for every
++    // device row in kAndroidDevices). Without it the Android persona reported no named
++    // font beyond the basic Arial/Times/Courier/Roboto set, which no phone does.
++    return {
++      // named families
++      "sans-serif", "sans-serif-condensed", "sans-serif-medium", "sans-serif-light",
++      "sans-serif-thin", "sans-serif-black", "sans-serif-condensed-medium",
++      "sans-serif-condensed-light", "serif", "monospace", "serif-monospace", "casual",
++      "cursive", "sans-serif-smallcaps", "source-sans-pro", "source-sans-pro-semi-bold",
++      "Roboto", "Noto Serif", "Droid Sans Mono", "Cutive Mono", "Coming Soon",
++      "Dancing Script", "Carrois Gothic SC",
++      // aliases to sans-serif / serif / monospace
++      "Arial", "Helvetica", "Tahoma", "Verdana", "Times", "Times New Roman", "Palatino",
++      "Georgia", "Baskerville", "Goudy", "fantasy", "ITC Stone Serif",
++      "sans-serif-monospace", "Monaco", "Courier", "Courier New"
++    };
+   }
+   return {};
+ }
+@@ -598,6 +619,20 @@
+       {"Sitka Text", "Noto Serif"}, {"Sitka Small", "Noto Serif"},
+       {"Sitka Display", "Noto Serif"}, {"Sitka Subheading", "Noto Serif"},
+       {"Sitka Heading", "Noto Serif"}, {"Sitka Banner", "Noto Serif"},
++      // --- Android handset families (camchrome 992). Roboto is the system sans; Arimo
++      // is the closest metric clone we ship. Droid Sans Mono / Cutive Mono -> Cousine,
++      // Noto Serif and the serif aliases -> Tinos, Coming Soon / Dancing Script -> the
++      // cursive clone.
++      {"sans-serif-condensed", "Liberation Sans Narrow"},
++      {"sans-serif-monospace", "Cousine"}, {"serif-monospace", "Cousine"},
++      {"Monaco", "Cousine"}, {"Droid Sans Mono", "Cousine"}, {"Cutive Mono", "Cousine"},
++      {"casual", "Comic Neue"}, {"cursive", "Comic Neue"},
++      {"Coming Soon", "Comic Neue"}, {"Dancing Script", "Comic Neue"},
++      {"Palatino", "Tinos"}, {"Baskerville", "Tinos"}, {"Goudy", "Tinos"},
++      {"ITC Stone Serif", "Tinos"}, {"Noto Serif", "Tinos"},
++      {"Carrois Gothic SC", "Arimo"}, {"sans-serif-smallcaps", "Arimo"},
++      {"serif", "Tinos"}, {"fantasy", "Tinos"}, {"Times", "Tinos"},
++      {"monospace", "Cousine"}, {"Courier", "Cousine"},
+   };
+   for (const Sub& sub : kSubs) {
+     if (base::EqualsCaseInsensitiveASCII(sub.persona_font, family))
+@@ -684,7 +719,12 @@
+       }
+       // Basic cross-platform families (Arial/Times/Courier/CSS generics) exist on every OS
+       // and resolve to the correct metric clone via fontconfig -- let them through.
+-      if (IsBasicFont(requested_family)) {
++      // camchrome (992): not for an Android persona, whose list above already holds every
++      // family a phone answers to; Helvetica Neue / Sans / BlinkMacSystemFont are absent
++      // on a handset.
++      if (IsBasicFont(requested_family) &&
++          (spoofed_platform != "android" || requested_family == "system-ui" ||
++           requested_family == "-webkit-standard" || requested_family == "math")) {
+         return font_platform_data_cache_.GetOrCreateFontPlatformData(
+             this, font_description, creation_params, alternate_font_name);
+       }
