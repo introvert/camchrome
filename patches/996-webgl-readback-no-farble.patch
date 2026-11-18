@@ -1,0 +1,23 @@
+camchrome: --cc-no-farble also turns off 988's WebGL readPixels perturbation.
+
+220 made --cc-no-farble switch off every per-site perturbation (canvas 2D readback, toDataURL,
+measureText, the per-site GPU pick). 988 added a readPixels pass afterwards that was gated only on
+--disable-fingerprint-noise, so with --cc-no-farble a WebGL coordinate gradient still read back
+perturbed pixels (detected by checkers as "WebGL readback noise"). It now honours the switch.
+
+Tests: tools/network_selftest.py no-farble-switch checks 2D canvas and WebGL readPixels.
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index 12f236ba25..f44cfcad9c 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -6083,7 +6083,10 @@ void WebGLRenderingContextBase::ApplyPersonaReadPixelsNoise(
+     return;
+   const base::CommandLine* command_line =
+       base::CommandLine::ForCurrentProcess();
++  // camchrome: --cc-no-farble (220) turns every per-site perturbation off; this readback pass
++  // (988) was the one path that still applied it.
+   if (!command_line->HasSwitch(switches::kFingerprint) ||
++      command_line->HasSwitch("cc-no-farble") ||
+       !ungoogled::FingerprintNoiseEnabled() ||
+       ungoogled::CurrentPersona().webgl_real) {
+     return;

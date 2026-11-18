@@ -57,6 +57,13 @@ def main() -> int:
             if digest != obj["sha256sum"]:
                 print(f"sha256 mismatch for {url}: {digest} != {obj['sha256sum']}", file=sys.stderr)
                 return 1
+            if obj.get("output_file"):
+                # A single file (e.g. buildtools/linux64-format/clang-format), not an archive.
+                dest = out_dir / obj["output_file"]
+                dest.write_bytes(data)
+                dest.chmod(0o755)
+                print(f"  ok: sha256 {digest[:16]}..., written to {dest}")
+                continue
             tmp.write(data)
             tmp.flush()
             with tarfile.open(tmp.name) as tar:

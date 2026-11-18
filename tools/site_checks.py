@@ -41,7 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cdp import Browser  # noqa: E402
+from cdp import CDP, Browser  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -83,8 +83,8 @@ SITES = [
          "gpu, network, other, performance)", 25,
          {"issues_free": r"(No issues detected)",
           "categories_clean": r"__count__No issues detected"}),
-    Site("pixelscan", "https://pixelscan.net/",
-         "Fingerprint consistent; no proxy or automation detected", 25,
+    Site("pixelscan", "https://pixelscan.net/fingerprint-check",
+         "Fingerprint consistent; no proxy or automation detected", 40,
          {"consistency": r"(Your (?:browser )?fingerprint (?:is|looks) [a-z ]+)",
           "masking": r"(No masking detected|Masking detected)",
           "automation": r"(No automation framework detected|Automation framework detected)"}),
@@ -101,6 +101,33 @@ SITES = [
 ]
 
 
+def human_click_text(browser: Browser, cdp, text: str) -> bool:
+    """Click the first button/link whose text starts with `text`, as a person would: a trusted
+    pointer path and click from Browser.humanizedClick (130), not element.click(), whose
+    isTrusted=false event is itself a bot signal on the pages this script visits."""
+    pos = cdp.evaluate(
+        "(() => { const b = [...document.querySelectorAll('button,a,[role=button]')].find("
+        f"e => e.textContent.trim().startsWith({json.dumps(text)}));"
+        " if (!b) return null; b.scrollIntoView({block: 'center'});"
+        " const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
+    if not pos:
+        return False
+    time.sleep(0.8)
+    target = cdp.call("Target.getTargetInfo")["targetInfo"]["targetId"]
+    browser_cdp = CDP(browser.version["webSocketDebuggerUrl"])
+    try:
+        browser_cdp.call("Browser.humanizedClick",
+                         {"targetId": target, "x": pos[0], "y": pos[1], "duration": 0.6})
+    except RuntimeError:
+        # Stock Chromium has no humanized input; fall back to a CDP mouse click.
+        for kind in ("mousePressed", "mouseReleased"):
+            cdp.call("Input.dispatchMouseEvent", {"type": kind, "x": pos[0], "y": pos[1],
+                                                  "button": "left", "clickCount": 1})
+    finally:
+        browser_cdp.close()
+    return True
+
+
 def run_site(browser: Browser, site: Site, out_dir: Path) -> dict:
     cdp = browser.open_page()
     result = {"site": site.key, "url": site.url, "expect": site.expect}
@@ -111,10 +138,7 @@ def run_site(browser: Browser, site: Site, out_dir: Path) -> dict:
             result["error"] = "page did not load"
         if site.click:
             time.sleep(3)
-            cdp.evaluate(
-                "(() => { const b = [...document.querySelectorAll('button,a')].find("
-                f"e => e.textContent.trim().startsWith({json.dumps(site.click)}));"
-                " if (b) b.click(); return !!b; })()")
+            result["clicked"] = human_click_text(browser, cdp, site.click)
         time.sleep(site.wait)
         text = cdp.evaluate("document.body ? document.body.innerText : ''") or ""
         (out_dir / f"{site.key}.txt").write_text(text)

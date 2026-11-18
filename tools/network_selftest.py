@@ -573,7 +573,28 @@ def canvas_reads(args, flags, http) -> list[str]:
               c.width = 200; c.height = 50; const x = c.getContext('2d');
               x.font = '20px sans-serif'; x.fillStyle = '#f60'; x.fillRect(10, 5, 80, 30);
               x.fillStyle = '#069'; x.fillText('camchrome ✓', 4, 30);
-              return c.toDataURL(); })()"""))
+              // WebGL readPixels of a coordinate gradient (988's readback path).
+              const g = document.createElement('canvas'); g.width = g.height = 32;
+              const gl = g.getContext('webgl', {preserveDrawingBuffer: true});
+              let px = '';
+              if (gl) {
+                const vs = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vs, 'attribute vec2 p; varying vec2 v; void main(){ v = p * 0.5 + 0.5; gl_Position = vec4(p, 0, 1); }');
+                gl.compileShader(vs);
+                const fs = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fs, 'precision mediump float; varying vec2 v; void main(){ gl_FragColor = vec4(v, 0.5, 1); }');
+                gl.compileShader(fs);
+                const pr = gl.createProgram(); gl.attachShader(pr, vs); gl.attachShader(pr, fs);
+                gl.linkProgram(pr); gl.useProgram(pr);
+                gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+                gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                const buf = new Uint8Array(32 * 32 * 4);
+                gl.readPixels(0, 0, 32, 32, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+                px = Array.from(buf).join(',');
+              }
+              return c.toDataURL() + '|' + px; })()"""))
         cdp.close()
     finally:
         b.stop()
@@ -586,9 +607,14 @@ def check_no_farble(args, rep, http, seed):
         return
     noisy = canvas_reads(args, [f"--fingerprint={seed}"], http)
     plain = canvas_reads(args, [f"--fingerprint={seed}", "--cc-no-farble"], http)
-    rep.add("no-farble-switch", "220", noisy[0] != noisy[1] and plain[0] == plain[1],
-            f"with noise differs across sites={noisy[0] != noisy[1]}, "
-            f"--cc-no-farble equal={plain[0] == plain[1]}")
+    # Both halves (2D canvas and WebGL readPixels) must follow the switch.
+    split = lambda v: v.split("|", 1)
+    n0, n1, p0, p1 = (split(v) for v in (noisy[0], noisy[1], plain[0], plain[1]))
+    ok = (n0[0] != n1[0] and p0[0] == p1[0]          # 2D canvas
+          and n0[1] != n1[1] and p0[1] == p1[1])     # WebGL readPixels
+    rep.add("no-farble-switch", "220, 988", ok,
+            f"2D: noisy differs={n0[0] != n1[0]} no-farble equal={p0[0] == p1[0]}; "
+            f"WebGL: noisy differs={n0[1] != n1[1]} no-farble equal={p0[1] == p1[1]}")
 
 
 def check_portable_profile(args, rep, http, tmp):

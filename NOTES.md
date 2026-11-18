@@ -32,6 +32,10 @@ three were added (987–989), so 66 patches are in `patches/series` now.
   `commondatastorage.googleapis.com/chromium-browser-official`
 - The previous macOS build (156.0.8078.79) is preserved in `build-156/` and tag
   `v156-audit100`.
+- Checked again 2026-11-18: ungoogled-chromium's newest release is still 157.0.8103.78, while
+  Google Chrome stable is 158.0.8127.x on every platform. Rebase when ungoogled-chromium tags 158
+  (porting its ~100 base patches ahead of it is not worth the drift). A UA one major behind
+  stable is common and not a tell by itself; every surface reports the same 157 (995).
 
 ## How the pieces fit
 

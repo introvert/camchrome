@@ -69,3 +69,5 @@
 992-android-persona-mobile-behaviour.patch
 993-humanized-typing-scroll-drag.patch
 994-persona-validator-cli.patch
+995-ua-client-hints-coherence.patch
+996-webgl-readback-no-farble.patch

@@ -79,6 +79,19 @@ browser.call("Browser.humanizedType", {"targetId": tid, "text": "me@example.com"
 browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 ```
 
+### What 995–996 add (identity and switches)
+
+| Patch | Fix |
+|---|---|
+| `995-ua-client-hints-coherence` | the UA string, `Sec-CH-UA`, the full-version list and `navigator.userAgentData` (page and workers) always agree: with a persona, with `--fingerprint-brand`, with `--user-agent`, and with CDP `Emulation.setUserAgentOverride` with or without `userAgentMetadata` (explicit metadata is kept exactly as given). No Chrome version is hard-coded any more |
+| `996-webgl-readback-no-farble` | `--cc-no-farble` also turns off the WebGL `readPixels` perturbation |
+
+Every Chrome version claim comes from the engine (157.0.8103.78, the newest ungoogled-chromium
+release; Google Chrome stable is already 158) or from `--fingerprint-brand-version`.
+`--fingerprint-brand=edge` reports the Edge stable build for this Chromium major (157.0.4341.60).
+Opera and Vivaldi have no reliable default, so `--fingerprint-brand=opera|vivaldi` needs
+`--fingerprint-brand-version=<their version>`; without it plain Chromium is claimed.
+
 ## Automation: local API, MCP, recorder, synchronised windows
 
 `tools/camauto.py` drives camchrome with the engine's human input and never touches the page's
@@ -160,6 +173,21 @@ libclang and node (`scripts/fetch-gcs-dep.py`, sha256-checked), tsgo and esbuild
 DEPS names, and links the host `go`, `gperf` and `python3` where the build expects them. The host
 needs `python3`, `npm`, `go`, `gperf`, `ninja` and `curl`.
 
+### Linux on a Mac (Docker)
+
+Chromium's Linux host toolchain is x86-64 only. On Apple Silicon, `scripts/docker-linux-build.sh`
+builds inside an x86-64 Ubuntu 24.04 container (Docker Desktop runs it under Rosetta), with the
+tree in a Docker volume:
+
+```bash
+scripts/docker-linux-build.sh arm64      # or x64; docker logs -f camchrome-linux-arm64
+```
+
+It uses `config/args.linux.lowmem.gn` (no ThinLTO/PGO, fits ~18 GB of container memory; pass
+`ARGS_FILE=config/args.linux.gn` on a 64 GB machine for the official configuration), installs a
+pinned Go 1.26 for Dawn, and resumes where it stopped. Any machine can pick another args file with
+`ARGS_FILE=... scripts/02-build.sh`.
+
 `config/args.win.gn` is Clearcote's Windows cross-compile config. It needs their xwin SDK setup,
 which is not ported here.
 
@@ -194,6 +222,8 @@ Results are written to `build/stealth-audit.txt` / `.json` (audit) and
 |---|---|---|
 | `scripts/check-repo.sh` | series integrity, patch syntax, dead doc links, shellcheck, Python | no |
 | `tools/fingerprint_selftest.py` | one local check per patched surface, named after its patch | no |
+| `tools/network_selftest.py` | proxies, QUIC and WebRTC over the SOCKS5 relay, humanized input, no-farble, portable profile | no (needs `aioquic`) |
+| `tools/ua_selftest.py` | UA string, client hints and `userAgentData` agree in every identity mode (995) | no |
 | `tools/stealth_audit.py` | the Clearcote audit (acceptance test) | yes |
 | `tools/site_checks.py` | browserleaks QUIC, Twilio WebRTC, fingerprint.com, pixelscan, browserscan, reCAPTCHA… | yes, plus a SOCKS5 proxy with UDP |
 

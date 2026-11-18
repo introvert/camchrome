@@ -48,6 +48,50 @@ Rules that decide most of these results, whatever the engine does:
 | 8 | [antcpt.com/score_detector](https://antcpt.com/score_detector/) | reCAPTCHA v3 score | **0.9** | all; humanized input 130 | IP reputation and Google cookies dominate. ShardBrowser attributes part of its score to the `x-client-data` header, which camchrome (ungoogled) does not send; expect 0.7 or lower on a fresh profile until that's measured. | Not run |
 | — | [clearcotelabs.com/audit](https://www.clearcotelabs.com/audit) | 365 coherence checks | 100/100 | all | **100/100, 236/236** on macOS arm64 157 (AUDIT.md, 2026-11-17). | Recorded in AUDIT.md |
 
+## Recorded run: macOS arm64, 2026-11-18
+
+camchrome 157.0.8103.78 (`v157.0.8103.78-camchrome.1` plus 995/996), headful on an Apple M4 Mac,
+`--fingerprint=demo`, macOS persona, through a residential SOCKS5 proxy with UDP ASSOCIATE
+(Geonode, sticky sessions exiting in Brazil), `--socks5-udp --timezone=America/Sao_Paulo
+--lang=pt-BR --fingerprint-location=<exit city>`. The sticky sessions rotate their exit IP after a
+few minutes, so the IP differs between sites.
+
+| # | Site | Result | Notes |
+|---|---|---|---|
+| 1 | browserleaks.com/quic | **QUIC True**, over HTTP/3 through the relay; exit IP shown is the proxy's | JA4 `q13d0312h3_55b375c5d22e_178839b6cec1`; MTU estimate 1280 |
+| 2 | networktest.twilio.com | Pass | skipped from later runs on request |
+| 3 | fingerprint.com/demo | not judged | the Smart Signals are not in the page text; needs a dedicated extractor |
+| 4 | deviceandbrowserinfo.com/are_you_a_bot | **"You are human!"**, isBot false | |
+| 5 | ShardX / ProxyShard IP checker | audio, automation, device, performance clean; see below | not used as a pass criterion |
+| 6 | pixelscan.net/fingerprint-check | "No proxy detected", "No automated behavior detected"; **"Masking detected"** with any persona | dropped on request; see below |
+| 7 | browserscan.net | **Authenticity 100%** | |
+| 8 | antcpt.com/score_detector | not run | the site returned a PHP error ("Failed to open stream") |
+| — | Clearcote audit | **100/100**, 236/236, no findings | `tools/stealth_audit.py --seed testseed --interact` |
+
+**ShardX findings, and what was done about each:**
+
+- *canvas: measureText width vs DOM width.* A checker bug: its DOM probe inherits the site's own
+  CSS `letter-spacing: -0.32px` (20 characters × −0.32 px is exactly the reported gap). Stock
+  Google Chrome gets the same finding on that page.
+- *canvas: putImageData/getImageData round trip, 1×1 mosaic; gpu: WebGL gradient readback.* These
+  are camchrome's per-site noise (farbling) and go away with `--cc-no-farble`. The WebGL readback
+  path ignored that switch until 996.
+- *other: brands lack "Google Chrome".* camchrome claims the Chromium brand by default (an
+  ungoogled build has no Widevine or Google services). `--fingerprint-brand=chrome` claims
+  Google Chrome; 995 keeps every surface consistent with that.
+- *other: no Google TTS voices, network: no Widevine.* Ungoogled-build properties.
+- *other: form validation text in English, Intl locale pt-BR.* On macOS, Chrome takes its UI
+  language from the system, not `--lang`; launch with `-AppleLanguages '(pt-BR)'`.
+- *cpu: hardwareConcurrency 12 vs measured ~8* (a "weak signal"): the persona claimed more cores
+  than the 10-core host. Use `--fingerprint-hardware-concurrency`.
+- *network: p0f TCP fingerprint says Linux, browser says macOS.* The proxy server's own TCP stack;
+  no browser can change it.
+
+**Pixelscan "Masking detected"** appears with any `--fingerprint` persona and not without one
+(camchrome with no flags is "consistent", like stock Chrome). It stays with the real core count,
+GPU string, WebGL backend and screen, and with all noise off (`--cc-no-farble
+--disable-fingerprint-noise --disable-canvas-noise`), so it is none of those. Open item.
+
 ## Running it in CI
 
 `.github/workflows/full-build.yml` builds the browser and, with **run_sites** ticked, runs this
