@@ -6,7 +6,7 @@ As of 2026-11-17, Chromium `157.0.8103.78`, ungoogled `157.0.8103.78-1`.
 |---|---|---|---|---|---|---|
 | mac-arm64 | ✅ 64/64 (900/905 skipped) | ✅ | ✅ | ✅ `Chromium.app` | ✅ 100/100 | macOS 26.1, 10-core M-series, 24 GB (NOTES.md) |
 | linux-x64 | ✅ 66/66 | ✅ 36,541 targets | ✅ 95/95 | not attempted | not run | Ubuntu 24.04 container, 4 cores, 15 GB RAM (this review) |
-| linux-arm64 | same source as x64 | CI | CI | CI (`mode=full`) | — | `.github/workflows/build.yml`, cross-compiled from x64 |
+| linux-arm64 | ✅ | ✅ | ✅ | ✅ official ThinLTO+PGO | not run (self-tests: fingerprint 49/49 Linux, 51/51 Windows, 55/55 Android persona; UA 12/12; network 17/17) | native arm64 container, 2026-11-18 (commit `fa445b6`) |
 | mac-x64 | same source as arm64 | CI | CI | CI (`mode=full`) | — | `.github/workflows/build.yml`, cross-compiled from arm64 |
 | windows-x64 | not ported | — | — | — | — | needs Clearcote's xwin setup |
 

@@ -44,6 +44,8 @@ Caveats:
 
 ## Other repos worth taking from
 
+The maintained list, with versions and what to watch, is now [docs/UPSTREAM-SOURCES.md](docs/UPSTREAM-SOURCES.md).
+
 Checked on 2026-11-16 (license, last push).
 
 **Driver side (the automation-surface gaps)**
@@ -66,7 +68,7 @@ Checked on 2026-11-16 (license, last push).
 
 **Not usable**
 - [pocchian/fingerprint-chromium-arm-mac](https://github.com/pocchian/fingerprint-chromium-arm-mac) — no license, so its code can't be reused. Read only.
-- [arman-bd/chromiumfish](https://github.com/arman-bd/chromiumfish) — license unclear on GitHub. Check before using.
+- [arman-bd/chromiumfish](https://github.com/arman-bd/chromiumfish) — license was unclear on 2026-11-16; the repo carries an MIT LICENSE as of 2026-11-18, so its TLS-pinning and canvas-bridge patches can be compared and reused.
 - [imputnet/helium](https://github.com/imputnet/helium) — GPL-3.0 and privacy-focused, not anti-fingerprinting.
 
 ## Findings fixed in 986–989

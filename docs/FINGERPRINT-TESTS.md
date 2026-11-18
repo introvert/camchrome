@@ -48,7 +48,7 @@ review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
 | 010 UA / UA-CH / webdriver | `navigator.userAgent`, `userAgentData`, `Sec-CH-UA*`, `webdriver` | ✓ `webdriver-false`, `ua-no-headless`, `header-ua-equals-js`, `header-platform-equals-uadata`, `navigator-platform-coherent`, `uach-brand-equals-ua`, `header-full-version-list-sent` | HTTP vs runtime, Navigator identity | — |
 | 020 audio | AudioContext metadata, offline render | ✓ `audio-same-seed-stable`, `audio-sample-rate-plausible` | Render & GPU | Per-site audio difference is not asserted (020's noise was retired on 157; the render is deterministic). |
 | 030 cores / memory | `hardwareConcurrency`, `deviceMemory` | ✓ `device-memory-on-chrome-grid`, `cores-override` (with `--cores`) | Navigator identity | — |
-| 040 fonts | font allowlist | — | Engine & OS oracles | **Gap.** No local check that host-only fonts are hidden. Add a `document.fonts.check()` probe of a host-only family. |
+| 040 fonts | font allowlist | ✓ `fonts-no-foreign-os-families` (with `--platform windows\|linux\|macos`): another OS's signature families are not visible; `android-handset-fonts` | Engine & OS oracles | Host-platform persona not asserted (the host's fonts are the persona's). |
 | 050 shadow DOM / client rects | closed shadow access, no rect noise | ✓ `rects-not-noised` (network_selftest) | Automation surface | — |
 | 060 canvas | 2D noise, export paths, `measureText` | ✓ `canvas-stable-within-page`, `measuretext-nonzero` | Render & GPU | — |
 | 065 canvas bridge | remote GPU rendering | — | — | **Gap.** Opt-in feature with no test and no host in the repo. |
@@ -62,10 +62,10 @@ review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
 | 130 humanized input | `Browser.humanizedClick*` CDP commands | ✓ `humanized-click` (network_selftest): trusted click on the target after ≥5 moves | Input & behaviour | — |
 | 993 humanized typing, scroll, drag | `Browser.humanizedType`, `humanizedScroll`, `humanizedDrag` | ✓ `humanized-type`, `humanized-type-corrects-typos`, `humanized-drag`, `humanized-scroll-wheel` (network_selftest) | Input & behaviour | — |
 | 140 screen | `screen.*`, outer window | ✓ `avail-within-screen`, `window-fits-screen`, `color-depth-24-or-30` | Screen & display | — |
-| 141 / 142 media queries, touch | pointer/hover, device-size | ✓ `mq-device-size-equals-screen`, `no-touch-means-fine-pointer` | Screen & display | — |
+| 141 / 142 media queries, touch | pointer/hover, device-size, colour scheme | ✓ `mq-device-size-equals-screen`, `no-touch-means-fine-pointer`, `color-scheme-header-equals-media` (`Sec-CH-Prefers-Color-Scheme` = `prefers-color-scheme`) | Screen & display | Colour scheme is the host's, not the persona's (see UPSTREAM-SOURCES.md §4). |
 | 145 storage quota | `storage.estimate()` | ✓ `storage-quota-present` | Capability surfaces | — |
 | 146 JS heap | `performance.memory` | ✓ `js-heap-limit-plausible` | Network & WebRTC | — |
-| 147 media capabilities | `decodingInfo()` | — | Capability surfaces | **Gap.** |
+| 147 media capabilities | `decodingInfo()` | ✓ `media-capabilities-agree-with-mse`: `decodingInfo().supported` equals `MediaSource.isTypeSupported` for H.264, VP9, AV1, HEVC, AAC, Opus | Capability surfaces | — |
 | 148 media devices | `enumerateDevices()` | ✓ `media-devices-present`, `media-device-labels-empty` | Capability surfaces | — |
 | 150 sensors | battery, connection, keyboard, touch points | ✓ `battery-plausible`, `keyboard-layout-map` | Capability surfaces | — |
 | 160 OS details | `new URL("C:/")`, `navigator.share` | ✓ `url-drive-letter-is-file` (Windows persona) | Engine & OS oracles | — |
@@ -98,11 +98,22 @@ review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
 | 987 engine version, macOS persona | version from engine; Metal persona | ✓ `ua-major-equals-engine`, `uach-full-version-equals-engine`, `webgpu-vendor-matches-webgl` | HTTP vs runtime, Render & GPU | — |
 | 988 readback and timing | `readPixels` sentinel, PBO, `getParameter` latency | ✓ `readpixels-sentinel-untouched` | Render & GPU | PBO and timing only in the audit. |
 | 989 CPU tier, network hints | `cpuPerformance`, `Sec-CH-RTT/Downlink/ECT` | ✓ `rtt-header-equals-connection`, `downlink-header-equals-connection` | HTTP vs runtime | — |
+| 990 / 991 QUIC and WebRTC via the SOCKS5 relay | HTTP/3 and STUN through UDP ASSOCIATE | ✓ `quic-over-socks5`, `quic-socks5-no-relay`, `webrtc-relay-exit-ip`, `webrtc-stun-name-via-proxy`, `webrtc-private-destination-dropped` (network_selftest) | Network & WebRTC | End to end through a real proxy only in the site matrix. |
+| 992 Android behaviour | touch from mouse, sensors, handset fonts | ✓ `android-*` (with `--platform android`), `desktop-mouse-stays-mouse` | Input, Capability surfaces | — |
+| 994 validator CLI | persona derivation without a browser | ✓ `fingerprint_library.py selftest --validator` (CI compile job) | — | — |
+| 995 UA / client hints | UA, `Sec-CH-UA*`, `userAgentData` in every identity mode | ✓ `tools/ua_selftest.py` (12 modes; full-build; CI runs it with `--stock` as a harness check) | HTTP vs runtime, Navigator identity | — |
+| 996 WebGL no-farble | `--cc-no-farble` covers `readPixels` | ✓ `no-farble-switch` (network_selftest) | — | — |
+| 997 Android viewport | content width = phone width | ✓ `android-device-width-equals-screen`, `android-no-meta-layout-980` | Screen & display | — |
+| (none) scrollbar geometry | classic vs overlay scrollbar width | ✓ `scrollbar-width-matches-persona-os` (with `--platform windows\|linux\|android`) | — | **No patch.** A cross-OS persona keeps the host's scrollbar; this check is expected to fail for a Windows or Linux persona on a macOS host until one exists. |
 
 ## What to add next
 
-1. A local SOCKS5 server (with UDP ASSOCIATE and auth) in the self-test, to cover 963, 973,
-   978 and 984 without a paid proxy.
-2. One self-test run per persona OS (`--platform windows|macos|linux|android`) in the
-   full-build CI job.
-3. The one-line checks listed as gaps above (960, 050, 040, 147, 220).
+Done since the first review: a local SOCKS5 server with UDP ASSOCIATE and auth
+(`tools/socks5_udp_proxy.py`, used by network_selftest), per-persona-OS runs in `full-build.yml`
+(host, Windows, macOS, Android), and the one-line checks for 960, 050, 040, 147 and 220.
+
+1. A scrollbar patch for cross-OS personas, then `scrollbar-width-matches-persona-os` passes on
+   every host.
+2. Pin the Windows `Math.tanh` result (965) from a real Windows Chrome and assert it.
+3. A `--fingerprint-profile` import round trip in a browser (002): capture with
+   `fingerprint_library.py`, launch with the printed flags, compare.

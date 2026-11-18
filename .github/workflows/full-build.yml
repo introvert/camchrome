@@ -119,12 +119,16 @@ jobs:
         run: |
           python3 -m pip install -q aioquic || true
           rc=0
-          for platform in auto windows android; do
+          # Every persona OS: the macOS persona on a Linux host is the cross-OS case that
+          # leaks host fonts and scrollbars if anything does.
+          for platform in auto windows macos android; do
             xvfb-run -a -s "-screen 0 1920x1080x24" tools/fingerprint_selftest.py \
               --platform "$platform" --json "build/reports/fingerprint-$platform.json" || rc=1
           done
           xvfb-run -a -s "-screen 0 1920x1080x24" tools/network_selftest.py \
             --json build/reports/network.json || rc=1
+          xvfb-run -a -s "-screen 0 1920x1080x24" tools/ua_selftest.py \
+            --json build/reports/ua.json || rc=1
           exit $rc
 
       - name: Package

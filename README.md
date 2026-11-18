@@ -13,13 +13,14 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 |---|---|---|
 | ungoogled-chromium base (Linux, Windows) | `157.0.8103.78-1` | pinned in `UPSTREAM` |
 | ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | pinned, built and audited on macOS arm64 |
-| Fingerprint patches (`patches/`) | 71 patches | verified against 157: built on macOS; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
+| Fingerprint patches (`patches/`) | 74 patches | verified against 157: built and audited on macOS arm64; built on Linux arm64 with the local self-tests passing; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
 | Clearcote stealth audit | 365 checks | **100/100 · 236/236 scored checks agree · 0 findings** |
 
 The shipped and audited binary is Chromium `157.0.8103.78` — the latest ungoogled-chromium
 tag and the latest macOS overlay. The 156 macOS build is preserved at tag
-`v156-audit100`. Linux uses the same 157 base: the series applies and compiles there, but no
-Linux binary has been linked or audited yet. Windows is not ported.
+`v156-audit100`. Linux uses the same 157 base: a Linux arm64 build (official ThinLTO+PGO) links
+and passes the local self-tests (fingerprint, UA, network), but the Clearcote audit has not been
+run on Linux yet. Windows is not ported.
 
 The patches in `patches/` come from
 [Clearcote](https://github.com/clearcotelabs/clearcote-browser) at commit
@@ -228,6 +229,7 @@ Results are written to `build/stealth-audit.txt` / `.json` (audit) and
 | `tools/ua_selftest.py` | UA string, client hints and `userAgentData` agree in every identity mode (995) | no |
 | `tools/stealth_audit.py` | the Clearcote audit (acceptance test) | yes |
 | `tools/site_checks.py` | browserleaks QUIC, Twilio WebRTC, fingerprint.com, pixelscan, browserscan, reCAPTCHA… | yes, plus a SOCKS5 proxy with UDP |
+| `tools/upstream_watch.py` | pinned upstreams vs their newest tags, Chrome stable, Clearcote patch changes, reference repos (`docs/UPSTREAM-SOURCES.md`); run weekly by `upstream-watch.yml` | yes |
 
 ```bash
 tools/fingerprint_selftest.py --platform macos          # against the build
@@ -239,9 +241,12 @@ tools/fingerprint_selftest.py --stock --binary "$(command -v google-chrome)"   #
 
 ## CI
 
-`.github/workflows/build.yml` runs the repository checks and the self-test harness on every
-push, then fetches, patches, runs `gn gen` and compiles the patched files for linux-x64,
-linux-arm64, mac-arm64 and mac-x64. Dispatch it with `mode=full` (or push a `v*` tag) to build
+`.github/workflows/build.yml` runs the repository checks and the self-test harnesses on every
+push, then fetches, patches, runs `gn gen` and compiles the patched files for linux-x64. The
+other targets (linux-arm64, mac-arm64, mac-x64) are compile-checked when the workflow is
+dispatched or a `v*` tag is pushed: hosted macOS minutes cost 10x and two ~2 h macOS jobs per
+push most likely used up the Actions minutes (no run has started since 2026-11-18 03:13 UTC). `upstream-watch.yml` checks the pins weekly.
+Dispatch it with `mode=full` (or push a `v*` tag) to build
 and upload the browser. A full build does not fit GitHub's standard runners (disk and the 6 h
 limit): set `linux_runner` / `mac_runner`, or the repository variables
 `CAMCHROME_LINUX_RUNNER` / `CAMCHROME_MAC_RUNNER`, to larger or self-hosted runners.
@@ -262,6 +267,9 @@ limit): set `linux_runner` / `mac_runner`, or the repository variables
 
 `docs/SHARDBROWSER-COMPARISON.md` compares the patch set with ShardBrowser's advertised
 capabilities (QUIC/WebRTC over SOCKS5, mobile personas, input, automation) and lists the gaps.
+
+`docs/UPSTREAM-SOURCES.md` lists the upstreams to watch for releases and security fixes, and the
+repositories worth mining for more fingerprint work.
 
 `COVERAGE.md` maps the 365 checks of the [Clearcote fingerprint audit](https://www.clearcotelabs.com/audit/checks)
 to the patches that cover them, lists the gaps, and names other repos to take patches from.

@@ -190,6 +190,9 @@ def main() -> int:
     ap.add_argument("--seed", default="ua-selftest")
     ap.add_argument("--headless", action="store_true")
     ap.add_argument("--json", help="write the raw results here")
+    ap.add_argument("--stock", action="store_true",
+                    help="stock Chromium (harness check): only the no-flags case must pass; "
+                         "the others are XFAIL, since the overrides are what 995 fixes")
     args = ap.parse_args()
 
     server = Server()
@@ -210,17 +213,26 @@ def main() -> int:
         ("CDP UA-only override, Android", fp, {"userAgent": ANDROID_157}, False),
     ]
     engine_major = None
-    results, failed = {}, 0
+    results, failed, xfailed = {}, 0, 0
+
+    def report(name: str, errs: list[str]) -> None:
+        nonlocal failed, xfailed
+        status = "PASS"
+        if errs:
+            status = "XFAIL" if args.stock and name != cases[0][0] else "FAIL"
+        failed += status == "FAIL"
+        xfailed += status == "XFAIL"
+        print(f"{status:5} {name}")
+        for e in errs:
+            print(f"        {e}")
+
     for name, flags, override, own in cases:
         r, hdr = run_case(args.binary, server, flags, override, args.headless)
         if engine_major is None:
             engine_major = (token(r["ua"], "Chrome") or "").split(".")[0]
         errs = check_coherent(r, hdr, engine_major if own else None)
         results[name] = {"result": r, "headers": hdr, "errors": errs}
-        failed += bool(errs)
-        print(f"{'PASS' if not errs else 'FAIL'}  {name}")
-        for e in errs:
-            print(f"        {e}")
+        report(name, errs)
 
     # An explicit CDP metadata override is reported exactly as given, page and worker.
     name = "CDP override with userAgentMetadata kept as given"
@@ -238,15 +250,13 @@ def main() -> int:
     if r["uaFullVersion"] != "156.0.8078.79":
         errs.append(f"uaFullVersion {r['uaFullVersion']} does not follow the given list")
     results[name] = {"result": r, "headers": hdr, "errors": errs}
-    failed += bool(errs)
-    print(f"{'PASS' if not errs else 'FAIL'}  {name}")
-    for e in errs:
-        print(f"        {e}")
+    report(name, errs)
 
     if args.json:
         Path(args.json).write_text(json.dumps(results, indent=1))
     total = len(results)
-    print(f"\nPASS {total - failed}  FAIL {failed}   (engine Chrome {engine_major})")
+    print(f"\nPASS {total - failed - xfailed}  FAIL {failed}  XFAIL {xfailed}"
+          f"   (engine Chrome {engine_major})")
     return 1 if failed else 0
 
 
