@@ -106,6 +106,17 @@ review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
 | 997 Android viewport | content width = phone width | ✓ `android-device-width-equals-screen`, `android-no-meta-layout-980` | Screen & display | — |
 | (none) scrollbar geometry | classic vs overlay scrollbar width | ✓ `scrollbar-width-matches-persona-os` (with `--platform windows\|linux\|android`) | — | **No patch.** A cross-OS persona keeps the host's scrollbar; this check is expected to fail for a Windows or Linux persona on a macOS host until one exists. |
 
+## Persona validator sweep (2026-11-18)
+
+`persona_validator_cli --clearcote-validate-persona=500` for every platform (unset, windows,
+macos, linux, android) and both schemas, Linux x64 build: **5,000 personas, 0 errors.** Two
+warnings recur, both real coherence questions:
+
+| Warning | Where | Rate | What it means |
+|---|---|---|---|
+| `heap.exceeds_ram` | schema 1 (the default), Windows, Linux and unset | 89 of 500 | `jsHeapSizeLimit` 4,395,630,592 on a 4 GB `deviceMemory`. Schema 2 sizes the heap from RAM and has none. Either make schema 2 the default or cap the schema-1 heap on 4 GB personas. |
+| `webgpu.texture2d_eq_webgl` (and `textureNd`) | Android, both schemas | 96 to 105 of 500 | WebGPU `maxTextureDimension2D` 16384 next to WebGL `MAX_TEXTURE_SIZE` 8192 on the same GPU. The Android persona's WebGPU limit table claims more than its WebGL table for some GPUs (967 only clamps against the host's real limits, not against the persona's own WebGL values); derive one from the other. |
+
 ## What to add next
 
 Done since the first review: a local SOCKS5 server with UDP ASSOCIATE and auth
