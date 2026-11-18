@@ -277,6 +277,12 @@ WORKER_JS = COMMON_JS + "collectCommon().then(o => postMessage(o));"
 # Phone behaviour (992): touch feature detection, a few deviceorientation / devicemotion
 # events, which handset-only and desktop-only families render, and listeners that record
 # what a mouse click turns into.
+# A page that asks for the device width, as nearly every mobile page does.
+VIEWPORT_HTML = ('<!doctype html><meta name="viewport" content="width=device-width, '
+                 'initial-scale=1"><title>vp</title><body>')
+VIEWPORT_JS = """({inner: innerWidth, client: document.documentElement.clientWidth,
+                   screen: screen.width, outer: outerWidth})"""
+
 MOBILE_JS = r"""
 (async () => {
   const o = {touchProp: 'ontouchstart' in window};
@@ -330,6 +336,8 @@ class Server:
                     body, ctype = WORKER_JS, "text/javascript"
                 elif self.path.startswith("/frame"):
                     body, ctype = FRAME_HTML, "text/html"
+                elif self.path.startswith("/vp"):
+                    body, ctype = VIEWPORT_HTML, "text/html"
                 else:
                     body, ctype = "<!doctype html><title>camchrome self-test</title><body>", "text/html"
                 data = body.encode()
@@ -417,6 +425,7 @@ def collect(binary: str, flags: list[str], headless: bool, origins: list[str]) -
                 "p => r([p.coords.latitude, p.coords.longitude]), e => r({error: e.message}),"
                 "{timeout: 5000}))")
             result["mobile"] = cdp.evaluate(MOBILE_JS)
+            result["no_meta_viewport"] = cdp.evaluate(VIEWPORT_JS)
             # Away from the top-left corner, where collectMain left its probe iframe.
             for kind in ("mousePressed", "mouseReleased"):
                 cdp.call("Input.dispatchMouseEvent", {"type": kind, "x": 600, "y": 450,
@@ -424,6 +433,9 @@ def collect(binary: str, flags: list[str], headless: bool, origins: list[str]) -
             result["mobile"]["input"] = cdp.evaluate(
                 "new Promise(r => setTimeout(() => r(window.__input), 400))")
             result["headers"] = server.last(host)
+            cdp.call("Page.navigate", {"url": origin + "/vp"})
+            cdp.wait_for("document.title === 'vp'", timeout=30)
+            result["meta_viewport"] = cdp.evaluate(VIEWPORT_JS)
             out[host] = result
     finally:
         if cdp:
@@ -667,6 +679,14 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
         g = (mo[0].get("g") if mo else None) or [0, 0, 0]
         norm = sum(v * v for v in g if v is not None) ** 0.5
         rep.add("android-motion-has-gravity", "992", 9.3 <= norm <= 10.3, mo[:1])
+        # 997: the content area is the phone's width, so a width=device-width page lays out
+        # at exactly screen.width (it was 500 px, Chrome's desktop window minimum, next to a
+        # 360-430 px persona screen); a page without the tag gets Android's 980 px default.
+        vp = m.get("meta_viewport") or {}
+        rep.add("android-device-width-equals-screen", "975 997",
+                vp.get("inner") == vp.get("screen") == vp.get("client"), vp)
+        nvp = m.get("no_meta_viewport") or {}
+        rep.add("android-no-meta-layout-980", "002 997", nvp.get("client") == 980, nvp)
         f = mob.get("fonts") or {}
         rep.add("android-handset-fonts", "040 992",
                 f.get("sans-serif-condensed") and not f.get("Segoe UI")
