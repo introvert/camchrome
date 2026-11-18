@@ -30,438 +30,42 @@ from a real Chrome on a residential line. With --socks5-udp (opt-in, as for 973)
     bracketed IPv6 literals work too.
   * The relay never delivers to private, loopback or link-local destinations (a peer's LAN host
     candidate would otherwise probe the proxy's own network). Those datagrams are reported sent and
-    dropped, so ICE sees an unreachable candidate rather than a socket error. A proxy on this
-    machine's loopback (test infrastructure) is exempt.
-  * Replies addressed with ATYP=DOMAINNAME are accepted.
+    dropped, so ICE sees an unreachable candidate rather than a socket error. This holds for a
+    proxy on this machine's loopback too (a local proxy client forwarding to a remote server is the
+    common case); only the test-only switch --socks5-udp-allow-private lifts it.
+  * Replies addressed with ATYP=DOMAINNAME are accepted and attributed to the placeholder the name
+    was sent to; so is a reply from the address the proxy resolved a name to (same port, an address
+    this socket never sent to directly).
+  * The relay address the proxy reports is not trusted blindly: a private BND.ADDR from a proxy
+    reached at a public address (NAT, containers) is replaced by the proxy's own address, so no
+    datagram, a QUIC Initial with its SNI included, goes to this machine's network instead.
+  * The association (resolve, connect, UDP ASSOCIATE) times out after 15 s and fails every waiter,
+    so a proxy that accepts TCP but never answers cannot leave a QUIC connect or queued sends
+    pending forever.
+  * A datagram that did not come from the relay, or whose framing cannot be parsed, is dropped and
+    the read continues inside SOCKS5UDPSocket; real socket errors are reported as such.
 
 net/socket/socks5_udp_relay_selftest.cc (target socks5_udp_relay_selftest) checks the placeholder
 mapping, chain selection, named-origin and named-proxy round trips, the queued synchronous path,
 and that a refusing or unreachable proxy fails the connect, against tools/socks5_udp_proxy.py.
---- a/net/socket/socks5_udp_socket.h
-+++ b/net/socket/socks5_udp_socket.h
-@@ -11,7 +11,9 @@
- #include <vector>
- 
- #include "base/memory/scoped_refptr.h"
-+#include "base/memory/raw_ptr.h"
- #include "base/memory/weak_ptr.h"
-+#include "net/dns/host_resolver.h"
- #include "net/base/completion_once_callback.h"
- #include "net/base/host_port_pair.h"
- #include "net/base/ip_endpoint.h"
-@@ -22,7 +24,9 @@
- 
- namespace net {
- 
-+class HostResolver;
- class IOBuffer;
-+class IOBufferWithSize;
- class NetLog;
- class StreamSocket;
- 
-@@ -55,6 +59,16 @@
-                   const HostPortPair& proxy,
-                   const NetworkTrafficAnnotationTag& traffic_annotation);
- 
-+  // camchrome: the proxy may be a hostname. The control connection is opened only after
-+  // `proxy` resolves through `resolver` (never null; it must outlive this socket), so a named
-+  // proxy is relayed instead of declined. Before this, a hostname proxy made the P2P factory fall
-+  // back to a DIRECT socket, which is a leak path.
-+  SOCKS5UDPSocket(std::unique_ptr<DatagramServerSocket> inner,
-+                  const HostPortPair& proxy,
-+                  HostResolver* resolver,
-+                  net::NetLog* net_log,
-+                  const NetworkTrafficAnnotationTag& traffic_annotation);
-+
-   SOCKS5UDPSocket(const SOCKS5UDPSocket&) = delete;
-   SOCKS5UDPSocket& operator=(const SOCKS5UDPSocket&) = delete;
- 
-@@ -65,6 +79,21 @@
-   // the MTU presents as packet loss rather than as an error.
-   static constexpr int kHeaderOverheadIPv4 = 10;
-   static constexpr int kHeaderOverheadIPv6 = 22;
-+  // camchrome: a DOMAINNAME destination (ATYP 3): 4 + 1 + up to 255 + 2.
-+  static constexpr int kMaxHeaderOverhead = 262;
-+
-+  // camchrome: runs `callback` once the association is up (OK) or has failed (the error). Returns
-+  // the result directly when it is already known, ERR_IO_PENDING otherwise. Listen() must have been
-+  // called. A connected client (SOCKS5UDPClientSocket) uses this so ConnectAsync() only reports
-+  // success once datagrams can actually flow, and a proxy that refuses UDP fails the connect.
-+  int WaitForAssociation(CompletionOnceCallback callback);
-+
-+  // camchrome: like SendTo(), but the datagram is addressed to a HOSTNAME (ATYP 3), so the proxy
-+  // resolves it. Used for QUIC, whose origin must never be resolved locally when proxied.
-+  int SendToHost(IOBuffer* buf,
-+                 int buf_len,
-+                 const HostPortPair& destination,
-+                 CompletionOnceCallback callback);
- 
-   // True once the association is up and datagrams flow without queueing.
-   bool associated() const { return associated_; }
-@@ -119,9 +148,18 @@
-     scoped_refptr<IOBuffer> buf;
-     int buf_len;
-     IPEndPoint address;
-+    // camchrome: set for SendToHost(); `address` is then unused.
-+    HostPortPair host;
-     CompletionOnceCallback callback;
-   };
- 
-+  // camchrome: resolves a named proxy, then builds the TCP control socket.
-+  void StartResolveProxy();
-+  void OnProxyResolved(int result);
-+  void StartTransportConnect();
-+  void NotifyAssociationWaiters(int result);
-+  bool ProxyIsLoopback() const;
-+
-   // The association is two async steps. SOCKS5ClientSocket writes its greeting the moment
-   // Connect() is called, so the transport must already be connected when it is handed over --
-   // which is why the TCP connect happens first and the wrapper is built only afterwards.
-@@ -133,6 +171,15 @@
-                  int buf_len,
-                  const IPEndPoint& address,
-                  CompletionOnceCallback callback);
-+  // camchrome: the same, with a DOMAINNAME destination.
-+  int SendFramedToHost(IOBuffer* buf,
-+                       int buf_len,
-+                       const HostPortPair& destination,
-+                       CompletionOnceCallback callback);
-+  int WriteFramed(scoped_refptr<IOBufferWithSize> framed,
-+                  int framed_len,
-+                  int payload_len,
-+                  CompletionOnceCallback callback);
-   void OnRecvComplete(int result);
-   // Strips the header off a completed read and copies the payload into the caller's buffer.
-   // Returns the payload length, or a net error. Shared by the sync and async read paths so they
-@@ -146,6 +193,12 @@
-   const HostPortPair proxy_;
-   const NetworkTrafficAnnotationTag traffic_annotation_;
- 
-+  // camchrome: set only by the resolving constructor.
-+  raw_ptr<HostResolver> resolver_ = nullptr;
-+  raw_ptr<net::NetLog> net_log_ = nullptr;
-+  std::unique_ptr<HostResolver::ResolveHostRequest> resolve_request_;
-+  std::vector<CompletionOnceCallback> association_waiters_;
-+
-   bool associated_ = false;
-   // Set once the handshake fails; every later operation reports it rather than hanging.
-   int association_error_ = OK;
---- a/net/socket/socks5_udp_socket.cc
-+++ b/net/socket/socks5_udp_socket.cc
-@@ -10,9 +10,16 @@
- #include "base/containers/span.h"
- #include "base/functional/bind.h"
- #include "base/functional/callback_helpers.h"
-+#include "net/base/address_list.h"
- #include "net/base/io_buffer.h"
- #include "net/base/net_errors.h"
-+#include "net/base/network_anonymization_key.h"
-+#include "net/base/network_handle.h"
-+#include "net/dns/public/host_resolver_source.h"
-+#include "net/log/net_log_source.h"
-+#include "net/log/net_log_with_source.h"
- #include "net/socket/stream_socket.h"
-+#include "net/socket/tcp_client_socket.h"
- 
- namespace net {
- 
-@@ -20,6 +27,7 @@
- 
- // RFC 1928 section 7 address types.
- constexpr uint8_t kAtypIPv4 = 0x01;
-+constexpr uint8_t kAtypDomain = 0x03;
- constexpr uint8_t kAtypIPv6 = 0x04;
- 
- int HeaderSizeFor(const IPEndPoint& address) {
-@@ -43,6 +51,26 @@
-   return port_off + 2u;
- }
- 
-+// camchrome: RSV FRAG ATYP=3 LEN NAME PORT. Returns bytes written, or 0 for a name that does not
-+// fit the one-byte length field.
-+size_t WriteHostHeader(const HostPortPair& destination,
-+                       base::span<uint8_t> out) {
-+  const std::string& host = destination.host();
-+  if (host.empty() || host.size() > 255u) {
-+    return 0u;
-+  }
-+  out[0] = 0x00;
-+  out[1] = 0x00;
-+  out[2] = 0x00;  // FRAG
-+  out[3] = kAtypDomain;
-+  out[4] = static_cast<uint8_t>(host.size());
-+  out.subspan(5u, host.size()).copy_from(base::as_byte_span(host));
-+  const size_t port_off = 5u + host.size();
-+  out[port_off] = static_cast<uint8_t>(destination.port() >> 8);
-+  out[port_off + 1u] = static_cast<uint8_t>(destination.port() & 0xff);
-+  return port_off + 2u;
-+}
-+
- // Parses the header off a received datagram. Returns the payload offset, or 0 when the datagram is
- // unusable: malformed, an address type a relay never sends, or fragmented (which is dropped rather
- // than reassembled).
-@@ -58,6 +86,16 @@
-     addr_len = 4u;
-   } else if (pkt[3] == kAtypIPv6) {
-     addr_len = 16u;
-+  } else if (pkt[3] == kAtypDomain) {
-+    // camchrome: some relays echo the name a datagram was sent to. There is no address to
-+    // report; the source is left unspecified (a connected client ignores it anyway).
-+    const size_t name_len = pkt[4];
-+    const size_t port_off = 5u + name_len;
-+    if (name_len == 0u || pkt.size() < port_off + 2u) {
-+      return 0u;
-+    }
-+    *source = IPEndPoint();
-+    return port_off + 2u;
-   } else {
-     return 0u;
-   }
-@@ -95,8 +133,90 @@
-       proxy_(proxy),
-       traffic_annotation_(traffic_annotation) {}
- 
-+SOCKS5UDPSocket::SOCKS5UDPSocket(
-+    std::unique_ptr<DatagramServerSocket> inner,
-+    const HostPortPair& proxy,
-+    HostResolver* resolver,
-+    net::NetLog* net_log,
-+    const NetworkTrafficAnnotationTag& traffic_annotation)
-+    : inner_(std::move(inner)),
-+      proxy_(proxy),
-+      traffic_annotation_(traffic_annotation),
-+      resolver_(resolver),
-+      net_log_(net_log) {
-+  DCHECK(resolver_);
-+}
-+
- SOCKS5UDPSocket::~SOCKS5UDPSocket() = default;
- 
-+bool SOCKS5UDPSocket::ProxyIsLoopback() const {
-+  if (proxy_.host() == "localhost") {
-+    return true;
-+  }
-+  IPAddress literal;
-+  return literal.AssignFromIPLiteral(proxy_.host()) && literal.IsLoopback();
-+}
-+
-+int SOCKS5UDPSocket::WaitForAssociation(CompletionOnceCallback callback) {
-+  if (association_error_ != OK) {
-+    return association_error_;
-+  }
-+  if (associated_) {
-+    return OK;
-+  }
-+  association_waiters_.push_back(std::move(callback));
-+  return ERR_IO_PENDING;
-+}
-+
-+void SOCKS5UDPSocket::NotifyAssociationWaiters(int result) {
-+  std::vector<CompletionOnceCallback> waiters =
-+      std::move(association_waiters_);
-+  association_waiters_.clear();
-+  for (CompletionOnceCallback& cb : waiters) {
-+    std::move(cb).Run(result);
-+  }
-+}
-+
-+void SOCKS5UDPSocket::StartResolveProxy() {
-+  HostResolver::ResolveHostParameters parameters;
-+  // The proxy's own name, not the origin's: resolving it locally leaks nothing the TCP proxy
-+  // connection does not already resolve the same way.
-+  resolve_request_ = resolver_->CreateRequest(
-+      proxy_, NetworkAnonymizationKey(), handles::kInvalidNetworkHandle,
-+      NetLogWithSource::Make(net_log_, NetLogSourceType::SOCKET), parameters);
-+  const int rv = resolve_request_->Start(base::BindOnce(
-+      &SOCKS5UDPSocket::OnProxyResolved, weak_factory_.GetWeakPtr()));
-+  if (rv != ERR_IO_PENDING) {
-+    OnProxyResolved(rv);
-+  }
-+}
-+
-+void SOCKS5UDPSocket::OnProxyResolved(int result) {
-+  if (result != OK) {
-+    // Fail closed: never fall back to sending the datagrams directly.
-+    association_error_ = ERR_PROXY_CONNECTION_FAILED;
-+    resolve_request_.reset();
-+    FlushPending(association_error_);
-+    NotifyAssociationWaiters(association_error_);
-+    return;
-+  }
-+  AddressList addresses = resolve_request_->GetAddressResults();
-+  resolve_request_.reset();
-+  transport_ = std::make_unique<TCPClientSocket>(
-+      std::move(addresses), nullptr /* socket_performance_watcher */,
-+      nullptr /* network_quality_estimator */, net_log_, NetLogSource(),
-+      handles::kInvalidNetworkHandle);
-+  StartTransportConnect();
-+}
-+
-+void SOCKS5UDPSocket::StartTransportConnect() {
-+  const int connect_rv = transport_->Connect(base::BindOnce(
-+      &SOCKS5UDPSocket::OnTransportConnected, weak_factory_.GetWeakPtr()));
-+  if (connect_rv != ERR_IO_PENDING) {
-+    OnTransportConnected(connect_rv);
-+  }
-+}
-+
- int SOCKS5UDPSocket::Listen(const IPEndPoint& address) {
-   const int rv = inner_->Listen(address);
-   if (rv != OK) {
-@@ -104,15 +224,15 @@
-   }
-   // Start the association but do not wait on it: Listen() has no completion callback to hand a
-   // pending result to. Datagrams sent before it completes are queued in SendTo().
-+  if (resolver_) {
-+    StartResolveProxy();
-+    return OK;
-+  }
-   if (!transport_) {
-     association_error_ = ERR_UNEXPECTED;
-     return OK;
-   }
--  const int connect_rv = transport_->Connect(base::BindOnce(
--      &SOCKS5UDPSocket::OnTransportConnected, weak_factory_.GetWeakPtr()));
--  if (connect_rv != ERR_IO_PENDING) {
--    OnTransportConnected(connect_rv);
--  }
-+  StartTransportConnect();
-   return OK;
- }
- 
-@@ -120,6 +240,7 @@
-   if (result != OK) {
-     association_error_ = result;
-     FlushPending(result);
-+    NotifyAssociationWaiters(result);
-     return;
-   }
-   // Only now is it safe to wrap: SOCKS5ClientSocket writes its greeting inside Connect().
-@@ -155,6 +276,7 @@
-     association_error_ = result;
-   }
-   FlushPending(result);
-+  NotifyAssociationWaiters(result);
- }
- 
- void SOCKS5UDPSocket::FlushPending(int result) {
-@@ -169,8 +291,12 @@
-     // one callback -- whether the retry completes asynchronously or inline. Split it: one half
-     // rides into the async binding, the other runs here on a synchronous completion.
-     auto split = base::SplitOnceCallback(std::move(p.callback));
--    const int rv = SendFramed(p.buf.get(), p.buf_len, p.address,
--                              std::move(split.first));
-+    const int rv =
-+        p.host.IsEmpty()
-+            ? SendFramed(p.buf.get(), p.buf_len, p.address,
-+                         std::move(split.first))
-+            : SendFramedToHost(p.buf.get(), p.buf_len, p.host,
-+                               std::move(split.first));
-     if (rv != ERR_IO_PENDING) {
-       std::move(split.second).Run(rv);
-     }
-@@ -187,7 +313,30 @@
-   DCHECK_EQ(written, static_cast<size_t>(header_size));
-   framed->span().subspan(written).copy_prefix_from(
-       buf->span().first(static_cast<size_t>(buf_len)));
-+  return WriteFramed(std::move(framed), header_size + buf_len, buf_len,
-+                     std::move(callback));
-+}
- 
-+int SOCKS5UDPSocket::SendFramedToHost(IOBuffer* buf,
-+                                      int buf_len,
-+                                      const HostPortPair& destination,
-+                                      CompletionOnceCallback callback) {
-+  auto framed =
-+      base::MakeRefCounted<IOBufferWithSize>(kMaxHeaderOverhead + buf_len);
-+  const size_t written = WriteHostHeader(destination, framed->span());
-+  if (written == 0u) {
-+    return ERR_INVALID_ARGUMENT;
-+  }
-+  framed->span().subspan(written).copy_prefix_from(
-+      buf->span().first(static_cast<size_t>(buf_len)));
-+  return WriteFramed(std::move(framed), static_cast<int>(written) + buf_len,
-+                     buf_len, std::move(callback));
-+}
-+
-+int SOCKS5UDPSocket::WriteFramed(scoped_refptr<IOBufferWithSize> framed,
-+                                 int framed_len,
-+                                 int buf_len,
-+                                 CompletionOnceCallback callback) {
-   // The caller is owed the length IT asked to send, not our framed length, so success is
-   // translated back. `framed` rides along in the binding to stay alive for the async write.
-   auto on_done = base::BindOnce(
-@@ -199,8 +348,8 @@
-       },
-       framed, buf_len, std::move(callback));
- 
--  const int rv = inner_->SendTo(framed.get(), header_size + buf_len, relay_,
--                                std::move(on_done));
-+  const int rv =
-+      inner_->SendTo(framed.get(), framed_len, relay_, std::move(on_done));
-   if (rv == ERR_IO_PENDING) {
-     return rv;
-   }
-@@ -214,6 +363,16 @@
-   if (association_error_ != OK) {
-     return association_error_;
-   }
-+  // camchrome: never ask the proxy to deliver to a private, loopback or link-local address. Such
-+  // a destination is a peer's LAN host candidate (unreachable through the relay anyway), and
-+  // relaying it would probe the PROXY's own network. Report the datagram as sent so ICE simply
-+  // sees no answer, as it would for any unreachable candidate, instead of a socket error that
-+  // could tear the P2P socket down.
-+  // A proxy on this machine's loopback is test infrastructure (tools/socks5_udp_proxy.py), and
-+  // its peers are local too; only then are non-public destinations relayed.
-+  if (!address.address().IsPubliclyRoutable() && !ProxyIsLoopback()) {
-+    return buf_len;
-+  }
-   if (!associated_) {
-     // Queue rather than drop. Silent early loss is indistinguishable from a flaky network and is
-     // miserable to trace back to this layer.
-@@ -224,6 +383,22 @@
-   return SendFramed(buf, buf_len, address, std::move(callback));
- }
- 
-+int SOCKS5UDPSocket::SendToHost(IOBuffer* buf,
-+                                int buf_len,
-+                                const HostPortPair& destination,
-+                                CompletionOnceCallback callback) {
-+  if (association_error_ != OK) {
-+    return association_error_;
-+  }
-+  if (!associated_) {
-+    pending_.emplace_back(scoped_refptr<IOBuffer>(buf), buf_len, IPEndPoint(),
-+                          std::move(callback));
-+    pending_.back().host = destination;
-+    return ERR_IO_PENDING;
-+  }
-+  return SendFramedToHost(buf, buf_len, destination, std::move(callback));
-+}
-+
- int SOCKS5UDPSocket::RecvFrom(IOBuffer* buf,
-                               int buf_len,
-                               IPEndPoint* address,
-@@ -237,7 +412,7 @@
-   recv_callback_ = std::move(callback);
-   // Room for the caller's payload plus the largest header we might have to strip.
-   framed_recv_buf_ =
--      base::MakeRefCounted<IOBufferWithSize>(buf_len + kHeaderOverheadIPv6);
-+      base::MakeRefCounted<IOBufferWithSize>(buf_len + kMaxHeaderOverhead);
- 
-   const int rv = inner_->RecvFrom(
-       framed_recv_buf_.get(), framed_recv_buf_->size(), &relay_seen_,
-@@ -346,6 +521,7 @@
- }
- void SOCKS5UDPSocket::Close() {
-   // Closing the control connection is what tears the association down proxy-side.
-+  resolve_request_.reset();
-   control_.reset();
-   associated_ = false;
-   inner_->Close();
+diff --git a/content/browser/service_host/utility_process_host.cc b/content/browser/service_host/utility_process_host.cc
+index 74dba0892c..fe3ea573b3 100644
+--- a/content/browser/service_host/utility_process_host.cc
++++ b/content/browser/service_host/utility_process_host.cc
+@@ -423,6 +423,8 @@ bool UtilityProcessHost::StartProcess() {
+       // socket factory lives there), so without forwarding them the feature silently
+       // does nothing and looks like a proxy that refuses UDP.
+       "socks5-udp",
++      // camchrome: test-only, lets the relay reach the local self-test peers on 127.0.0.1.
++      "socks5-udp-allow-private",
+       "proxy-server",
+       network::switches::kAdditionalTrustTokenKeyCommitments,
+       network::switches::kForceEffectiveConnectionType,
+diff --git a/net/BUILD.gn b/net/BUILD.gn
+index d89fbe94b3..565373a71c 100644
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -1063,6 +1063,8 @@
+@@ -1063,6 +1063,8 @@ component("net") {
      "socket/socket_tag.h",
      "socket/socks5_client_socket.cc",
      "socket/socks5_client_socket.h",
@@ -470,7 +74,7 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
      "socket/socks5_udp_socket.cc",
      "socket/socks5_udp_socket.h",
      "socket/socks_client_socket.cc",
-@@ -4570,3 +4572,14 @@
+@@ -4570,3 +4572,14 @@ executable("socks5_udp_smoke") {
      "//base",
    ]
  }
@@ -485,22 +89,84 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
 +    "//base",
 +  ]
 +}
---- a/net/quic/quic_session_pool.h
-+++ b/net/quic/quic_session_pool.h
-@@ -516,6 +516,13 @@
-       NetLog* net_log,
-       const NetLogSource& source);
+diff --git a/net/http/http_network_session.cc b/net/http/http_network_session.cc
+index 05fc047000..41a0966852 100644
+--- a/net/http/http_network_session.cc
++++ b/net/http/http_network_session.cc
+@@ -4,6 +4,8 @@
  
-+  // camchrome: CreateSocket(), except that a SOCKS5 chain relayed with --socks5-udp gets a socket
-+  // that carries every datagram through the proxy's UDP relay.
-+  std::unique_ptr<DatagramClientSocket> CreateSocketForChain(
-+      const ProxyChain& proxy_chain,
-+      handles::NetworkHandle target_network,
-+      const NetLogWithSource& net_log);
+ #include "net/http/http_network_session.h"
+ 
++#include "net/socket/socks5_udp_relay.h"
 +
-   // NetworkChangeNotifier::IPAddressObserver methods:
+ #include <inttypes.h>
  
-   // Until the servers support roaming, close all connections when the local
+ #include <utility>
+@@ -397,7 +399,9 @@ bool HttpNetworkSession::ShouldForceQuic(const url::SchemeHostPort& destination,
+   }
+   // If a proxy is being used, the last proxy in the chain must be QUIC if we
+   // are to use QUIC on top of it.
+-  if (!proxy_info.is_direct() && !proxy_info.proxy_chain().Last().is_quic()) {
++  // camchrome: or a SOCKS5 proxy whose UDP relay carries QUIC (--socks5-udp).
++  if (!proxy_info.is_direct() && !proxy_info.proxy_chain().Last().is_quic() &&
++      !Socks5UdpRelayProxyFor(proxy_info.proxy_chain()).has_value()) {
+     return false;
+   }
+   return OriginToForceQuicOnInternal(*context_.quic_context->params(),
+diff --git a/net/http/http_stream_factory_job.cc b/net/http/http_stream_factory_job.cc
+index f6c684a247..e16fa8a152 100644
+--- a/net/http/http_stream_factory_job.cc
++++ b/net/http/http_stream_factory_job.cc
+@@ -42,6 +42,7 @@
+ #include "net/log/net_log_source.h"
+ #include "net/log/net_log_source_type.h"
+ #include "net/proxy_resolution/proxy_resolution_service.h"
++#include "net/socket/socks5_udp_relay.h"
+ #include "net/quic/bidirectional_stream_quic_impl.h"
+ #include "net/quic/quic_http_stream.h"
+ #include "net/quic/quic_session_key.h"
+@@ -739,8 +740,11 @@ int HttpStreamFactory::Job::DoInitConnection() {
+ int HttpStreamFactory::Job::DoInitConnectionImpl() {
+   DCHECK(!connection_->is_initialized());
+ 
++  // camchrome: a single SOCKS5 proxy with --socks5-udp carries QUIC over its UDP relay
++  // (net/socket/socks5_udp_relay.h).
+   if (using_quic_ && !proxy_info_.is_direct() &&
+-      !proxy_info_.proxy_chain().Last().is_quic()) {
++      !proxy_info_.proxy_chain().Last().is_quic() &&
++      !Socks5UdpRelayProxyFor(proxy_info_.proxy_chain()).has_value()) {
+     // QUIC can not be spoken to non-QUIC proxies.  This error should not be
+     // user visible, because the non-alternative Job should be resumed.
+     return ERR_NO_SUPPORTED_PROXIES;
+@@ -865,7 +869,8 @@ int HttpStreamFactory::Job::DoInitConnectionImplQuic() {
+       (job_type_ == DNS_ALPN_H3) || (job_type_ == PRECONNECT_DNS_ALPN_H3);
+ 
+   ProxyChain proxy_chain = proxy_info_.proxy_chain();
+-  if (!proxy_chain.is_direct()) {
++  if (!proxy_chain.is_direct() &&
++      !Socks5UdpRelayProxyFor(proxy_chain).has_value()) {
+     // We only support proxying QUIC over QUIC. While MASQUE defines mechanisms
+     // to carry QUIC traffic over non-QUIC proxies, the performance of these
+     // mechanisms would be worse than simply using H/1 or H/2 to reach the
+diff --git a/net/quic/quic_chromium_client_session.cc b/net/quic/quic_chromium_client_session.cc
+index fb776e028e..74cd32d6a7 100644
+--- a/net/quic/quic_chromium_client_session.cc
++++ b/net/quic/quic_chromium_client_session.cc
+@@ -3611,6 +3611,12 @@ void QuicChromiumClientSession::MaybeStartProbing(
+ 
+ void QuicChromiumClientSession::CreateContextForMultiPortPath(
+     std::unique_ptr<quic::MultiPortPathContextObserver> context_observer) {
++  // camchrome: a proxied session (including QUIC over a SOCKS5 UDP relay) has no second path:
++  // a probing socket created here would be a plain UDP socket and send straight to the peer,
++  // bypassing the proxy. Decline, as the synchronous failure path below does.
++  if (!session_key_.proxy_chain().is_direct()) {
++    return;
++  }
+   // Create and configure socket on default network
+   // TODO(crbug.com/518753285): Once we no longer bindToNetwork via
+   // `ConnectAndConfigureSocket`, bind the socket via this `CreateSocket` call,
+diff --git a/net/quic/quic_session_pool.cc b/net/quic/quic_session_pool.cc
+index 15841a5a8a..e85c85fe16 100644
 --- a/net/quic/quic_session_pool.cc
 +++ b/net/quic/quic_session_pool.cc
 @@ -4,6 +4,8 @@
@@ -512,7 +178,7 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
  #include <algorithm>
  #include <memory>
  #include <optional>
-@@ -990,11 +992,17 @@
+@@ -990,11 +992,17 @@ int QuicSessionPool::RequestSession(
    QuicConnectionReuseDetails quic_connection_reuse_details =
        DetermineQuicConnectionReuseDetails(session_key);
  
@@ -532,7 +198,7 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
        job = std::make_unique<AsyncDnsJob>(
            this, quic_version, host_resolver_, std::move(key),
            CreateCryptoConfigHandle(QuicCryptoClientConfigKey(session_key)),
-@@ -1474,6 +1482,21 @@
+@@ -1474,6 +1482,21 @@ std::unique_ptr<DatagramClientSocket> QuicSessionPool::CreateSocket(
    return socket;
  }
  
@@ -554,7 +220,7 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
  void QuicSessionPool::OnIPAddressChanged(
      NetworkChangeNotifier::IPAddressChangeType change_type) {
    net_log_.AddEvent(NetLogEventType::QUIC_SESSION_POOL_ON_IP_ADDRESS_CHANGED);
-@@ -2194,8 +2217,9 @@
+@@ -2194,8 +2217,9 @@ int QuicSessionPool::CreateSessionSync(
    *session = nullptr;
    // TODO(crbug.com/40256842): This logic only knows how to try one IP
    // endpoint.
@@ -566,7 +232,7 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
  
    // If migrate_sessions_on_network_change_v2 is on, passing in
    // handles::kInvalidNetworkHandle will bind the socket to the default network.
-@@ -2247,8 +2271,9 @@
+@@ -2247,8 +2271,9 @@ int QuicSessionPool::CreateSessionAsync(
      std::optional<ConnectionManagementConfig> connection_management_config) {
    // TODO(crbug.com/40256842): This logic only knows how to try one IP
    // endpoint.
@@ -578,31 +244,26 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
    DatagramClientSocket* socket_ptr = socket.get();
    ConnectAndConfigureCallback connect_and_configure_callback = base::BindOnce(
        [](CompletionOnceCallback cb, int rv,
---- a/net/quic/quic_session_pool_direct_job.h
-+++ b/net/quic/quic_session_pool_direct_job.h
-@@ -61,6 +61,12 @@
-   int DoResolveHostComplete(int rv);
-   int DoAttemptSession();
+diff --git a/net/quic/quic_session_pool.h b/net/quic/quic_session_pool.h
+index aec9c649cc..05b6447d67 100644
+--- a/net/quic/quic_session_pool.h
++++ b/net/quic/quic_session_pool.h
+@@ -516,6 +516,13 @@ class NET_EXPORT_PRIVATE QuicSessionPool
+       NetLog* net_log,
+       const NetLogSource& source);
  
-+  // camchrome: the endpoints to try. For a chain relayed over SOCKS5 UDP there is no local DNS
-+  // result: a single placeholder endpoint stands for the hostname (net/socket/socks5_udp_relay.h).
-+  base::span<const HostResolverEndpointResult> EndpointResults() const;
-+  const std::set<std::string>& DnsAliasResults() const;
-+  std::optional<ResolutionDetails> ResolutionDetailsResult() const;
++  // camchrome: CreateSocket(), except that a SOCKS5 chain relayed with --socks5-udp gets a socket
++  // that carries every datagram through the proxy's UDP relay.
++  std::unique_ptr<DatagramClientSocket> CreateSocketForChain(
++      const ProxyChain& proxy_chain,
++      handles::NetworkHandle target_network,
++      const NetLogWithSource& net_log);
 +
-   void OnResolveHostComplete(int rv);
-   void OnSessionAttemptComplete(int rv);
+   // NetworkChangeNotifier::IPAddressObserver methods:
  
-@@ -90,6 +96,9 @@
-   HostResolverEndpointResult endpoint_result_;
-   CompletionOnceCallback callback_;
-   std::unique_ptr<HostResolver::ResolveHostRequest> resolve_host_request_;
-+  // camchrome: set instead of `resolve_host_request_` for a SOCKS5 UDP relayed chain.
-+  std::vector<HostResolverEndpointResult> relay_endpoints_;
-+  std::set<std::string> relay_dns_aliases_;
-   base::TimeTicks dns_resolution_start_time_;
-   base::TimeTicks dns_resolution_end_time_;
-   std::unique_ptr<QuicSessionAttempt> session_attempt_;
+   // Until the servers support roaming, close all connections when the local
+diff --git a/net/quic/quic_session_pool_direct_job.cc b/net/quic/quic_session_pool_direct_job.cc
+index fe50a96087..9eb117319b 100644
 --- a/net/quic/quic_session_pool_direct_job.cc
 +++ b/net/quic/quic_session_pool_direct_job.cc
 @@ -19,6 +19,7 @@
@@ -613,7 +274,7 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
  #include "net/spdy/multiplexed_session_creation_initiator.h"
  #include "net/ssl/ssl_config_service.h"
  #include "net/third_party/quiche/src/quiche/quic/core/quic_versions.h"
-@@ -132,9 +133,50 @@
+@@ -132,9 +133,50 @@ int QuicSessionPool::DirectJob::DoLoop(int rv) {
    return rv;
  }
  
@@ -664,7 +325,7 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
    io_state_ = STATE_RESOLVE_HOST_COMPLETE;
  
    HostResolver::ResolveHostParameters parameters;
-@@ -168,9 +210,8 @@
+@@ -168,9 +210,8 @@ int QuicSessionPool::DirectJob::DoResolveHostComplete(int rv) {
    // provides new IP endpoints. Iterate through them to check if we
    // can perform cross-origin IP pooling with an existing session, which will
    // set up a session alias, if found.
@@ -676,7 +337,7 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
      // Only consider endpoints that would have been eligible for QUIC.
      quic::ParsedQuicVersion endpoint_quic_version = pool_->SelectQuicVersion(
          quic_version_, endpoint.metadata, svcb_optional);
-@@ -178,8 +219,7 @@
+@@ -178,8 +219,7 @@ int QuicSessionPool::DirectJob::DoResolveHostComplete(int rv) {
        continue;
      }
      if (pool_->HasMatchingIpSession(key_, endpoint.ip_endpoints,
@@ -686,7 +347,7 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
        LogConnectionIpPooling(true);
        return OK;
      }
-@@ -191,13 +231,12 @@
+@@ -191,13 +231,12 @@ int QuicSessionPool::DirectJob::DoResolveHostComplete(int rv) {
  int QuicSessionPool::DirectJob::DoAttemptSession() {
    // TODO(crbug.com/40256842): This logic only knows how to try one
    // endpoint result.
@@ -702,7 +363,7 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
      quic::ParsedQuicVersion endpoint_quic_version = pool_->SelectQuicVersion(
          quic_version_, candidate.metadata, svcb_optional);
      if (endpoint_quic_version.IsKnown()) {
-@@ -212,15 +251,14 @@
+@@ -212,15 +251,14 @@ int QuicSessionPool::DirectJob::DoAttemptSession() {
    }
  
    std::set<std::string> dns_aliases =
@@ -720,368 +381,39 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
        retry_on_alternate_network_before_handshake_, use_dns_aliases_,
        std::move(dns_aliases), /*crypto_client_config_handle=*/nullptr,
        session_creation_initiator_, quic_connection_reuse_details_,
---- a/net/quic/quic_chromium_client_session.cc
-+++ b/net/quic/quic_chromium_client_session.cc
-@@ -3611,6 +3611,12 @@
+diff --git a/net/quic/quic_session_pool_direct_job.h b/net/quic/quic_session_pool_direct_job.h
+index 327179b165..4c37b9eaf3 100644
+--- a/net/quic/quic_session_pool_direct_job.h
++++ b/net/quic/quic_session_pool_direct_job.h
+@@ -61,6 +61,12 @@ class QuicSessionPool::DirectJob : public QuicSessionPool::Job {
+   int DoResolveHostComplete(int rv);
+   int DoAttemptSession();
  
- void QuicChromiumClientSession::CreateContextForMultiPortPath(
-     std::unique_ptr<quic::MultiPortPathContextObserver> context_observer) {
-+  // camchrome: a proxied session (including QUIC over a SOCKS5 UDP relay) has no second path:
-+  // a probing socket created here would be a plain UDP socket and send straight to the peer,
-+  // bypassing the proxy. Decline, as the synchronous failure path below does.
-+  if (!session_key_.proxy_chain().is_direct()) {
-+    return;
-+  }
-   // Create and configure socket on default network
-   // TODO(crbug.com/518753285): Once we no longer bindToNetwork via
-   // `ConnectAndConfigureSocket`, bind the socket via this `CreateSocket` call,
---- a/net/http/http_network_session.cc
-+++ b/net/http/http_network_session.cc
-@@ -4,6 +4,8 @@
++  // camchrome: the endpoints to try. For a chain relayed over SOCKS5 UDP there is no local DNS
++  // result: a single placeholder endpoint stands for the hostname (net/socket/socks5_udp_relay.h).
++  base::span<const HostResolverEndpointResult> EndpointResults() const;
++  const std::set<std::string>& DnsAliasResults() const;
++  std::optional<ResolutionDetails> ResolutionDetailsResult() const;
++
+   void OnResolveHostComplete(int rv);
+   void OnSessionAttemptComplete(int rv);
  
- #include "net/http/http_network_session.h"
- 
-+#include "net/socket/socks5_udp_relay.h"
-+
- #include <inttypes.h>
- 
- #include <utility>
-@@ -397,7 +399,9 @@
-   }
-   // If a proxy is being used, the last proxy in the chain must be QUIC if we
-   // are to use QUIC on top of it.
--  if (!proxy_info.is_direct() && !proxy_info.proxy_chain().Last().is_quic()) {
-+  // camchrome: or a SOCKS5 proxy whose UDP relay carries QUIC (--socks5-udp).
-+  if (!proxy_info.is_direct() && !proxy_info.proxy_chain().Last().is_quic() &&
-+      !Socks5UdpRelayProxyFor(proxy_info.proxy_chain()).has_value()) {
-     return false;
-   }
-   return OriginToForceQuicOnInternal(*context_.quic_context->params(),
---- a/net/http/http_stream_factory_job.cc
-+++ b/net/http/http_stream_factory_job.cc
-@@ -42,6 +42,7 @@
- #include "net/log/net_log_source.h"
- #include "net/log/net_log_source_type.h"
- #include "net/proxy_resolution/proxy_resolution_service.h"
-+#include "net/socket/socks5_udp_relay.h"
- #include "net/quic/bidirectional_stream_quic_impl.h"
- #include "net/quic/quic_http_stream.h"
- #include "net/quic/quic_session_key.h"
-@@ -739,8 +740,11 @@
- int HttpStreamFactory::Job::DoInitConnectionImpl() {
-   DCHECK(!connection_->is_initialized());
- 
-+  // camchrome: a single SOCKS5 proxy with --socks5-udp carries QUIC over its UDP relay
-+  // (net/socket/socks5_udp_relay.h).
-   if (using_quic_ && !proxy_info_.is_direct() &&
--      !proxy_info_.proxy_chain().Last().is_quic()) {
-+      !proxy_info_.proxy_chain().Last().is_quic() &&
-+      !Socks5UdpRelayProxyFor(proxy_info_.proxy_chain()).has_value()) {
-     // QUIC can not be spoken to non-QUIC proxies.  This error should not be
-     // user visible, because the non-alternative Job should be resumed.
-     return ERR_NO_SUPPORTED_PROXIES;
-@@ -865,7 +869,8 @@
-       (job_type_ == DNS_ALPN_H3) || (job_type_ == PRECONNECT_DNS_ALPN_H3);
- 
-   ProxyChain proxy_chain = proxy_info_.proxy_chain();
--  if (!proxy_chain.is_direct()) {
-+  if (!proxy_chain.is_direct() &&
-+      !Socks5UdpRelayProxyFor(proxy_chain).has_value()) {
-     // We only support proxying QUIC over QUIC. While MASQUE defines mechanisms
-     // to carry QUIC traffic over non-QUIC proxies, the performance of these
-     // mechanisms would be worse than simply using H/1 or H/2 to reach the
---- a/services/network/p2p/socket_udp.cc
-+++ b/services/network/p2p/socket_udp.cc
-@@ -27,6 +27,10 @@
- #include "net/base/ip_address.h"
- #include "net/base/ip_endpoint.h"
- #include "net/socket/socks5_udp_socket.h"
-+#include "base/no_destructor.h"
-+#include "net/base/proxy_server.h"
-+#include "net/base/proxy_string_util.h"
-+#include "net/dns/host_resolver.h"
- #include "net/socket/tcp_client_socket.h"
- #include "net/traffic_annotation/network_traffic_annotation.h"
- 
-@@ -142,46 +146,43 @@
-         })");
- 
- // clearcote: the SOCKS5 proxy to relay UDP through, or nullopt when the feature is off, no proxy
--// is configured, or the proxy is not one we can relay through.
-+// is configured, or the proxy is not SOCKS5.
- //
- // Resolved ONCE into a function-local static: this runs for every P2P socket, and HasSwitch() is a
- // map lookup plus, on Windows, a lowercasing allocation.
- //
--// Only an IP-literal proxy is handled today. A hostname would need an async resolve before the
--// control connection can be opened, and the factory is synchronous with nowhere to await one. We
--// decline rather than resolve on this thread, so the socket falls back to a direct one. Named
--// proxies are a follow-up, not a silent partial behaviour.
--const std::optional<net::IPEndPoint>& Socks5UdpRelayTarget() {
--  static const std::optional<net::IPEndPoint> target = [] {
--    std::optional<net::IPEndPoint> none;
-+// camchrome: parsed with Chromium's own proxy URI parser (so IPv6 literals in brackets and named
-+// proxies work), and a NAMED proxy is now relayed too: SOCKS5UDPSocket resolves it before opening
-+// the control connection. Before, a hostname made this return nullopt and the socket went DIRECT,
-+// sending WebRTC traffic from the real address.
-+const std::optional<net::HostPortPair>& Socks5UdpRelayTarget() {
-+  static const base::NoDestructor<std::optional<net::HostPortPair>> target([] {
-+    std::optional<net::HostPortPair> none;
-     const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
-     if (!cmd || !cmd->HasSwitch("socks5-udp") ||
-         !cmd->HasSwitch("proxy-server")) {
-       return none;
-     }
--    std::string spec = cmd->GetSwitchValueASCII("proxy-server");
--    const std::string kScheme = "socks5://";
--    if (spec.rfind(kScheme, 0) != 0) {
-+    const net::ProxyServer proxy = net::ProxyUriToProxyServer(
-+        cmd->GetSwitchValueASCII("proxy-server"),
-+        net::ProxyServer::SCHEME_HTTP);
-+    if (!proxy.is_valid() ||
-+        proxy.scheme() != net::ProxyServer::SCHEME_SOCKS5) {
-       return none;
-     }
--    spec = spec.substr(kScheme.size());
--    const size_t colon = spec.rfind(':');
--    if (colon == std::string::npos) {
--      return none;
--    }
--    int port = 0;
--    if (!base::StringToInt(spec.substr(colon + 1), &port) || port <= 0 ||
--        port > 65535) {
--      return none;
--    }
--    net::IPAddress address;
--    if (!address.AssignFromIPLiteral(spec.substr(0, colon))) {
--      return none;  // A hostname: see above.
--    }
--    return std::make_optional(
--        net::IPEndPoint(address, static_cast<uint16_t>(port)));
--  }();
--  return target;
-+    return std::make_optional(proxy.host_port_pair());
-+  }());
-+  return *target;
-+}
-+
-+// camchrome: resolves a named relay proxy. The P2P socket factory is a bare function with no
-+// URLRequestContext to borrow a resolver from, so the network service keeps one of its own for
-+// this; it lives on the network service thread with the sockets that use it, for the life of the
-+// process. IP-literal proxies never touch it.
-+net::HostResolver* Socks5UdpProxyResolver(net::NetLog* net_log) {
-+  static base::NoDestructor<std::unique_ptr<net::HostResolver>> resolver(
-+      net::HostResolver::CreateStandaloneResolver(net_log));
-+  return resolver->get();
- }
- 
- std::unique_ptr<net::DatagramServerSocket> DefaultSocketFactory(
-@@ -196,17 +197,23 @@
- 
-   // clearcote: relay this socket's datagrams through the SOCKS5 proxy when asked to. With the
-   // switch unset this returns the plain socket and behaviour is identical to stock.
--  const std::optional<net::IPEndPoint>& relay = Socks5UdpRelayTarget();
-+  const std::optional<net::HostPortPair>& relay = Socks5UdpRelayTarget();
-   if (!relay.has_value()) {
-     return inner;
-   }
--  auto control = std::make_unique<net::TCPClientSocket>(
--      net::AddressList(relay.value()), nullptr /* socket_performance_watcher */,
--      nullptr /* network_quality_estimator */, net_log, net::NetLogSource(),
--      net::handles::kInvalidNetworkHandle);
-+  net::IPAddress literal;
-+  if (literal.AssignFromIPLiteral(relay->host())) {
-+    auto control = std::make_unique<net::TCPClientSocket>(
-+        net::AddressList(net::IPEndPoint(literal, relay->port())),
-+        nullptr /* socket_performance_watcher */,
-+        nullptr /* network_quality_estimator */, net_log, net::NetLogSource(),
-+        net::handles::kInvalidNetworkHandle);
-+    return std::make_unique<net::SOCKS5UDPSocket>(
-+        std::move(inner), std::move(control), relay.value(),
-+        kSocks5UdpControlAnnotation);
-+  }
-   return std::make_unique<net::SOCKS5UDPSocket>(
--      std::move(inner), std::move(control),
--      net::HostPortPair::FromIPEndPoint(relay.value()),
-+      std::move(inner), relay.value(), Socks5UdpProxyResolver(net_log), net_log,
-       kSocks5UdpControlAnnotation);
- }
- 
---- /dev/null
-+++ b/net/socket/socks5_udp_relay.h
-@@ -0,0 +1,169 @@
-+// Copyright 2026 The Chromium Authors
-+// Use of this source code is governed by a BSD-style license that can be
-+// found in the LICENSE file.
-+
-+#ifndef NET_SOCKET_SOCKS5_UDP_RELAY_H_
-+#define NET_SOCKET_SOCKS5_UDP_RELAY_H_
-+
-+#include <stdint.h>
-+
-+#include <memory>
-+#include <optional>
-+#include <string>
-+
-+#include "base/memory/raw_ptr.h"
-+#include "base/memory/scoped_refptr.h"
-+#include "base/memory/weak_ptr.h"
-+#include "net/base/completion_once_callback.h"
-+#include "net/base/host_port_pair.h"
-+#include "net/base/ip_endpoint.h"
-+#include "net/base/net_export.h"
-+#include "net/base/network_handle.h"
-+#include "net/log/net_log_source.h"
-+#include "net/log/net_log_with_source.h"
-+#include "net/socket/datagram_client_socket.h"
-+#include "net/socket/read_multiple_emulator.h"
-+#include "net/traffic_annotation/network_traffic_annotation.h"
-+
-+namespace net {
-+
-+class HostResolver;
-+class IOBuffer;
-+class NetLog;
-+class ProxyChain;
-+class SOCKS5UDPSocket;
-+
-+// camchrome: QUIC (HTTP/3) and WebRTC over a SOCKS5 proxy's UDP relay (RFC 1928 section 7).
-+//
-+// Stock Chromium never speaks QUIC through a SOCKS5 proxy: the alternative job refuses non-QUIC
-+// proxies and the request falls back to HTTP/2 over the TCP tunnel. That is a fingerprint (a real
-+// Chrome on a residential line uses HTTP/3 to Google, Cloudflare, ...) and browserleaks.com/quic
-+// reports "QUIC: false". With --socks5-udp, a QUIC session to an origin reached through a single
-+// SOCKS5 proxy is carried over that proxy's UDP ASSOCIATE relay instead:
-+//
-+//   * the HTTP stream factory lets the QUIC job run for that proxy chain (http_stream_factory_job*),
-+//   * the QUIC session pool treats the chain like a direct connection (DirectJob), except that
-+//   * the origin is NEVER resolved locally: the job connects to a placeholder address
-+//     (198.18.0.0/15, RFC 2544 benchmarking space) that stands for the hostname, and the relay
-+//     socket below sends each datagram with ATYP=DOMAINNAME, so the proxy resolves it, exactly as
-+//     the TCP path does with SOCKS5 CONNECT;
-+//   * the session keeps the SOCKS5 chain in its key, so proxied and direct sessions never mix and
-+//     every migration path (port migration, network change, server preferred address) stays off.
-+//     Those are already disabled for proxied sessions in QuicChromiumClientSession.
-+//
-+// Whether this flag is on, process-wide. Read once.
-+NET_EXPORT bool Socks5UdpRelayEnabled();
-+
-+// The SOCKS5 proxy whose UDP relay should carry QUIC for `chain`: set when the relay is enabled
-+// and `chain` is exactly one SOCKS5 proxy. nullopt otherwise (direct, HTTP(S), QUIC/MASQUE,
-+// SOCKS4 or multi-hop chains keep stock behaviour).
-+NET_EXPORT std::optional<HostPortPair> Socks5UdpRelayProxyFor(
-+    const ProxyChain& chain);
-+
-+// The placeholder endpoint that stands for `destination` on a relayed socket. Stable for the life
-+// of the process for a given host (until the 131072-entry space wraps).
-+NET_EXPORT IPEndPoint Socks5UdpRelayPlaceholderFor(
-+    const HostPortPair& destination);
-+
-+// The hostname a placeholder stands for, or nullopt when `address` is not one we handed out.
-+NET_EXPORT std::optional<std::string> Socks5UdpRelayHostForPlaceholder(
-+    const IPAddress& address);
-+
-+// A connected datagram socket that relays through a SOCKS5 proxy. Used by QuicSessionPool for
-+// sessions whose chain is a SOCKS5 proxy (see above).
-+//
-+// Connect() binds a local UDP socket and starts the association; writes made before it is up are
-+// queued (the synchronous QUIC path). ConnectAsync() completes only once the association is up or
-+// has failed, so a proxy that refuses UDP ASSOCIATE fails the QUIC job and the request carries on
-+// over TCP, exactly as a network that blocks UDP would.
-+//
-+// The peer may be a placeholder (sent as a hostname) or a real IP literal (an IP-literal origin).
-+class NET_EXPORT SOCKS5UDPClientSocket : public DatagramClientSocket {
-+ public:
-+  SOCKS5UDPClientSocket(const HostPortPair& proxy,
-+                        HostResolver* resolver,
-+                        net::NetLog* net_log,
-+                        const NetLogSource& source);
-+
-+  SOCKS5UDPClientSocket(const SOCKS5UDPClientSocket&) = delete;
-+  SOCKS5UDPClientSocket& operator=(const SOCKS5UDPClientSocket&) = delete;
-+
-+  ~SOCKS5UDPClientSocket() override;
-+
-+  // DatagramClientSocket implementation.
-+  int Connect(const IPEndPoint& address) override;
-+  int ConnectUsingNetwork(handles::NetworkHandle network,
-+                          const IPEndPoint& address) override;
-+  int ConnectUsingDefaultNetwork(const IPEndPoint& address) override;
-+  int ConnectAsync(const IPEndPoint& address,
-+                   CompletionOnceCallback callback) override;
-+  int ConnectUsingNetworkAsync(handles::NetworkHandle network,
-+                               const IPEndPoint& address,
-+                               CompletionOnceCallback callback) override;
-+  int ConnectUsingDefaultNetworkAsync(const IPEndPoint& address,
-+                                      CompletionOnceCallback callback) override;
-+  handles::NetworkHandle GetBoundNetwork() const override;
-+  base::expected<DatagramsMetadata, Error> ReadMultiple(
-+      IOBuffer* buf,
-+      size_t buf_len,
-+      size_t max_message_size,
-+      base::OnceCallback<void(base::expected<DatagramsMetadata, Error>)>
-+          callback) override;
-+  void ApplySocketTag(const SocketTag& tag) override;
-+  int SetMulticastInterface(uint32_t interface_index) override;
-+
-+  // Socket implementation.
-+  int Read(IOBuffer* buf,
-+           int buf_len,
-+           CompletionOnceCallback callback) override;
-+  int Write(IOBuffer* buf,
-+            int buf_len,
-+            CompletionOnceCallback callback,
-+            const NetworkTrafficAnnotationTag& traffic_annotation) override;
-+  int SetReceiveBufferSize(int32_t size) override;
-+  int SetSendBufferSize(int32_t size) override;
-+
-+  // DatagramSocket implementation.
-+  void Close() override;
-+  int GetPeerAddress(IPEndPoint* address) const override;
-+  int GetLocalAddress(IPEndPoint* address) const override;
-+  void UseNonBlockingIO() override;
-+  int SetDoNotFragment() override;
-+  int SetRecvTos() override;
-+  int SetTos(DiffServCodePoint dscp, EcnCodePoint ecn) override;
-+  void SetMsgConfirm(bool confirm) override;
-+  const NetLogWithSource& NetLog() const override;
-+  DscpAndEcn GetLastTos() const override;
-+
-+ private:
-+  // Binds the local socket and starts the association. Returns a net error.
-+  int StartConnect(const IPEndPoint& address);
-+  // Reads into `read_buf_`, skipping datagrams with unusable framing.
-+  int DoRead();
-+  void OnReadComplete(int result);
-+
-+  const HostPortPair proxy_;
-+  const raw_ptr<HostResolver> resolver_;
-+  const raw_ptr<net::NetLog> net_log_ptr_;
-+  NetLogWithSource net_log_;
-+
-+  std::unique_ptr<SOCKS5UDPSocket> relay_;
-+  IPEndPoint peer_;
-+  // Set when `peer_` is a placeholder: datagrams go to this hostname.
-+  std::optional<HostPortPair> peer_host_;
-+  bool connected_ = false;
-+
-+  // The pending Read(): the relay reports the original source, which a connected socket drops.
-+  scoped_refptr<IOBuffer> read_buf_;
-+  int read_buf_len_ = 0;
-+  CompletionOnceCallback read_callback_;
-+  IPEndPoint read_source_;
-+
-+  ReadMultipleEmulator read_multiple_emulator_{this};
-+
-+  base::WeakPtrFactory<SOCKS5UDPClientSocket> weak_factory_{this};
-+};
-+
-+}  // namespace net
-+
-+#endif  // NET_SOCKET_SOCKS5_UDP_RELAY_H_
+@@ -90,6 +96,9 @@ class QuicSessionPool::DirectJob : public QuicSessionPool::Job {
+   HostResolverEndpointResult endpoint_result_;
+   CompletionOnceCallback callback_;
+   std::unique_ptr<HostResolver::ResolveHostRequest> resolve_host_request_;
++  // camchrome: set instead of `resolve_host_request_` for a SOCKS5 UDP relayed chain.
++  std::vector<HostResolverEndpointResult> relay_endpoints_;
++  std::set<std::string> relay_dns_aliases_;
+   base::TimeTicks dns_resolution_start_time_;
+   base::TimeTicks dns_resolution_end_time_;
+   std::unique_ptr<QuicSessionAttempt> session_attempt_;
+diff --git a/net/socket/socks5_udp_relay.cc b/net/socket/socks5_udp_relay.cc
+new file mode 100644
+index 0000000000..7528b9ea3b
 --- /dev/null
 +++ b/net/socket/socks5_udp_relay.cc
-@@ -0,0 +1,368 @@
+@@ -0,0 +1,358 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1346,27 +678,17 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
 +}
 +
 +int SOCKS5UDPClientSocket::DoRead() {
-+  for (;;) {
-+    const int rv = relay_->RecvFrom(
-+        read_buf_.get(), read_buf_len_, &read_source_,
-+        base::BindOnce(&SOCKS5UDPClientSocket::OnReadComplete,
-+                       weak_factory_.GetWeakPtr()));
-+    // A datagram whose SOCKS5 framing we could not parse is dropped, not reported: QUIC treats a
-+    // read error as fatal for the whole session, and one stray packet must not cost that.
-+    if (rv == ERR_FAILED) {
-+      continue;
-+    }
-+    return rv;
-+  }
++  // A datagram whose SOCKS5 framing cannot be parsed, or that did not come from the relay, is
++  // dropped inside SOCKS5UDPSocket and the read continues there: QUIC treats a read error as fatal
++  // for the whole session, and one stray packet must not cost that. Every error that does arrive
++  // here is real.
++  return relay_->RecvFrom(
++      read_buf_.get(), read_buf_len_, &read_source_,
++      base::BindOnce(&SOCKS5UDPClientSocket::OnReadComplete,
++                     weak_factory_.GetWeakPtr()));
 +}
 +
 +void SOCKS5UDPClientSocket::OnReadComplete(int result) {
-+  if (result == ERR_FAILED) {
-+    result = DoRead();
-+    if (result == ERR_IO_PENDING) {
-+      return;
-+    }
-+  }
 +  read_buf_.reset();
 +  if (read_callback_) {
 +    std::move(read_callback_).Run(result);
@@ -1450,6 +772,184 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
 +}
 +
 +}  // namespace net
+diff --git a/net/socket/socks5_udp_relay.h b/net/socket/socks5_udp_relay.h
+new file mode 100644
+index 0000000000..7c127e3cbf
+--- /dev/null
++++ b/net/socket/socks5_udp_relay.h
+@@ -0,0 +1,169 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef NET_SOCKET_SOCKS5_UDP_RELAY_H_
++#define NET_SOCKET_SOCKS5_UDP_RELAY_H_
++
++#include <stdint.h>
++
++#include <memory>
++#include <optional>
++#include <string>
++
++#include "base/memory/raw_ptr.h"
++#include "base/memory/scoped_refptr.h"
++#include "base/memory/weak_ptr.h"
++#include "net/base/completion_once_callback.h"
++#include "net/base/host_port_pair.h"
++#include "net/base/ip_endpoint.h"
++#include "net/base/net_export.h"
++#include "net/base/network_handle.h"
++#include "net/log/net_log_source.h"
++#include "net/log/net_log_with_source.h"
++#include "net/socket/datagram_client_socket.h"
++#include "net/socket/read_multiple_emulator.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++
++namespace net {
++
++class HostResolver;
++class IOBuffer;
++class NetLog;
++class ProxyChain;
++class SOCKS5UDPSocket;
++
++// camchrome: QUIC (HTTP/3) and WebRTC over a SOCKS5 proxy's UDP relay (RFC 1928 section 7).
++//
++// Stock Chromium never speaks QUIC through a SOCKS5 proxy: the alternative job refuses non-QUIC
++// proxies and the request falls back to HTTP/2 over the TCP tunnel. That is a fingerprint (a real
++// Chrome on a residential line uses HTTP/3 to Google, Cloudflare, ...) and browserleaks.com/quic
++// reports "QUIC: false". With --socks5-udp, a QUIC session to an origin reached through a single
++// SOCKS5 proxy is carried over that proxy's UDP ASSOCIATE relay instead:
++//
++//   * the HTTP stream factory lets the QUIC job run for that proxy chain (http_stream_factory_job*),
++//   * the QUIC session pool treats the chain like a direct connection (DirectJob), except that
++//   * the origin is NEVER resolved locally: the job connects to a placeholder address
++//     (198.18.0.0/15, RFC 2544 benchmarking space) that stands for the hostname, and the relay
++//     socket below sends each datagram with ATYP=DOMAINNAME, so the proxy resolves it, exactly as
++//     the TCP path does with SOCKS5 CONNECT;
++//   * the session keeps the SOCKS5 chain in its key, so proxied and direct sessions never mix and
++//     every migration path (port migration, network change, server preferred address) stays off.
++//     Those are already disabled for proxied sessions in QuicChromiumClientSession.
++//
++// Whether this flag is on, process-wide. Read once.
++NET_EXPORT bool Socks5UdpRelayEnabled();
++
++// The SOCKS5 proxy whose UDP relay should carry QUIC for `chain`: set when the relay is enabled
++// and `chain` is exactly one SOCKS5 proxy. nullopt otherwise (direct, HTTP(S), QUIC/MASQUE,
++// SOCKS4 or multi-hop chains keep stock behaviour).
++NET_EXPORT std::optional<HostPortPair> Socks5UdpRelayProxyFor(
++    const ProxyChain& chain);
++
++// The placeholder endpoint that stands for `destination` on a relayed socket. Stable for the life
++// of the process for a given host (until the 131072-entry space wraps).
++NET_EXPORT IPEndPoint Socks5UdpRelayPlaceholderFor(
++    const HostPortPair& destination);
++
++// The hostname a placeholder stands for, or nullopt when `address` is not one we handed out.
++NET_EXPORT std::optional<std::string> Socks5UdpRelayHostForPlaceholder(
++    const IPAddress& address);
++
++// A connected datagram socket that relays through a SOCKS5 proxy. Used by QuicSessionPool for
++// sessions whose chain is a SOCKS5 proxy (see above).
++//
++// Connect() binds a local UDP socket and starts the association; writes made before it is up are
++// queued (the synchronous QUIC path). ConnectAsync() completes only once the association is up or
++// has failed, so a proxy that refuses UDP ASSOCIATE fails the QUIC job and the request carries on
++// over TCP, exactly as a network that blocks UDP would.
++//
++// The peer may be a placeholder (sent as a hostname) or a real IP literal (an IP-literal origin).
++class NET_EXPORT SOCKS5UDPClientSocket : public DatagramClientSocket {
++ public:
++  SOCKS5UDPClientSocket(const HostPortPair& proxy,
++                        HostResolver* resolver,
++                        net::NetLog* net_log,
++                        const NetLogSource& source);
++
++  SOCKS5UDPClientSocket(const SOCKS5UDPClientSocket&) = delete;
++  SOCKS5UDPClientSocket& operator=(const SOCKS5UDPClientSocket&) = delete;
++
++  ~SOCKS5UDPClientSocket() override;
++
++  // DatagramClientSocket implementation.
++  int Connect(const IPEndPoint& address) override;
++  int ConnectUsingNetwork(handles::NetworkHandle network,
++                          const IPEndPoint& address) override;
++  int ConnectUsingDefaultNetwork(const IPEndPoint& address) override;
++  int ConnectAsync(const IPEndPoint& address,
++                   CompletionOnceCallback callback) override;
++  int ConnectUsingNetworkAsync(handles::NetworkHandle network,
++                               const IPEndPoint& address,
++                               CompletionOnceCallback callback) override;
++  int ConnectUsingDefaultNetworkAsync(const IPEndPoint& address,
++                                      CompletionOnceCallback callback) override;
++  handles::NetworkHandle GetBoundNetwork() const override;
++  base::expected<DatagramsMetadata, Error> ReadMultiple(
++      IOBuffer* buf,
++      size_t buf_len,
++      size_t max_message_size,
++      base::OnceCallback<void(base::expected<DatagramsMetadata, Error>)>
++          callback) override;
++  void ApplySocketTag(const SocketTag& tag) override;
++  int SetMulticastInterface(uint32_t interface_index) override;
++
++  // Socket implementation.
++  int Read(IOBuffer* buf,
++           int buf_len,
++           CompletionOnceCallback callback) override;
++  int Write(IOBuffer* buf,
++            int buf_len,
++            CompletionOnceCallback callback,
++            const NetworkTrafficAnnotationTag& traffic_annotation) override;
++  int SetReceiveBufferSize(int32_t size) override;
++  int SetSendBufferSize(int32_t size) override;
++
++  // DatagramSocket implementation.
++  void Close() override;
++  int GetPeerAddress(IPEndPoint* address) const override;
++  int GetLocalAddress(IPEndPoint* address) const override;
++  void UseNonBlockingIO() override;
++  int SetDoNotFragment() override;
++  int SetRecvTos() override;
++  int SetTos(DiffServCodePoint dscp, EcnCodePoint ecn) override;
++  void SetMsgConfirm(bool confirm) override;
++  const NetLogWithSource& NetLog() const override;
++  DscpAndEcn GetLastTos() const override;
++
++ private:
++  // Binds the local socket and starts the association. Returns a net error.
++  int StartConnect(const IPEndPoint& address);
++  // Reads into `read_buf_`, skipping datagrams with unusable framing.
++  int DoRead();
++  void OnReadComplete(int result);
++
++  const HostPortPair proxy_;
++  const raw_ptr<HostResolver> resolver_;
++  const raw_ptr<net::NetLog> net_log_ptr_;
++  NetLogWithSource net_log_;
++
++  std::unique_ptr<SOCKS5UDPSocket> relay_;
++  IPEndPoint peer_;
++  // Set when `peer_` is a placeholder: datagrams go to this hostname.
++  std::optional<HostPortPair> peer_host_;
++  bool connected_ = false;
++
++  // The pending Read(): the relay reports the original source, which a connected socket drops.
++  scoped_refptr<IOBuffer> read_buf_;
++  int read_buf_len_ = 0;
++  CompletionOnceCallback read_callback_;
++  IPEndPoint read_source_;
++
++  ReadMultipleEmulator read_multiple_emulator_{this};
++
++  base::WeakPtrFactory<SOCKS5UDPClientSocket> weak_factory_{this};
++};
++
++}  // namespace net
++
++#endif  // NET_SOCKET_SOCKS5_UDP_RELAY_H_
+diff --git a/net/socket/socks5_udp_relay_selftest.cc b/net/socket/socks5_udp_relay_selftest.cc
+new file mode 100644
+index 0000000000..d8bc92b800
 --- /dev/null
 +++ b/net/socket/socks5_udp_relay_selftest.cc
 @@ -0,0 +1,273 @@
@@ -1726,3 +1226,766 @@ and that a refusing or unreachable proxy fails the connect, against tools/socks5
 +  printf("\n%d passed, %d failed\n", g_passed, g_failed);
 +  return g_failed ? 1 : 0;
 +}
+diff --git a/net/socket/socks5_udp_socket.cc b/net/socket/socks5_udp_socket.cc
+index 6bc56f2c3c..b6f778b813 100644
+--- a/net/socket/socks5_udp_socket.cc
++++ b/net/socket/socks5_udp_socket.cc
+@@ -7,19 +7,50 @@
+ #include <utility>
+ 
+ #include "base/check.h"
++#include "base/command_line.h"
+ #include "base/containers/span.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
++#include "base/time/time.h"
++#include "net/base/address_list.h"
+ #include "net/base/io_buffer.h"
+ #include "net/base/net_errors.h"
++#include "net/base/network_anonymization_key.h"
++#include "net/base/network_handle.h"
++#include "net/dns/public/host_resolver_source.h"
++#include "net/log/net_log_source.h"
++#include "net/log/net_log_with_source.h"
++#include "net/socket/socks5_udp_relay.h"
+ #include "net/socket/stream_socket.h"
++#include "net/socket/tcp_client_socket.h"
+ 
+ namespace net {
+ 
+ namespace {
+ 
++// camchrome: how long the proxy has to resolve, connect and answer UDP ASSOCIATE. Without a bound a
++// proxy that accepts TCP but never answers left every waiter (a QUIC ConnectAsync, queued WebRTC
++// sends) pending forever, and the socket that owned the waiting callback leaked with it.
++constexpr base::TimeDelta kAssociationTimeout = base::Seconds(15);
++
++// Bound on the peers remembered for reply attribution (ICE talks to a handful).
++constexpr size_t kMaxDirectPeers = 512;
++
++// camchrome: test-only. The relay never forwards to a private, loopback or link-local destination;
++// the local self-tests (tools/network_selftest.py, a proxy and STUN server on 127.0.0.1) pass this
++// switch to lift that. It used to be implied by any proxy on loopback, which is also the normal
++// shape of a local proxy client forwarding to a remote server, where it let LAN candidates out.
++bool AllowPrivateDestinations() {
++  static const bool allow = [] {
++    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    return cmd && cmd->HasSwitch("socks5-udp-allow-private");
++  }();
++  return allow;
++}
++
+ // RFC 1928 section 7 address types.
+ constexpr uint8_t kAtypIPv4 = 0x01;
++constexpr uint8_t kAtypDomain = 0x03;
+ constexpr uint8_t kAtypIPv6 = 0x04;
+ 
+ int HeaderSizeFor(const IPEndPoint& address) {
+@@ -43,10 +74,32 @@ size_t WriteHeader(const IPEndPoint& address, base::span<uint8_t> out) {
+   return port_off + 2u;
+ }
+ 
++// camchrome: RSV FRAG ATYP=3 LEN NAME PORT. Returns bytes written, or 0 for a name that does not
++// fit the one-byte length field.
++size_t WriteHostHeader(const HostPortPair& destination,
++                       base::span<uint8_t> out) {
++  const std::string& host = destination.host();
++  if (host.empty() || host.size() > 255u) {
++    return 0u;
++  }
++  out[0] = 0x00;
++  out[1] = 0x00;
++  out[2] = 0x00;  // FRAG
++  out[3] = kAtypDomain;
++  out[4] = static_cast<uint8_t>(host.size());
++  out.subspan(5u, host.size()).copy_from(base::as_byte_span(host));
++  const size_t port_off = 5u + host.size();
++  out[port_off] = static_cast<uint8_t>(destination.port() >> 8);
++  out[port_off + 1u] = static_cast<uint8_t>(destination.port() & 0xff);
++  return port_off + 2u;
++}
++
+ // Parses the header off a received datagram. Returns the payload offset, or 0 when the datagram is
+ // unusable: malformed, an address type a relay never sends, or fragmented (which is dropped rather
+ // than reassembled).
+-size_t ParseHeader(base::span<const uint8_t> pkt, IPEndPoint* source) {
++size_t ParseHeader(base::span<const uint8_t> pkt,
++                   IPEndPoint* source,
++                   HostPortPair* named_source) {
+   if (pkt.size() < 10u || pkt[0] != 0x00 || pkt[1] != 0x00) {
+     return 0u;
+   }
+@@ -58,6 +111,19 @@ size_t ParseHeader(base::span<const uint8_t> pkt, IPEndPoint* source) {
+     addr_len = 4u;
+   } else if (pkt[3] == kAtypIPv6) {
+     addr_len = 16u;
++  } else if (pkt[3] == kAtypDomain) {
++    // camchrome: some relays echo the name a datagram was sent to. There is no address to
++    // report; the caller maps the name back to the placeholder it sent to, if any.
++    const size_t name_len = pkt[4];
++    const size_t port_off = 5u + name_len;
++    if (name_len == 0u || pkt.size() < port_off + 2u) {
++      return 0u;
++    }
++    *source = IPEndPoint();
++    *named_source = HostPortPair(
++        std::string(base::as_string_view(pkt.subspan(5u, name_len))),
++        static_cast<uint16_t>((pkt[port_off] << 8) | pkt[port_off + 1u]));
++    return port_off + 2u;
+   } else {
+     return 0u;
+   }
+@@ -95,8 +161,102 @@ SOCKS5UDPSocket::SOCKS5UDPSocket(
+       proxy_(proxy),
+       traffic_annotation_(traffic_annotation) {}
+ 
++SOCKS5UDPSocket::SOCKS5UDPSocket(
++    std::unique_ptr<DatagramServerSocket> inner,
++    const HostPortPair& proxy,
++    HostResolver* resolver,
++    net::NetLog* net_log,
++    const NetworkTrafficAnnotationTag& traffic_annotation)
++    : inner_(std::move(inner)),
++      proxy_(proxy),
++      traffic_annotation_(traffic_annotation),
++      resolver_(resolver),
++      net_log_(net_log) {
++  DCHECK(resolver_);
++}
++
+ SOCKS5UDPSocket::~SOCKS5UDPSocket() = default;
+ 
++void SOCKS5UDPSocket::StartAssociationTimer() {
++  association_timer_.Start(FROM_HERE, kAssociationTimeout,
++                           base::BindOnce(&SOCKS5UDPSocket::OnAssociationTimeout,
++                                          base::Unretained(this)));
++}
++
++void SOCKS5UDPSocket::OnAssociationTimeout() {
++  if (associated_ || association_error_ != OK) {
++    return;
++  }
++  // Drop whichever step is still in flight; its callback dies with it.
++  resolve_request_.reset();
++  control_.reset();
++  transport_.reset();
++  association_error_ = ERR_TIMED_OUT;
++  FlushPending(association_error_);
++  NotifyAssociationWaiters(association_error_);
++}
++
++int SOCKS5UDPSocket::WaitForAssociation(CompletionOnceCallback callback) {
++  if (association_error_ != OK) {
++    return association_error_;
++  }
++  if (associated_) {
++    return OK;
++  }
++  association_waiters_.push_back(std::move(callback));
++  return ERR_IO_PENDING;
++}
++
++void SOCKS5UDPSocket::NotifyAssociationWaiters(int result) {
++  std::vector<CompletionOnceCallback> waiters =
++      std::move(association_waiters_);
++  association_waiters_.clear();
++  for (CompletionOnceCallback& cb : waiters) {
++    std::move(cb).Run(result);
++  }
++}
++
++void SOCKS5UDPSocket::StartResolveProxy() {
++  HostResolver::ResolveHostParameters parameters;
++  // The proxy's own name, not the origin's: resolving it locally leaks nothing the TCP proxy
++  // connection does not already resolve the same way.
++  resolve_request_ = resolver_->CreateRequest(
++      proxy_, NetworkAnonymizationKey(), handles::kInvalidNetworkHandle,
++      NetLogWithSource::Make(net_log_, NetLogSourceType::SOCKET), parameters);
++  const int rv = resolve_request_->Start(base::BindOnce(
++      &SOCKS5UDPSocket::OnProxyResolved, weak_factory_.GetWeakPtr()));
++  if (rv != ERR_IO_PENDING) {
++    OnProxyResolved(rv);
++  }
++}
++
++void SOCKS5UDPSocket::OnProxyResolved(int result) {
++  if (result != OK) {
++    // Fail closed: never fall back to sending the datagrams directly.
++    association_timer_.Stop();
++    association_error_ = ERR_PROXY_CONNECTION_FAILED;
++    resolve_request_.reset();
++    FlushPending(association_error_);
++    NotifyAssociationWaiters(association_error_);
++    return;
++  }
++  AddressList addresses = resolve_request_->GetAddressResults();
++  resolve_request_.reset();
++  transport_ = std::make_unique<TCPClientSocket>(
++      std::move(addresses), nullptr /* socket_performance_watcher */,
++      nullptr /* network_quality_estimator */, net_log_, NetLogSource(),
++      handles::kInvalidNetworkHandle);
++  StartTransportConnect();
++}
++
++void SOCKS5UDPSocket::StartTransportConnect() {
++  const int connect_rv = transport_->Connect(base::BindOnce(
++      &SOCKS5UDPSocket::OnTransportConnected, weak_factory_.GetWeakPtr()));
++  if (connect_rv != ERR_IO_PENDING) {
++    OnTransportConnected(connect_rv);
++  }
++}
++
+ int SOCKS5UDPSocket::Listen(const IPEndPoint& address) {
+   const int rv = inner_->Listen(address);
+   if (rv != OK) {
+@@ -104,22 +264,26 @@ int SOCKS5UDPSocket::Listen(const IPEndPoint& address) {
+   }
+   // Start the association but do not wait on it: Listen() has no completion callback to hand a
+   // pending result to. Datagrams sent before it completes are queued in SendTo().
++  StartAssociationTimer();
++  if (resolver_) {
++    StartResolveProxy();
++    return OK;
++  }
+   if (!transport_) {
++    association_timer_.Stop();
+     association_error_ = ERR_UNEXPECTED;
+     return OK;
+   }
+-  const int connect_rv = transport_->Connect(base::BindOnce(
+-      &SOCKS5UDPSocket::OnTransportConnected, weak_factory_.GetWeakPtr()));
+-  if (connect_rv != ERR_IO_PENDING) {
+-    OnTransportConnected(connect_rv);
+-  }
++  StartTransportConnect();
+   return OK;
+ }
+ 
+ void SOCKS5UDPSocket::OnTransportConnected(int result) {
+   if (result != OK) {
++    association_timer_.Stop();
+     association_error_ = result;
+     FlushPending(result);
++    NotifyAssociationWaiters(result);
+     return;
+   }
+   // Only now is it safe to wrap: SOCKS5ClientSocket writes its greeting inside Connect().
+@@ -134,19 +298,28 @@ void SOCKS5UDPSocket::OnTransportConnected(int result) {
+ }
+ 
+ void SOCKS5UDPSocket::OnAssociateComplete(int result) {
++  association_timer_.Stop();
+   if (result == OK) {
+     relay_ = control_->bound_endpoint();
++    IPEndPoint peer;
++    const bool have_peer = control_->GetPeerAddress(&peer) == OK;
+     // An unspecified BND.ADDR means "reuse the address you connected to". Without this the relay
+     // would be addressed as 0.0.0.0 and every datagram would go nowhere, silently.
+-    if (relay_.address().IsZero()) {
+-      IPEndPoint peer;
+-      if (relay_.port() != 0 && control_->GetPeerAddress(&peer) == OK) {
++    if (relay_.port() == 0) {
++      result = ERR_SOCKS_CONNECTION_FAILED;
++    } else if (relay_.address().IsZero()) {
++      if (have_peer) {
+         relay_ = IPEndPoint(peer.address(), relay_.port());
+       } else {
+         result = ERR_SOCKS_CONNECTION_FAILED;
+       }
+-    } else if (relay_.port() == 0) {
+-      result = ERR_SOCKS_CONNECTION_FAILED;
++    } else if (!relay_.address().IsPubliclyRoutable() && have_peer &&
++               peer.address().IsPubliclyRoutable()) {
++      // camchrome: a proxy behind NAT or in a container often reports its INTERNAL address
++      // (172.17.x, 10.x). Sending there would put every datagram, a QUIC Initial with its SNI
++      // included, on this machine's own network instead of the proxy. The relay of a proxy we
++      // reach at a public address is at that address.
++      relay_ = IPEndPoint(peer.address(), relay_.port());
+     }
+   }
+   if (result == OK) {
+@@ -155,6 +328,7 @@ void SOCKS5UDPSocket::OnAssociateComplete(int result) {
+     association_error_ = result;
+   }
+   FlushPending(result);
++  NotifyAssociationWaiters(result);
+ }
+ 
+ void SOCKS5UDPSocket::FlushPending(int result) {
+@@ -169,8 +343,12 @@ void SOCKS5UDPSocket::FlushPending(int result) {
+     // one callback -- whether the retry completes asynchronously or inline. Split it: one half
+     // rides into the async binding, the other runs here on a synchronous completion.
+     auto split = base::SplitOnceCallback(std::move(p.callback));
+-    const int rv = SendFramed(p.buf.get(), p.buf_len, p.address,
+-                              std::move(split.first));
++    const int rv =
++        p.host.IsEmpty()
++            ? SendFramed(p.buf.get(), p.buf_len, p.address,
++                         std::move(split.first))
++            : SendFramedToHost(p.buf.get(), p.buf_len, p.host,
++                               std::move(split.first));
+     if (rv != ERR_IO_PENDING) {
+       std::move(split.second).Run(rv);
+     }
+@@ -187,7 +365,30 @@ int SOCKS5UDPSocket::SendFramed(IOBuffer* buf,
+   DCHECK_EQ(written, static_cast<size_t>(header_size));
+   framed->span().subspan(written).copy_prefix_from(
+       buf->span().first(static_cast<size_t>(buf_len)));
++  return WriteFramed(std::move(framed), header_size + buf_len, buf_len,
++                     std::move(callback));
++}
++
++int SOCKS5UDPSocket::SendFramedToHost(IOBuffer* buf,
++                                      int buf_len,
++                                      const HostPortPair& destination,
++                                      CompletionOnceCallback callback) {
++  auto framed =
++      base::MakeRefCounted<IOBufferWithSize>(kMaxHeaderOverhead + buf_len);
++  const size_t written = WriteHostHeader(destination, framed->span());
++  if (written == 0u) {
++    return ERR_INVALID_ARGUMENT;
++  }
++  framed->span().subspan(written).copy_prefix_from(
++      buf->span().first(static_cast<size_t>(buf_len)));
++  return WriteFramed(std::move(framed), static_cast<int>(written) + buf_len,
++                     buf_len, std::move(callback));
++}
+ 
++int SOCKS5UDPSocket::WriteFramed(scoped_refptr<IOBufferWithSize> framed,
++                                 int framed_len,
++                                 int buf_len,
++                                 CompletionOnceCallback callback) {
+   // The caller is owed the length IT asked to send, not our framed length, so success is
+   // translated back. `framed` rides along in the binding to stay alive for the async write.
+   auto on_done = base::BindOnce(
+@@ -199,8 +400,8 @@ int SOCKS5UDPSocket::SendFramed(IOBuffer* buf,
+       },
+       framed, buf_len, std::move(callback));
+ 
+-  const int rv = inner_->SendTo(framed.get(), header_size + buf_len, relay_,
+-                                std::move(on_done));
++  const int rv =
++      inner_->SendTo(framed.get(), framed_len, relay_, std::move(on_done));
+   if (rv == ERR_IO_PENDING) {
+     return rv;
+   }
+@@ -214,6 +415,26 @@ int SOCKS5UDPSocket::SendTo(IOBuffer* buf,
+   if (association_error_ != OK) {
+     return association_error_;
+   }
++  // camchrome: a placeholder (198.18.0.0/15) stands for a hostname that was never resolved
++  // locally (a STUN/TURN server name, see P2PSocketManager::GetHostAddress). Send it by NAME so
++  // the proxy resolves it.
++  if (std::optional<std::string> host =
++          Socks5UdpRelayHostForPlaceholder(address.address())) {
++    return SendToHost(buf, buf_len, HostPortPair(*host, address.port()),
++                      std::move(callback));
++  }
++  // camchrome: never ask the proxy to deliver to a private, loopback or link-local address. Such
++  // a destination is a peer's LAN host candidate (unreachable through the relay anyway), and
++  // relaying it would probe the PROXY's own network. Report the datagram as sent so ICE simply
++  // sees no answer, as it would for any unreachable candidate, instead of a socket error that
++  // could tear the P2P socket down. Only the local self-tests lift this (see
++  // AllowPrivateDestinations()).
++  if (!address.address().IsPubliclyRoutable() && !AllowPrivateDestinations()) {
++    return buf_len;
++  }
++  if (direct_peers_.size() < kMaxDirectPeers) {
++    direct_peers_.insert(address);
++  }
+   if (!associated_) {
+     // Queue rather than drop. Silent early loss is indistinguishable from a flaky network and is
+     // miserable to trace back to this layer.
+@@ -224,6 +445,26 @@ int SOCKS5UDPSocket::SendTo(IOBuffer* buf,
+   return SendFramed(buf, buf_len, address, std::move(callback));
+ }
+ 
++int SOCKS5UDPSocket::SendToHost(IOBuffer* buf,
++                                int buf_len,
++                                const HostPortPair& destination,
++                                CompletionOnceCallback callback) {
++  if (association_error_ != OK) {
++    return association_error_;
++  }
++  // Remember the placeholder this name answers to, so a reply can be reported as coming from it
++  // (ICE matches STUN responses by source address).
++  named_peers_[destination.port()] =
++      Socks5UdpRelayPlaceholderFor(destination);
++  if (!associated_) {
++    pending_.emplace_back(scoped_refptr<IOBuffer>(buf), buf_len, IPEndPoint(),
++                          std::move(callback));
++    pending_.back().host = destination;
++    return ERR_IO_PENDING;
++  }
++  return SendFramedToHost(buf, buf_len, destination, std::move(callback));
++}
++
+ int SOCKS5UDPSocket::RecvFrom(IOBuffer* buf,
+                               int buf_len,
+                               IPEndPoint* address,
+@@ -237,31 +478,71 @@ int SOCKS5UDPSocket::RecvFrom(IOBuffer* buf,
+   recv_callback_ = std::move(callback);
+   // Room for the caller's payload plus the largest header we might have to strip.
+   framed_recv_buf_ =
+-      base::MakeRefCounted<IOBufferWithSize>(buf_len + kHeaderOverheadIPv6);
++      base::MakeRefCounted<IOBufferWithSize>(buf_len + kMaxHeaderOverhead);
+ 
+-  const int rv = inner_->RecvFrom(
+-      framed_recv_buf_.get(), framed_recv_buf_->size(), &relay_seen_,
+-      base::BindOnce(&SOCKS5UDPSocket::OnRecvComplete,
+-                     weak_factory_.GetWeakPtr()));
+-  if (rv == ERR_IO_PENDING) {
+-    return rv;
++  const int rv = DoRecv();
++  if (rv != ERR_IO_PENDING) {
++    // Synchronous completion: report directly, without running the callback.
++    recv_callback_.Reset();
++  }
++  return rv;
++}
++
++int SOCKS5UDPSocket::DoRecv() {
++  for (;;) {
++    const int rv = inner_->RecvFrom(
++        framed_recv_buf_.get(), framed_recv_buf_->size(), &relay_seen_,
++        base::BindOnce(&SOCKS5UDPSocket::OnRecvComplete,
++                       weak_factory_.GetWeakPtr()));
++    if (rv == ERR_IO_PENDING) {
++      return rv;
++    }
++    const int stripped = StripInto(rv);
++    if (stripped != kSkipDatagram) {
++      return stripped;
++    }
+   }
+-  // Synchronous completion: strip inline and report directly, without running the callback.
+-  recv_callback_.Reset();
+-  return StripInto(rv);
+ }
+ 
+ int SOCKS5UDPSocket::StripInto(int result) {
+   if (result <= 0) {
+     return result;
+   }
++  // camchrome: only the relay speaks to this socket. Anything else reaching the local port, or a
++  // datagram whose framing we do not understand (malformed, fragmented), is dropped and the read
++  // continues. Reporting it as an error would let one stray packet tear down a QUIC session or a
++  // P2P socket, and a real socket error must not be mistaken for it.
++  const IPEndPoint seen =
++      relay_seen_.address().IsIPv4MappedIPv6()
++          ? IPEndPoint(ConvertIPv4MappedIPv6ToIPv4(relay_seen_.address()),
++                       relay_seen_.port())
++          : relay_seen_;
++  if (seen != relay_) {
++    return kSkipDatagram;
++  }
+   IPEndPoint source;
+-  const size_t offset = ParseHeader(
+-      framed_recv_buf_->span().first(static_cast<size_t>(result)), &source);
++  HostPortPair named_source;
++  const size_t offset =
++      ParseHeader(framed_recv_buf_->span().first(static_cast<size_t>(result)),
++                  &source, &named_source);
+   if (offset == 0u) {
+-    // Malformed or fragmented. Report a failure rather than handing the layer above a datagram
+-    // whose framing we did not understand.
+-    return ERR_FAILED;
++    return kSkipDatagram;
++  }
++  if (!named_source.IsEmpty()) {
++    // The relay echoed the name: report the placeholder that name was sent to.
++    auto it = named_peers_.find(named_source.port());
++    if (it != named_peers_.end() &&
++        Socks5UdpRelayHostForPlaceholder(it->second.address()) ==
++            named_source.host()) {
++      source = it->second;
++    }
++  } else if (!direct_peers_.contains(source)) {
++    // The relay reports the address IT resolved a name to. A reply on the port a name was sent to,
++    // from an address this socket never sent to directly, is that name's answer.
++    auto it = named_peers_.find(source.port());
++    if (it != named_peers_.end()) {
++      source = it->second;
++    }
+   }
+   const size_t payload_len = static_cast<size_t>(result) - offset;
+   if (payload_len > static_cast<size_t>(recv_buf_len_)) {
+@@ -281,7 +562,14 @@ void SOCKS5UDPSocket::OnRecvComplete(int result) {
+   if (!recv_callback_) {
+     return;
+   }
+-  std::move(recv_callback_).Run(StripInto(result));
++  int rv = StripInto(result);
++  if (rv == kSkipDatagram) {
++    rv = DoRecv();
++    if (rv == ERR_IO_PENDING) {
++      return;
++    }
++  }
++  std::move(recv_callback_).Run(rv);
+ }
+ 
+ // -- Everything below is delegation ----------------------------------------
+@@ -346,6 +634,7 @@ void SOCKS5UDPSocket::DetachFromThread() {
+ }
+ void SOCKS5UDPSocket::Close() {
+   // Closing the control connection is what tears the association down proxy-side.
++  resolve_request_.reset();
+   control_.reset();
+   associated_ = false;
+   inner_->Close();
+diff --git a/net/socket/socks5_udp_socket.h b/net/socket/socks5_udp_socket.h
+index 0213a0f785..11c1428f01 100644
+--- a/net/socket/socks5_udp_socket.h
++++ b/net/socket/socks5_udp_socket.h
+@@ -10,8 +10,14 @@
+ #include <memory>
+ #include <vector>
+ 
++#include "base/containers/flat_map.h"
++#include "base/containers/flat_set.h"
++#include "base/timer/timer.h"
++
+ #include "base/memory/scoped_refptr.h"
++#include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
++#include "net/dns/host_resolver.h"
+ #include "net/base/completion_once_callback.h"
+ #include "net/base/host_port_pair.h"
+ #include "net/base/ip_endpoint.h"
+@@ -22,7 +28,9 @@
+ 
+ namespace net {
+ 
++class HostResolver;
+ class IOBuffer;
++class IOBufferWithSize;
+ class NetLog;
+ class StreamSocket;
+ 
+@@ -55,6 +63,16 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+                   const HostPortPair& proxy,
+                   const NetworkTrafficAnnotationTag& traffic_annotation);
+ 
++  // camchrome: the proxy may be a hostname. The control connection is opened only after
++  // `proxy` resolves through `resolver` (never null; it must outlive this socket), so a named
++  // proxy is relayed instead of declined. Before this, a hostname proxy made the P2P factory fall
++  // back to a DIRECT socket, which is a leak path.
++  SOCKS5UDPSocket(std::unique_ptr<DatagramServerSocket> inner,
++                  const HostPortPair& proxy,
++                  HostResolver* resolver,
++                  net::NetLog* net_log,
++                  const NetworkTrafficAnnotationTag& traffic_annotation);
++
+   SOCKS5UDPSocket(const SOCKS5UDPSocket&) = delete;
+   SOCKS5UDPSocket& operator=(const SOCKS5UDPSocket&) = delete;
+ 
+@@ -65,6 +83,21 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+   // the MTU presents as packet loss rather than as an error.
+   static constexpr int kHeaderOverheadIPv4 = 10;
+   static constexpr int kHeaderOverheadIPv6 = 22;
++  // camchrome: a DOMAINNAME destination (ATYP 3): 4 + 1 + up to 255 + 2.
++  static constexpr int kMaxHeaderOverhead = 262;
++
++  // camchrome: runs `callback` once the association is up (OK) or has failed (the error). Returns
++  // the result directly when it is already known, ERR_IO_PENDING otherwise. Listen() must have been
++  // called. A connected client (SOCKS5UDPClientSocket) uses this so ConnectAsync() only reports
++  // success once datagrams can actually flow, and a proxy that refuses UDP fails the connect.
++  int WaitForAssociation(CompletionOnceCallback callback);
++
++  // camchrome: like SendTo(), but the datagram is addressed to a HOSTNAME (ATYP 3), so the proxy
++  // resolves it. Used for QUIC, whose origin must never be resolved locally when proxied.
++  int SendToHost(IOBuffer* buf,
++                 int buf_len,
++                 const HostPortPair& destination,
++                 CompletionOnceCallback callback);
+ 
+   // True once the association is up and datagrams flow without queueing.
+   bool associated() const { return associated_; }
+@@ -119,9 +152,20 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+     scoped_refptr<IOBuffer> buf;
+     int buf_len;
+     IPEndPoint address;
++    // camchrome: set for SendToHost(); `address` is then unused.
++    HostPortPair host;
+     CompletionOnceCallback callback;
+   };
+ 
++  // camchrome: resolves a named proxy, then builds the TCP control socket.
++  void StartResolveProxy();
++  void OnProxyResolved(int result);
++  void StartTransportConnect();
++  void NotifyAssociationWaiters(int result);
++  // camchrome: bounds the whole association (resolve, connect, UDP ASSOCIATE).
++  void StartAssociationTimer();
++  void OnAssociationTimeout();
++
+   // The association is two async steps. SOCKS5ClientSocket writes its greeting the moment
+   // Connect() is called, so the transport must already be connected when it is handed over --
+   // which is why the TCP connect happens first and the wrapper is built only afterwards.
+@@ -133,7 +177,20 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+                  int buf_len,
+                  const IPEndPoint& address,
+                  CompletionOnceCallback callback);
++  // camchrome: the same, with a DOMAINNAME destination.
++  int SendFramedToHost(IOBuffer* buf,
++                       int buf_len,
++                       const HostPortPair& destination,
++                       CompletionOnceCallback callback);
++  int WriteFramed(scoped_refptr<IOBufferWithSize> framed,
++                  int framed_len,
++                  int payload_len,
++                  CompletionOnceCallback callback);
+   void OnRecvComplete(int result);
++  // camchrome: issues inner reads until a datagram from the relay parses, or the read pends.
++  int DoRecv();
++  // StripInto() result for a datagram that is dropped and the read continued.
++  static constexpr int kSkipDatagram = -0x7fff;
+   // Strips the header off a completed read and copies the payload into the caller's buffer.
+   // Returns the payload length, or a net error. Shared by the sync and async read paths so they
+   // cannot disagree about framing.
+@@ -146,6 +203,12 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+   const HostPortPair proxy_;
+   const NetworkTrafficAnnotationTag traffic_annotation_;
+ 
++  // camchrome: set only by the resolving constructor.
++  raw_ptr<HostResolver> resolver_ = nullptr;
++  raw_ptr<net::NetLog> net_log_ = nullptr;
++  std::unique_ptr<HostResolver::ResolveHostRequest> resolve_request_;
++  std::vector<CompletionOnceCallback> association_waiters_;
++
+   bool associated_ = false;
+   // Set once the handshake fails; every later operation reports it rather than hanging.
+   int association_error_ = OK;
+@@ -163,6 +226,12 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+   // source, which is why it is read from the header instead and this value discarded.
+   IPEndPoint relay_seen_;
+ 
++  base::OneShotTimer association_timer_;
++  // camchrome: reply attribution. The placeholder last sent to by name on each port, and the
++  // addresses sent to directly; see StripInto().
++  base::flat_map<uint16_t, IPEndPoint> named_peers_;
++  base::flat_set<IPEndPoint> direct_peers_;
++
+   base::WeakPtrFactory<SOCKS5UDPSocket> weak_factory_{this};
+ };
+ 
+diff --git a/services/network/p2p/socket_udp.cc b/services/network/p2p/socket_udp.cc
+index 65b85068c0..cb62beebb8 100644
+--- a/services/network/p2p/socket_udp.cc
++++ b/services/network/p2p/socket_udp.cc
+@@ -27,6 +27,10 @@
+ #include "net/base/ip_address.h"
+ #include "net/base/ip_endpoint.h"
+ #include "net/socket/socks5_udp_socket.h"
++#include "base/no_destructor.h"
++#include "net/base/proxy_server.h"
++#include "net/base/proxy_string_util.h"
++#include "net/dns/host_resolver.h"
+ #include "net/socket/tcp_client_socket.h"
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ 
+@@ -142,46 +146,43 @@ constexpr net::NetworkTrafficAnnotationTag kSocks5UdpControlAnnotation =
+         })");
+ 
+ // clearcote: the SOCKS5 proxy to relay UDP through, or nullopt when the feature is off, no proxy
+-// is configured, or the proxy is not one we can relay through.
++// is configured, or the proxy is not SOCKS5.
+ //
+ // Resolved ONCE into a function-local static: this runs for every P2P socket, and HasSwitch() is a
+ // map lookup plus, on Windows, a lowercasing allocation.
+ //
+-// Only an IP-literal proxy is handled today. A hostname would need an async resolve before the
+-// control connection can be opened, and the factory is synchronous with nowhere to await one. We
+-// decline rather than resolve on this thread, so the socket falls back to a direct one. Named
+-// proxies are a follow-up, not a silent partial behaviour.
+-const std::optional<net::IPEndPoint>& Socks5UdpRelayTarget() {
+-  static const std::optional<net::IPEndPoint> target = [] {
+-    std::optional<net::IPEndPoint> none;
++// camchrome: parsed with Chromium's own proxy URI parser (so IPv6 literals in brackets and named
++// proxies work), and a NAMED proxy is now relayed too: SOCKS5UDPSocket resolves it before opening
++// the control connection. Before, a hostname made this return nullopt and the socket went DIRECT,
++// sending WebRTC traffic from the real address.
++const std::optional<net::HostPortPair>& Socks5UdpRelayTarget() {
++  static const base::NoDestructor<std::optional<net::HostPortPair>> target([] {
++    std::optional<net::HostPortPair> none;
+     const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
+     if (!cmd || !cmd->HasSwitch("socks5-udp") ||
+         !cmd->HasSwitch("proxy-server")) {
+       return none;
+     }
+-    std::string spec = cmd->GetSwitchValueASCII("proxy-server");
+-    const std::string kScheme = "socks5://";
+-    if (spec.rfind(kScheme, 0) != 0) {
++    const net::ProxyServer proxy = net::ProxyUriToProxyServer(
++        cmd->GetSwitchValueASCII("proxy-server"),
++        net::ProxyServer::SCHEME_HTTP);
++    if (!proxy.is_valid() ||
++        proxy.scheme() != net::ProxyServer::SCHEME_SOCKS5) {
+       return none;
+     }
+-    spec = spec.substr(kScheme.size());
+-    const size_t colon = spec.rfind(':');
+-    if (colon == std::string::npos) {
+-      return none;
+-    }
+-    int port = 0;
+-    if (!base::StringToInt(spec.substr(colon + 1), &port) || port <= 0 ||
+-        port > 65535) {
+-      return none;
+-    }
+-    net::IPAddress address;
+-    if (!address.AssignFromIPLiteral(spec.substr(0, colon))) {
+-      return none;  // A hostname: see above.
+-    }
+-    return std::make_optional(
+-        net::IPEndPoint(address, static_cast<uint16_t>(port)));
+-  }();
+-  return target;
++    return std::make_optional(proxy.host_port_pair());
++  }());
++  return *target;
++}
++
++// camchrome: resolves a named relay proxy. The P2P socket factory is a bare function with no
++// URLRequestContext to borrow a resolver from, so the network service keeps one of its own for
++// this; it lives on the network service thread with the sockets that use it, for the life of the
++// process. IP-literal proxies never touch it.
++net::HostResolver* Socks5UdpProxyResolver(net::NetLog* net_log) {
++  static base::NoDestructor<std::unique_ptr<net::HostResolver>> resolver(
++      net::HostResolver::CreateStandaloneResolver(net_log));
++  return resolver->get();
+ }
+ 
+ std::unique_ptr<net::DatagramServerSocket> DefaultSocketFactory(
+@@ -196,17 +197,23 @@ std::unique_ptr<net::DatagramServerSocket> DefaultSocketFactory(
+ 
+   // clearcote: relay this socket's datagrams through the SOCKS5 proxy when asked to. With the
+   // switch unset this returns the plain socket and behaviour is identical to stock.
+-  const std::optional<net::IPEndPoint>& relay = Socks5UdpRelayTarget();
++  const std::optional<net::HostPortPair>& relay = Socks5UdpRelayTarget();
+   if (!relay.has_value()) {
+     return inner;
+   }
+-  auto control = std::make_unique<net::TCPClientSocket>(
+-      net::AddressList(relay.value()), nullptr /* socket_performance_watcher */,
+-      nullptr /* network_quality_estimator */, net_log, net::NetLogSource(),
+-      net::handles::kInvalidNetworkHandle);
++  net::IPAddress literal;
++  if (literal.AssignFromIPLiteral(relay->host())) {
++    auto control = std::make_unique<net::TCPClientSocket>(
++        net::AddressList(net::IPEndPoint(literal, relay->port())),
++        nullptr /* socket_performance_watcher */,
++        nullptr /* network_quality_estimator */, net_log, net::NetLogSource(),
++        net::handles::kInvalidNetworkHandle);
++    return std::make_unique<net::SOCKS5UDPSocket>(
++        std::move(inner), std::move(control), relay.value(),
++        kSocks5UdpControlAnnotation);
++  }
+   return std::make_unique<net::SOCKS5UDPSocket>(
+-      std::move(inner), std::move(control),
+-      net::HostPortPair::FromIPEndPoint(relay.value()),
++      std::move(inner), relay.value(), Socks5UdpProxyResolver(net_log), net_log,
+       kSocks5UdpControlAnnotation);
+ }
+ 

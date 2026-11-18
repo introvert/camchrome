@@ -14,8 +14,25 @@ NOTE: the switch is a raw string literal rather than a declared constant in
 ungoogled_switches.h, unlike every other clearcote switch. Left as-found; promoting it is
 a follow-up, not a capture.
 
+camchrome: the switch is also forwarded to renderer processes (render_process_host_impl.cc).
+Every guard above runs in Blink, and without the forwarding --cc-no-farble never reached it.
+
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 31225b1386..ca5793e7d3 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3973,6 +3973,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       switches::kFingerprintingCanvasMeasureTextNoise,
+       switches::kFingerprintingCanvasImageDataNoise,
+       switches::kFingerprint,
++      // camchrome (220): read by Blink's canvas/WebGL readback paths; without
++      // forwarding it the escape hatch only reached the browser process.
++      "cc-no-farble",
+       switches::kFingerprintBrand,
+       switches::kFingerprintBrandVersion,
+       switches::kFingerprintGpuVendor,
 diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
-index 8f31f4d..c489964 100644
+index 8f31f4d47a..c489964e60 100644
 --- a/third_party/blink/renderer/core/dom/document.cc
 +++ b/third_party/blink/renderer/core/dom/document.cc
 @@ -36,6 +36,8 @@
@@ -37,7 +54,7 @@ index 8f31f4d..c489964 100644
  #include "mojo/public/cpp/bindings/pending_remote.h"
  #include "mojo/public/cpp/bindings/remote.h"
 diff --git a/third_party/blink/renderer/core/dom/element.cc b/third_party/blink/renderer/core/dom/element.cc
-index d8a6bd6..a7084cf 100644
+index d8a6bd61d0..a7084cf717 100644
 --- a/third_party/blink/renderer/core/dom/element.cc
 +++ b/third_party/blink/renderer/core/dom/element.cc
 @@ -35,6 +35,7 @@
@@ -49,7 +66,7 @@ index d8a6bd6..a7084cf 100644
  #include "third_party/blink/public/common/features.h"
  #include "third_party/blink/public/mojom/scroll/scroll_enums.mojom-blink.h"
 diff --git a/third_party/blink/renderer/core/dom/range.cc b/third_party/blink/renderer/core/dom/range.cc
-index ffa5d93..1c01fb7 100644
+index ffa5d9312e..1c01fb7442 100644
 --- a/third_party/blink/renderer/core/dom/range.cc
 +++ b/third_party/blink/renderer/core/dom/range.cc
 @@ -23,6 +23,8 @@
@@ -62,7 +79,7 @@ index ffa5d93..1c01fb7 100644
  
  #include "third_party/blink/renderer/core/display_lock/display_lock_document_state.h"
 diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-index 04f250e..46e27a3 100644
+index 04f250e46b..46e27a3db9 100644
 --- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 +++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 @@ -1473,7 +1473,7 @@ String HTMLCanvasElement::ToDataURLInternal(
@@ -75,7 +92,7 @@ index 04f250e..46e27a3 100644
          // toDataURL() lands here too. Only the 2D case follows the canvas-noise toggle;
          // everything else stays on the process-wide gate.
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 803a7a0..d23633f 100644
+index 803a7a01f6..d23633fc37 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 @@ -980,7 +980,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
@@ -97,7 +114,7 @@ index 803a7a0..d23633f 100644
      // of the raw global switch value. Downstream hashing is unchanged.
      const SecurityOrigin* origin =
 diff --git a/third_party/blink/renderer/modules/webgl/gpu_fingerprint.cc b/third_party/blink/renderer/modules/webgl/gpu_fingerprint.cc
-index 0bfcbe1..475283e 100644
+index 0bfcbe18e9..475283e30f 100644
 --- a/third_party/blink/renderer/modules/webgl/gpu_fingerprint.cc
 +++ b/third_party/blink/renderer/modules/webgl/gpu_fingerprint.cc
 @@ -68,7 +68,7 @@ std::string GetGLVendorStringForFingerprint() {
@@ -119,7 +136,7 @@ index 0bfcbe1..475283e 100644
  
      if (command_line->HasSwitch(switches::kFingerprintPlatform)) {
 diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
-index 112416d..9d015a1 100644
+index 112416d1d2..9d015a103f 100644
 --- a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
 +++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
 @@ -146,7 +146,7 @@ bool ImageDataBuffer::EncodeImage(const ImageEncodingMimeType mime_type,

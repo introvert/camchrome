@@ -35,14 +35,14 @@ headless and CDP `Runtime.enable` signals, and more.
 | `986-canvas-alpha-and-grey-coherence` | alpha=0 pixels read black; grey stays grey |
 | `987-engine-version-and-macos-persona` | every version surface derives from the engine; macOS personas get Apple Silicon GPU/screen/voices/devices |
 | `988-webgl-readback-and-timing` | readPixels clips to the framebuffer, PBO and array exits agree, and spoofed `getParameter` values pay Chrome's GPU round-trip latency |
-| `989-cpu-tier-and-netinfo-hints` | `navigator.cpuPerformance` follows the persona's cores; `Sec-CH-RTT/Downlink/ECT` match `navigator.connection` |
+| `989-cpu-tier-and-netinfo-hints` | `navigator.cpuPerformance` follows the persona's cores; `RTT/Downlink/ECT` client hints match `navigator.connection` on navigations and subresources alike |
 
 ### What 990–991 add (network)
 
 | Patch | Fix |
 |---|---|
-| `990-quic-over-socks5-udp` | HTTP/3 through a SOCKS5 proxy's UDP relay (`--socks5-udp`), with the origin resolved by the proxy, never locally; named relay proxies; no relaying to private addresses |
-| `991-webrtc-relay-exit-ip` | WebRTC's srflx candidate is the proxy's exit IP without `--webrtc-ip`: real STUN runs through the relay, host candidates stay hidden |
+| `990-quic-over-socks5-udp` | HTTP/3 through a SOCKS5 proxy's UDP relay (`--socks5-udp`), with the origin resolved by the proxy, never locally; named relay proxies; no relaying to private addresses (also behind a proxy client on 127.0.0.1); a relay address the proxy reports from behind NAT is replaced by the proxy's own; a proxy that never answers UDP ASSOCIATE fails after 15 s |
+| `991-webrtc-relay-exit-ip` | WebRTC's srflx candidate is the proxy's exit IP without `--webrtc-ip`: real STUN runs through the relay, host candidates stay hidden, and a STUN/TURN server **name** is resolved by the proxy, never by this machine's DNS |
 
 Through a SOCKS5 proxy that supports UDP ASSOCIATE:
 
@@ -58,12 +58,13 @@ locally with `tools/socks5_udp_proxy.py` (a SOCKS5 proxy with UDP ASSOCIATE).
 
 | Patch | Fix |
 |---|---|
-| `992-android-persona-mobile-behaviour` | with `--fingerprint-platform=android` the mouse becomes touch (touchstart, `pointerType: "touch"`, taps), deviceorientation/devicemotion stream a phone held in a hand, and fonts answer with the handset set from Android's `fonts.xml` |
+| `992-android-persona-mobile-behaviour` | with `--fingerprint-platform=android` the mouse becomes touch on web pages (touchstart, `pointerType: "touch"`, taps), deviceorientation/devicemotion stream a phone held in a hand, fonts answer with the handset set from Android's `fonts.xml` (on Linux and macOS hosts), `getVoices()` lists the Google TTS voices, and `outerWidth` is the phone's screen width |
 
-Launch the window phone-sized so the layout viewport matches the persona screen, e.g.
-`--window-size=412,915` for the Pixel 7 row. Drive it with mouse events or `Browser.humanized*`
-(both become touch); a raw CDP `Input.dispatchTouchEvent` switches that tab back to plain mouse
-events afterwards.
+The layout viewport is still the desktop window's, so launch the window phone-sized, e.g.
+`--window-size=412,915` for the Pixel 7 row. Drive it with mouse events, CDP `Input.dispatchMouseEvent` or `Browser.humanized*`
+(all become touch; browser UI pages such as chrome:// and DevTools keep the mouse). A raw CDP
+`Input.dispatchTouchEvent` switches that tab to injected touch, and mouse events stay mouse events
+there afterwards.
 
 ### What 993 adds (human input)
 

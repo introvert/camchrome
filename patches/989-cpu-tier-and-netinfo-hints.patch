@@ -6,12 +6,15 @@ camchrome: cpuPerformance tier and connection client hints follow the persona.
 * navigator.connection.rtt/downlink/effectiveType were overridden in the page
   while the Sec-CH-RTT/Downlink/ECT headers kept the host NQE values, so the
   network stack and the page disagreed — readable from one page load.
+* The same hints on NAVIGATION requests are added in the browser process
+  (content/browser/client_hints/client_hints.cc) and kept the host NQE values too;
+  they now carry the persona's values as well.
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 6183f481e4..ef68a0d848 100644
+index c2d31224a1..d6c459e549 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -9725,6 +9725,22 @@ std::optional<int> ChromeContentBrowserClient::GetCpuPerformanceTierOverride(
+@@ -9875,6 +9875,22 @@ std::optional<int> ChromeContentBrowserClient::GetCpuPerformanceTierOverride(
        return value;
      }
    }
@@ -34,11 +37,58 @@ index 6183f481e4..ef68a0d848 100644
    return ContentBrowserClient::GetCpuPerformanceTierOverride(browser_context);
  }
  
+diff --git a/content/browser/client_hints/client_hints.cc b/content/browser/client_hints/client_hints.cc
+index 8719b3acf9..32f4a051fd 100644
+--- a/content/browser/client_hints/client_hints.cc
++++ b/content/browser/client_hints/client_hints.cc
+@@ -403,6 +403,16 @@ void AddRttHeader(net::HttpRequestHeaders* headers,
+                   const GURL& url) {
+   CHECK(headers, base::NotFatalUntil::M160);
+ 
++  // camchrome (989): a navigation's RTT hint carries the persona's value, the
++  // same one navigator.connection.rtt and the subresource hints report. Without
++  // this the document request kept the host NQE estimate and contradicted the
++  // page it loaded.
++  if (ungoogled::PersonaActive()) {
++    SetHeaderToInt(headers, WebClientHintsType::kRtt_DEPRECATED,
++                   ungoogled::CurrentPersona().netinfo_rtt_ms);
++    return;
++  }
++
+   std::optional<net::EffectiveConnectionType> web_holdback_ect =
+       GetWebHoldbackEffectiveConnectionType();
+ 
+@@ -424,6 +434,12 @@ void AddDownlinkHeader(net::HttpRequestHeaders* headers,
+                        network::NetworkQualityTracker* network_quality_tracker,
+                        const GURL& url) {
+   CHECK(headers, base::NotFatalUntil::M160);
++  // camchrome (989): see AddRttHeader().
++  if (ungoogled::PersonaActive()) {
++    SetHeaderToDouble(headers, WebClientHintsType::kDownlink_DEPRECATED,
++                      ungoogled::CurrentPersona().netinfo_downlink_mbps);
++    return;
++  }
+   std::optional<net::EffectiveConnectionType> web_holdback_ect =
+       GetWebHoldbackEffectiveConnectionType();
+ 
+@@ -451,6 +467,12 @@ void AddEctHeader(net::HttpRequestHeaders* headers,
+                   const GURL& url) {
+   CHECK(headers, base::NotFatalUntil::M160);
+ 
++  // camchrome (989): navigator.connection.effectiveType is pinned to "4g".
++  if (ungoogled::PersonaActive()) {
++    SetHeaderToString(headers, WebClientHintsType::kEct_DEPRECATED, "4g");
++    return;
++  }
++
+   std::optional<net::EffectiveConnectionType> web_holdback_ect =
+       GetWebHoldbackEffectiveConnectionType();
+ 
 diff --git a/third_party/blink/renderer/core/loader/frame_fetch_context.cc b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
-index 6aed41d045..b046eb1fc0 100644
+index d3932979f6..92daba083b 100644
 --- a/third_party/blink/renderer/core/loader/frame_fetch_context.cc
 +++ b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
-@@ -701,8 +701,13 @@ void FrameFetchContext::AddClientHintsIfNecessary(
+@@ -699,8 +699,13 @@ void FrameFetchContext::AddClientHintsIfNecessary(
        http_rtt = GetNetworkStateNotifier().HttpRtt();
      }
  
@@ -54,7 +104,7 @@ index 6aed41d045..b046eb1fc0 100644
      request.SetHttpHeaderField(http_names::kRtt_DEPRECATED,
                                 AtomicString(String::Number(rtt)));
    }
-@@ -716,8 +721,11 @@ void FrameFetchContext::AddClientHintsIfNecessary(
+@@ -714,8 +719,11 @@ void FrameFetchContext::AddClientHintsIfNecessary(
        throughput_mbps = GetNetworkStateNotifier().DownlinkThroughputMbps();
      }
  
@@ -68,7 +118,7 @@ index 6aed41d045..b046eb1fc0 100644
      request.SetHttpHeaderField(http_names::kDownlink_DEPRECATED,
                                 AtomicString(String::Number(mbps)));
    }
-@@ -731,10 +739,13 @@ void FrameFetchContext::AddClientHintsIfNecessary(
+@@ -729,10 +737,13 @@ void FrameFetchContext::AddClientHintsIfNecessary(
        holdback_ect = GetNetworkStateNotifier().EffectiveType();
      }
  
