@@ -57,8 +57,11 @@ def main() -> int:
             if digest != obj["sha256sum"]:
                 print(f"sha256 mismatch for {url}: {digest} != {obj['sha256sum']}", file=sys.stderr)
                 return 1
-            if obj.get("output_file"):
+            output_file = obj.get("output_file", "")
+            if output_file and not output_file.endswith((".tar.gz", ".tgz", ".tar.xz", ".tar")):
                 # A single file (e.g. buildtools/linux64-format/clang-format), not an archive.
+                # Archives named by output_file (node-linux-x64.tar.gz) are unpacked below, as
+                # gclient does.
                 dest = out_dir / obj["output_file"]
                 dest.write_bytes(data)
                 dest.chmod(0o755)
