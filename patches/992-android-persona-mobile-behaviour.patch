@@ -35,53 +35,116 @@
 # until its main-frame widget is recreated. Drive an Android persona with mouse events or the
 # Browser.humanized* commands, which all become touch, rather than mixing in raw touch events.
 #
+# (D) Touch is switched on per tab at the first mouse event that reaches web content
+# (http/https/file/data/blob/about:blank); browser UI pages (chrome://, DevTools, extensions)
+# keep the mouse. CDP Input.dispatchMouseEvent returns once the emulator has turned the event
+# into touch (stock Chrome never answers it while the emulator is on).
+#
+# (E) Fonts: on a macOS host the handset families render through macOS system fonts (Helvetica
+# Neue, Arial Narrow, Menlo, Courier New, Times New Roman, Georgia, Comic Sans MS); the Linux
+# metric clones are not installed there.
+#
+# (F) getVoices() lists the Google TTS locale set the way Chrome on Android names it
+# ("English United States", lang en_US, first voice default), and outerWidth is the screen width.
+#
 # Not covered: the Generic Sensor API classes (Accelerometer, Gyroscope) still report no
-# sensor; Android DRM robustness levels; the window must still be launched phone-sized
-# (--window-size) for the layout viewport to match the persona screen.
+# sensor; Android DRM robustness levels; the layout viewport is the desktop window's, so launch
+# the window phone-sized (--window-size) for innerWidth to match the persona screen.
 #
 # Tests: tools/fingerprint_selftest.py --platform android checks touch feature detection,
 # that a CDP mouse click arrives as touchstart + pointerdown:touch, streaming orientation,
 # gravity magnitude and the handset font set; desktop personas check a click stays a mouse.
---- a/content/browser/renderer_host/render_widget_host_impl.cc
-+++ b/content/browser/renderer_host/render_widget_host_impl.cc
-@@ -55,6 +55,7 @@
- #include "components/input/switches.h"
- #include "components/input/timeout_monitor.h"
- #include "components/input/utils.h"
-+#include "components/ungoogled/persona_profile.h"
- #include "components/viz/common/features.h"
- #include "components/viz/common/frame_sinks/copy_output_result.h"
- #include "components/viz/host/host_frame_sink_manager.h"
-@@ -156,6 +157,7 @@
- #include "ui/display/screen.h"
- #include "ui/events/blink/web_input_event_traits.h"
- #include "ui/events/event.h"
-+#include "ui/events/gesture_detection/gesture_provider_config_helper.h"
- #include "ui/events/keycodes/dom/dom_code.h"
- #include "ui/gfx/color_space.h"
- #include "ui/gfx/geometry/rect.h"
-@@ -840,6 +842,21 @@
-   // run them here after we clear it.
-   SendScreenRects();
-   SynchronizeVisualProperties();
-+  // camchrome: an Android persona behaves like a phone, not only answers like
-+  // one. Mouse input on the main frame is turned into touch input with the
-+  // mobile gesture config, the same path DevTools device mode uses
-+  // (Emulation.setEmitTouchEventsForMouse), so pages see touchstart/touchend,
-+  // pointerType "touch" and tap-synthesised clicks instead of mouse events.
-+  // CDP Input.dispatchMouseEvent goes through the same emulator.
-+  if (owner_delegate_ && ungoogled::PersonaActive() &&
-+      ungoogled::CurrentPersona().mobile) {
-+    if (auto* touch_emulator =
-+            GetTouchEmulator(/*create_if_necessary=*/true)) {
-+      touch_emulator->Enable(
-+          input::TouchEmulator::Mode::kEmulatingTouchFromMouse,
-+          ui::GestureProviderConfigType::GENERIC_MOBILE);
+diff --git a/components/ungoogled/persona_profile.cc b/components/ungoogled/persona_profile.cc
+index e40ab6504f..466f9f9a8b 100644
+--- a/components/ungoogled/persona_profile.cc
++++ b/components/ungoogled/persona_profile.cc
+@@ -1127,10 +1127,69 @@ PersonaProfile DerivePersona(uint64_t seed) {
+     p.webgl_max_combined_texture_image_units = 96;
+     p.webgl_max_samples = 4;
+     p.webgl_max_uniform_buffer_bindings = 24;
+-    // TTS: a Chrome-on-Android with no bound local engine reports getVoices()==[]
+-    // (mirror the linux fix); never leak the Windows SAPI default.
+-    if (!p.voices.empty() && p.voices.front().name.rfind("Microsoft", 0) == 0)
+-      p.voices.clear();
++    // TTS (camchrome): practically every handset has Google's speech engine
++    // bound, so an empty list is the rarer state. Chrome on Android lists one
++    // voice per installed locale WITH a country (TtsPlatformImpl.java: the
++    // language-only probes answer LANG_AVAILABLE and are skipped), in
++    // Locale.getAvailableLocales() order. name = "<language> <country>" display
++    // names, lang = Locale.toString() (underscore form), voiceURI = name, and
++    // the first voice is the default (speech_synthesis_impl.cc). This is the
++    // Google TTS locale set with an English UI; an imported capture overrides it.
++    if (p.voices.empty() || p.voices.front().name.rfind("Microsoft", 0) == 0) {
++      p.voices = {
++        {"Bangla Bangladesh", "Bangla Bangladesh", "bn_BD", true, true},
++        {"Bangla India", "Bangla India", "bn_IN", true, false},
++        {"Czech Czechia", "Czech Czechia", "cs_CZ", true, false},
++        {"Danish Denmark", "Danish Denmark", "da_DK", true, false},
++        {"German Germany", "German Germany", "de_DE", true, false},
++        {"Greek Greece", "Greek Greece", "el_GR", true, false},
++        {"English Australia", "English Australia", "en_AU", true, false},
++        {"English United Kingdom", "English United Kingdom", "en_GB", true, false},
++        {"English India", "English India", "en_IN", true, false},
++        {"English Nigeria", "English Nigeria", "en_NG", true, false},
++        {"English United States", "English United States", "en_US", true, false},
++        {"Spanish Spain", "Spanish Spain", "es_ES", true, false},
++        {"Spanish United States", "Spanish United States", "es_US", true, false},
++        {"Estonian Estonia", "Estonian Estonia", "et_EE", true, false},
++        {"Finnish Finland", "Finnish Finland", "fi_FI", true, false},
++        {"Filipino Philippines", "Filipino Philippines", "fil_PH", true, false},
++        {"French Canada", "French Canada", "fr_CA", true, false},
++        {"French France", "French France", "fr_FR", true, false},
++        {"Gujarati India", "Gujarati India", "gu_IN", true, false},
++        {"Hindi India", "Hindi India", "hi_IN", true, false},
++        {"Hungarian Hungary", "Hungarian Hungary", "hu_HU", true, false},
++        {"Indonesian Indonesia", "Indonesian Indonesia", "id_ID", true, false},
++        {"Italian Italy", "Italian Italy", "it_IT", true, false},
++        {"Japanese Japan", "Japanese Japan", "ja_JP", true, false},
++        {"Javanese Indonesia", "Javanese Indonesia", "jv_ID", true, false},
++        {"Khmer Cambodia", "Khmer Cambodia", "km_KH", true, false},
++        {"Kannada India", "Kannada India", "kn_IN", true, false},
++        {"Korean South Korea", "Korean South Korea", "ko_KR", true, false},
++        {"Malayalam India", "Malayalam India", "ml_IN", true, false},
++        {"Marathi India", "Marathi India", "mr_IN", true, false},
++        {"Norwegian Bokm\u00e5l Norway", "Norwegian Bokm\u00e5l Norway", "nb_NO", true, false},
++        {"Nepali Nepal", "Nepali Nepal", "ne_NP", true, false},
++        {"Dutch Belgium", "Dutch Belgium", "nl_BE", true, false},
++        {"Dutch Netherlands", "Dutch Netherlands", "nl_NL", true, false},
++        {"Polish Poland", "Polish Poland", "pl_PL", true, false},
++        {"Portuguese Brazil", "Portuguese Brazil", "pt_BR", true, false},
++        {"Portuguese Portugal", "Portuguese Portugal", "pt_PT", true, false},
++        {"Romanian Romania", "Romanian Romania", "ro_RO", true, false},
++        {"Russian Russia", "Russian Russia", "ru_RU", true, false},
++        {"Sinhala Sri Lanka", "Sinhala Sri Lanka", "si_LK", true, false},
++        {"Slovak Slovakia", "Slovak Slovakia", "sk_SK", true, false},
++        {"Sundanese Indonesia", "Sundanese Indonesia", "su_ID", true, false},
++        {"Swedish Sweden", "Swedish Sweden", "sv_SE", true, false},
++        {"Tamil India", "Tamil India", "ta_IN", true, false},
++        {"Telugu India", "Telugu India", "te_IN", true, false},
++        {"Thai Thailand", "Thai Thailand", "th_TH", true, false},
++        {"Ukrainian Ukraine", "Ukrainian Ukraine", "uk_UA", true, false},
++        {"Urdu Pakistan", "Urdu Pakistan", "ur_PK", true, false},
++        {"Vietnamese Vietnam", "Vietnamese Vietnam", "vi_VN", true, false},
++        {"Chinese China", "Chinese China", "zh_CN", true, false},
++        {"Chinese Taiwan", "Chinese Taiwan", "zh_TW", true, false},
++      };
 +    }
-+  }
-   // Show/Hide state is not given to the renderer while we are
-   // `waiting_for_init_`, but Init() signals that the renderer is ready to
-   // receive them. This call will inform the renderer that the widget is shown.
+     // enumerateDevices: phone-shaped roster.
+     p.media_devices = AndroidMediaDevices(rng);
+   }
+@@ -1515,8 +1574,8 @@ const LocaleVoiceRow* FindLocaleVoiceRow(const std::string& tag) {
+ std::vector<PersonaProfile::Voice> PersonaVoicesForAcceptLanguages(
+     const std::string& accept_languages) {
+   std::vector<PersonaProfile::Voice> out = CurrentPersona().voices;
+-  // A deliberately empty persona list (linux / android) stays empty: those
+-  // platforms genuinely report getVoices()==[].
++  // A deliberately empty persona list (linux without speech-dispatcher) stays
++  // empty: that platform genuinely reports getVoices()==[].
+   if (out.empty())
+     return out;
+   // An imported profile's voices are a real capture -- authoritative as-is.
+diff --git a/content/browser/devtools/protocol/emulation_handler.cc b/content/browser/devtools/protocol/emulation_handler.cc
+index 5d471046c7..a886747b00 100644
 --- a/content/browser/devtools/protocol/emulation_handler.cc
 +++ b/content/browser/devtools/protocol/emulation_handler.cc
 @@ -18,6 +18,7 @@
@@ -92,7 +155,7 @@
  #include "content/browser/compute_pressure/web_contents_pressure_manager_proxy.h"
  #include "content/browser/device_posture/device_posture_provider_impl.h"
  #include "content/browser/devtools/devtools_agent_host_impl.h"
-@@ -1134,6 +1135,15 @@
+@@ -1134,6 +1135,15 @@ void EmulationHandler::UpdateTouchEventEmulationState() {
            input::TouchEmulator::Mode::kEmulatingTouchFromMouse,
            TouchEmulationConfigurationToType(touch_emulation_configuration_));
      }
@@ -108,9 +171,146 @@
    } else {
      if (auto* touch_emulator = host_->GetRenderWidgetHost()->GetTouchEmulator(
              /*create_if_necessary=*/true)) {
+diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
+index e773e2c0ca..79a0ba7a58 100644
+--- a/content/browser/devtools/protocol/input_handler.cc
++++ b/content/browser/devtools/protocol/input_handler.cc
+@@ -760,7 +760,14 @@ class InputHandler::InputInjector
+     if (!weak_this) {
+       return;
+     }
+-    if (!input_queued_) {
++    // camchrome: a mouse event the touch emulator turned into touch input is
++    // never acked as a mouse event, so waiting for that ack hung the command
++    // forever (stock Chrome does the same in DevTools device mode). The event
++    // has been dispatched; report it.
++    TouchEmulatorImpl* touch_emulator =
++        widget_host_->GetTouchEmulator(/*create_if_necessary=*/false);
++    if (!input_queued_ ||
++        (touch_emulator && touch_emulator->EmulatesTouchFromMouse())) {
+       pending_mouse_callbacks_.back()->sendSuccess();
+       pending_mouse_callbacks_.pop_back();
+       MaybeSelfDestruct();
+diff --git a/content/browser/renderer_host/input/touch_emulator_impl.h b/content/browser/renderer_host/input/touch_emulator_impl.h
+index a295b34992..5ef518014b 100644
+--- a/content/browser/renderer_host/input/touch_emulator_impl.h
++++ b/content/browser/renderer_host/input/touch_emulator_impl.h
+@@ -45,6 +45,10 @@ class CONTENT_EXPORT TouchEmulatorImpl : public input::TouchEmulator {
+   void SetDeviceScaleFactor(float device_scale_factor) override;
+   void SetDoubleTapSupportForPageEnabled(bool enabled) override;
+   bool IsEnabled() const override;
++  // camchrome: true while mouse input is being turned into touch input.
++  bool EmulatesTouchFromMouse() const {
++    return IsEnabled() && mode_ == Mode::kEmulatingTouchFromMouse;
++  }
+   bool HandleTouchEvent(const blink::WebTouchEvent& event) override;
+   void OnGestureEventAck(
+       const blink::WebGestureEvent& event,
+diff --git a/content/browser/renderer_host/render_widget_host_impl.cc b/content/browser/renderer_host/render_widget_host_impl.cc
+index 4b2fbef868..b948701629 100644
+--- a/content/browser/renderer_host/render_widget_host_impl.cc
++++ b/content/browser/renderer_host/render_widget_host_impl.cc
+@@ -55,6 +55,7 @@
+ #include "components/input/switches.h"
+ #include "components/input/timeout_monitor.h"
+ #include "components/input/utils.h"
++#include "components/ungoogled/persona_profile.h"
+ #include "components/viz/common/features.h"
+ #include "components/viz/common/frame_sinks/copy_output_result.h"
+ #include "components/viz/host/host_frame_sink_manager.h"
+@@ -156,9 +157,12 @@
+ #include "ui/display/screen.h"
+ #include "ui/events/blink/web_input_event_traits.h"
+ #include "ui/events/event.h"
++#include "ui/events/gesture_detection/gesture_provider_config_helper.h"
+ #include "ui/events/keycodes/dom/dom_code.h"
+ #include "ui/gfx/color_space.h"
+ #include "ui/gfx/geometry/rect.h"
++#include "url/gurl.h"
++#include "url/url_constants.h"
+ #include "ui/gfx/geometry/size_conversions.h"
+ #include "ui/gfx/geometry/vector2d_conversions.h"
+ #include "ui/gfx/geometry/vector2d_f.h"
+@@ -1719,6 +1723,7 @@ void RenderWidgetHostImpl::ForwardMouseEventWithLatencyInfo(
+     return;
+   }
+ 
++  MaybeEnablePersonaTouchEmulation();
+   auto* touch_emulator = GetTouchEmulator(/*create_if_necessary=*/false);
+   if (touch_emulator &&
+       touch_emulator->HandleMouseEvent(mouse_event, GetView())) {
+@@ -2993,6 +2998,35 @@ void RenderWidgetHostImpl::OnInvalidInputEventSource() {
+       GetProcess(), bad_message::INPUT_ROUTER_INVALID_EVENT_SOURCE);
+ }
+ 
++void RenderWidgetHostImpl::MaybeEnablePersonaTouchEmulation() {
++  // camchrome (992): an Android persona behaves like a phone, not only answers
++  // like one. Mouse input on web content becomes touch input with the mobile
++  // gesture config, the path DevTools device mode uses
++  // (Emulation.setEmitTouchEventsForMouse): pages see touchstart/touchend,
++  // pointerType "touch" and tap-synthesised clicks. The emulator is per
++  // WebContents and is switched on at the first mouse event that reaches one of
++  // its widgets, so it covers every navigation and out-of-process frame.
++  // Browser UI pages (chrome://, devtools://, extensions) keep the mouse, and an
++  // emulator DevTools already runs in another mode (e.g. after a raw
++  // Input.dispatchTouchEvent) is left alone.
++  if (!ungoogled::PersonaActive() || !ungoogled::CurrentPersona().mobile ||
++      !frame_tree() || !frame_tree()->GetMainFrame()) {
++    return;
++  }
++  const GURL& url = frame_tree()->GetMainFrame()->GetLastCommittedURL();
++  if (!url.SchemeIsHTTPOrHTTPS() && !url.SchemeIsFile() &&
++      !url.SchemeIs(url::kDataScheme) && !url.SchemeIsBlob() &&
++      !url.IsAboutBlank()) {
++    return;
++  }
++  TouchEmulatorImpl* touch_emulator =
++      GetTouchEmulator(/*create_if_necessary=*/true);
++  if (touch_emulator && !touch_emulator->IsEnabled()) {
++    touch_emulator->Enable(input::TouchEmulator::Mode::kEmulatingTouchFromMouse,
++                           ui::GestureProviderConfigType::GENERIC_MOBILE);
++  }
++}
++
+ std::string RenderWidgetHostImpl::GetMainFrameLastCommittedURLSpec() {
+   if (!frame_tree() || !frame_tree()->GetMainFrame()) {
+     return std::string();
+diff --git a/content/browser/renderer_host/render_widget_host_impl.h b/content/browser/renderer_host/render_widget_host_impl.h
+index 3be54d19c2..24185ab36a 100644
+--- a/content/browser/renderer_host/render_widget_host_impl.h
++++ b/content/browser/renderer_host/render_widget_host_impl.h
+@@ -905,6 +905,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
+ 
+   // FrameTokenMessageQueue::Client:
+   std::string GetMainFrameLastCommittedURLSpec() override;
++  // camchrome (992): turns mouse-to-touch on for an Android persona's web pages.
++  void MaybeEnablePersonaTouchEmulation();
+ 
+   void ProgressFlingIfNeeded(base::TimeTicks current_time);
+   void StopFling();
+diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
+index ed807d95bc..5ff486a840 100644
+--- a/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
+@@ -1839,6 +1839,13 @@ int LocalDOMWindow::outerWidth() const {
+     return 0;
+   }
+ 
++  // camchrome (992): a phone's browser window spans the screen, so an Android
++  // persona's outerWidth is its screen width, not the desktop window's.
++  if (PersonaWindowActive() && ungoogled::CurrentPersona().mobile &&
++      ungoogled::CurrentPersona().screen_width > 0) {
++    return static_cast<int>(ungoogled::CurrentPersona().screen_width);
++  }
++
+   ChromeClient& chrome_client = page->GetChromeClient();
+   if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
+     return static_cast<int>(
+diff --git a/third_party/blink/renderer/modules/device_orientation/BUILD.gn b/third_party/blink/renderer/modules/device_orientation/BUILD.gn
+index fd6f67a13d..ad9e00a13c 100644
 --- a/third_party/blink/renderer/modules/device_orientation/BUILD.gn
 +++ b/third_party/blink/renderer/modules/device_orientation/BUILD.gn
-@@ -36,8 +36,11 @@
+@@ -36,8 +36,11 @@ blink_modules_sources("device_orientation") {
      "device_sensor_event_pump.h",
      "dom_window_device_motion.h",
      "dom_window_device_orientation.h",
@@ -122,31 +322,8 @@
      "//services/device/public/cpp/generic_sensor",
      "//services/device/public/mojom:generic_sensor",
      "//third_party/blink/renderer/modules/permissions",
---- a/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc
-+++ b/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc
-@@ -14,6 +14,7 @@
- #include "third_party/blink/renderer/core/frame/platform_event_controller.h"
- #include "third_party/blink/renderer/modules/device_orientation/device_orientation_data.h"
- #include "third_party/blink/renderer/modules/device_orientation/device_sensor_entry.h"
-+#include "third_party/blink/renderer/modules/device_orientation/held_device_sensor.h"
- #include "third_party/blink/renderer/platform/heap/persistent.h"
- #include "third_party/blink/renderer/platform/wtf/functional.h"
- 
-@@ -204,6 +205,14 @@
- 
-     if (!std::isnan(reading.orientation_euler.y.value()))
-       gamma = reading.orientation_euler.y;
-+  } else if (ShouldSynthesizeHeldDevice()) {
-+    // camchrome (992): an Android persona on a sensorless machine reports a
-+    // phone held in a hand instead of "no sensor". A real (or DevTools
-+    // overridden) sensor still wins: this only fills the no-reading case.
-+    const HeldDeviceReading held = HeldDeviceReadingNow();
-+    alpha = held.alpha;
-+    beta = held.beta;
-+    gamma = held.gamma;
-   }
- 
-   return DeviceOrientationData::Create(alpha, beta, gamma, absolute);
+diff --git a/third_party/blink/renderer/modules/device_orientation/device_motion_event_pump.cc b/third_party/blink/renderer/modules/device_orientation/device_motion_event_pump.cc
+index c2eb77a349..10ceae84e4 100644
 --- a/third_party/blink/renderer/modules/device_orientation/device_motion_event_pump.cc
 +++ b/third_party/blink/renderer/modules/device_orientation/device_motion_event_pump.cc
 @@ -18,6 +18,7 @@
@@ -157,7 +334,7 @@
  #include "third_party/blink/renderer/platform/wtf/functional.h"
  
  namespace {
-@@ -126,6 +127,23 @@
+@@ -126,6 +127,23 @@ bool DeviceMotionEventPump::SensorsReadyOrErrored() const {
  }
  
  DeviceMotionData* DeviceMotionEventPump::GetDataFromSharedMemory() {
@@ -181,62 +358,36 @@
    DeviceMotionEventAcceleration* acceleration = nullptr;
    DeviceMotionEventAcceleration* acceleration_including_gravity = nullptr;
    DeviceMotionEventRotationRate* rotation_rate = nullptr;
---- /dev/null
-+++ b/third_party/blink/renderer/modules/device_orientation/held_device_sensor.h
-@@ -0,0 +1,53 @@
-+// Copyright 2026 The Chromium Authors
-+// Use of this source code is governed by a BSD-style license that can be
-+// found in the LICENSE file.
-+
-+#ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_DEVICE_ORIENTATION_HELD_DEVICE_SENSOR_H_
-+#define THIRD_PARTY_BLINK_RENDERER_MODULES_DEVICE_ORIENTATION_HELD_DEVICE_SENSOR_H_
-+
-+#include <cstdint>
-+
-+#include "third_party/blink/renderer/modules/modules_export.h"
-+
-+namespace blink {
-+
-+// camchrome (992): readings of a phone held in a hand, for an Android persona
-+// on a machine that has no orientation or motion sensors.
-+//
-+// A desktop answers deviceorientation with one event whose alpha/beta/gamma
-+// are all null and devicemotion with null vectors; a phone fires a steady
-+// stream of small, ever-changing readings. The model is a portrait handset
-+// tilted towards the face (posture picked from the persona seed) with slow
-+// arm sway, faster physiological tremor and per-sample sensor noise, then
-+// quantised the way Chrome's sensor service rounds real readings (0.1 degree
-+// for Euler angles, 0.1 m/s^2 for acceleration, 0.1 degree/s for rotation).
-+// Gravity, rotation rate and the angles all come from the same motion, so
-+// they agree with each other the way a real device's do.
-+struct HeldDeviceReading {
-+  // deviceorientation, degrees.
-+  double alpha = 0;
-+  double beta = 0;
-+  double gamma = 0;
-+  // devicemotion, m/s^2 and degrees/s.
-+  double accel_x = 0, accel_y = 0, accel_z = 0;
-+  double accel_g_x = 0, accel_g_y = 0, accel_g_z = 0;
-+  double rotation_alpha = 0, rotation_beta = 0, rotation_gamma = 0;
-+};
-+
-+// True when the active persona is a phone (--fingerprint-platform=android),
-+// i.e. when the pumps should fall back to HeldDeviceReadingNow() instead of
-+// reporting "no sensor".
-+MODULES_EXPORT bool ShouldSynthesizeHeldDevice();
-+
-+// The reading at the current time. Calls a few milliseconds apart move
-+// smoothly; the posture is stable for a persona.
-+MODULES_EXPORT HeldDeviceReading HeldDeviceReadingNow();
-+
-+// The same, at `seconds` on the model's clock and for `seed`; exposed for the
-+// persona validator and tests.
-+MODULES_EXPORT HeldDeviceReading HeldDeviceReadingAt(double seconds,
-+                                                     uint64_t seed);
-+
-+}  // namespace blink
-+
-+#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_DEVICE_ORIENTATION_HELD_DEVICE_SENSOR_H_
+diff --git a/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc b/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc
+index f963cd19c1..c3d26613a9 100644
+--- a/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc
++++ b/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc
+@@ -14,6 +14,7 @@
+ #include "third_party/blink/renderer/core/frame/platform_event_controller.h"
+ #include "third_party/blink/renderer/modules/device_orientation/device_orientation_data.h"
+ #include "third_party/blink/renderer/modules/device_orientation/device_sensor_entry.h"
++#include "third_party/blink/renderer/modules/device_orientation/held_device_sensor.h"
+ #include "third_party/blink/renderer/platform/heap/persistent.h"
+ #include "third_party/blink/renderer/platform/wtf/functional.h"
+ 
+@@ -204,6 +205,14 @@ DeviceOrientationData* DeviceOrientationEventPump::GetDataFromSharedMemory() {
+ 
+     if (!std::isnan(reading.orientation_euler.y.value()))
+       gamma = reading.orientation_euler.y;
++  } else if (ShouldSynthesizeHeldDevice()) {
++    // camchrome (992): an Android persona on a sensorless machine reports a
++    // phone held in a hand instead of "no sensor". A real (or DevTools
++    // overridden) sensor still wins: this only fills the no-reading case.
++    const HeldDeviceReading held = HeldDeviceReadingNow();
++    alpha = held.alpha;
++    beta = held.beta;
++    gamma = held.gamma;
+   }
+ 
+   return DeviceOrientationData::Create(alpha, beta, gamma, absolute);
+diff --git a/third_party/blink/renderer/modules/device_orientation/held_device_sensor.cc b/third_party/blink/renderer/modules/device_orientation/held_device_sensor.cc
+new file mode 100644
+index 0000000000..e3dc90b98d
 --- /dev/null
 +++ b/third_party/blink/renderer/modules/device_orientation/held_device_sensor.cc
 @@ -0,0 +1,169 @@
@@ -409,9 +560,70 @@
 +}
 +
 +}  // namespace blink
+diff --git a/third_party/blink/renderer/modules/device_orientation/held_device_sensor.h b/third_party/blink/renderer/modules/device_orientation/held_device_sensor.h
+new file mode 100644
+index 0000000000..93019c6668
+--- /dev/null
++++ b/third_party/blink/renderer/modules/device_orientation/held_device_sensor.h
+@@ -0,0 +1,53 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_DEVICE_ORIENTATION_HELD_DEVICE_SENSOR_H_
++#define THIRD_PARTY_BLINK_RENDERER_MODULES_DEVICE_ORIENTATION_HELD_DEVICE_SENSOR_H_
++
++#include <cstdint>
++
++#include "third_party/blink/renderer/modules/modules_export.h"
++
++namespace blink {
++
++// camchrome (992): readings of a phone held in a hand, for an Android persona
++// on a machine that has no orientation or motion sensors.
++//
++// A desktop answers deviceorientation with one event whose alpha/beta/gamma
++// are all null and devicemotion with null vectors; a phone fires a steady
++// stream of small, ever-changing readings. The model is a portrait handset
++// tilted towards the face (posture picked from the persona seed) with slow
++// arm sway, faster physiological tremor and per-sample sensor noise, then
++// quantised the way Chrome's sensor service rounds real readings (0.1 degree
++// for Euler angles, 0.1 m/s^2 for acceleration, 0.1 degree/s for rotation).
++// Gravity, rotation rate and the angles all come from the same motion, so
++// they agree with each other the way a real device's do.
++struct HeldDeviceReading {
++  // deviceorientation, degrees.
++  double alpha = 0;
++  double beta = 0;
++  double gamma = 0;
++  // devicemotion, m/s^2 and degrees/s.
++  double accel_x = 0, accel_y = 0, accel_z = 0;
++  double accel_g_x = 0, accel_g_y = 0, accel_g_z = 0;
++  double rotation_alpha = 0, rotation_beta = 0, rotation_gamma = 0;
++};
++
++// True when the active persona is a phone (--fingerprint-platform=android),
++// i.e. when the pumps should fall back to HeldDeviceReadingNow() instead of
++// reporting "no sensor".
++MODULES_EXPORT bool ShouldSynthesizeHeldDevice();
++
++// The reading at the current time. Calls a few milliseconds apart move
++// smoothly; the posture is stable for a persona.
++MODULES_EXPORT HeldDeviceReading HeldDeviceReadingNow();
++
++// The same, at `seconds` on the model's clock and for `seed`; exposed for the
++// persona validator and tests.
++MODULES_EXPORT HeldDeviceReading HeldDeviceReadingAt(double seconds,
++                                                     uint64_t seed);
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_DEVICE_ORIENTATION_HELD_DEVICE_SENSOR_H_
+diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
+index 3ca9d09ee5..4fa345cfa2 100644
 --- a/third_party/blink/renderer/platform/fonts/font_cache.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
-@@ -370,6 +370,27 @@
+@@ -370,6 +370,27 @@ static std::vector<std::string> GetPlatformFonts(const std::string& platform) {
        "Noto Sans Adlam", "Noto Sans Vai", "Noto Sans Yi", "Noto Sans Coptic", "Noto Sans Cham",
        "Noto Sans Tifinagh"
      };
@@ -439,7 +651,7 @@
    }
    return {};
  }
-@@ -598,6 +619,20 @@
+@@ -598,6 +619,20 @@ static std::string MetricCompatibleSubstitute(const std::string& family,
        {"Sitka Text", "Noto Serif"}, {"Sitka Small", "Noto Serif"},
        {"Sitka Display", "Noto Serif"}, {"Sitka Subheading", "Noto Serif"},
        {"Sitka Heading", "Noto Serif"}, {"Sitka Banner", "Noto Serif"},
@@ -460,7 +672,74 @@
    };
    for (const Sub& sub : kSubs) {
      if (base::EqualsCaseInsensitiveASCII(sub.persona_font, family))
-@@ -684,7 +719,12 @@
+@@ -608,6 +643,53 @@ static std::string MetricCompatibleSubstitute(const std::string& family,
+   return std::string("Arimo");
+ }
+ 
++// camchrome (992): an Android persona on a macOS host. The handset's named families (Roboto,
++// sans-serif-condensed, Droid Sans Mono, ...) are not installed on a Mac, and the Linux clones
++// MetricCompatibleSubstitute() names are not either, so each family a phone answers to renders
++// through the closest font every macOS install ships (/System/Library/Fonts, Supplemental
++// included). Returns "" for a family the host has itself (Arial, Georgia, Courier New, ...).
++static std::string MacHostSubstituteForAndroid(const std::string& family) {
++  struct Sub {
++    const char* persona_font;
++    const char* mac_font;
++  };
++  static const Sub kSubs[] = {
++      {"sans-serif", "Helvetica Neue"},
++      {"sans-serif-medium", "Helvetica Neue"},
++      {"sans-serif-light", "Helvetica Neue"},
++      {"sans-serif-thin", "Helvetica Neue"},
++      {"sans-serif-black", "Helvetica Neue"},
++      {"sans-serif-smallcaps", "Helvetica Neue"},
++      {"Roboto", "Helvetica Neue"},
++      {"source-sans-pro", "Helvetica Neue"},
++      {"source-sans-pro-semi-bold", "Helvetica Neue"},
++      {"Carrois Gothic SC", "Helvetica Neue"},
++      {"sans-serif-condensed", "Arial Narrow"},
++      {"sans-serif-condensed-medium", "Arial Narrow"},
++      {"sans-serif-condensed-light", "Arial Narrow"},
++      {"monospace", "Menlo"},
++      {"serif-monospace", "Courier New"},
++      {"sans-serif-monospace", "Menlo"},
++      {"Droid Sans Mono", "Menlo"},
++      {"Cutive Mono", "Courier New"},
++      {"serif", "Times New Roman"},
++      {"Noto Serif", "Georgia"},
++      {"Goudy", "Georgia"},
++      {"ITC Stone Serif", "Georgia"},
++      {"fantasy", "Times New Roman"},
++      {"casual", "Comic Sans MS"},
++      {"cursive", "Comic Sans MS"},
++      {"Coming Soon", "Comic Sans MS"},
++      {"Dancing Script", "Comic Sans MS"},
++  };
++  for (const Sub& sub : kSubs) {
++    if (base::EqualsCaseInsensitiveASCII(sub.persona_font, family)) {
++      return std::string(sub.mac_font);
++    }
++  }
++  return std::string();
++}
++
+ const FontPlatformData* FontCache::GetFontPlatformData(
+     const FontDescription& font_description,
+     const FontFaceCreationParams& creation_params,
+@@ -673,7 +755,11 @@ const FontPlatformData* FontCache::GetFontPlatformData(
+       // through a metric-compatible clone that IS installed here, so the family is present
+       // with the persona OS's advance widths (closes the render-vs-string font tell).
+       if (FontInListCaseInsensitive(platform_fonts, requested_family)) {
+-        std::string substitute = MetricCompatibleSubstitute(requested_family, current_os);
++        std::string substitute =
++            (spoofed_platform == "android" &&
++             std::string_view(current_os) == "macos")
++                ? MacHostSubstituteForAndroid(requested_family)
++                : MetricCompatibleSubstitute(requested_family, current_os);
+         if (!substitute.empty()) {
+           FontFaceCreationParams substitute_params(AtomicString(substitute.c_str()));
+           return font_platform_data_cache_.GetOrCreateFontPlatformData(
+@@ -684,7 +770,12 @@ const FontPlatformData* FontCache::GetFontPlatformData(
        }
        // Basic cross-platform families (Arial/Times/Courier/CSS generics) exist on every OS
        // and resolve to the correct metric clone via fontconfig -- let them through.

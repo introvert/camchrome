@@ -16,6 +16,8 @@ Checks (each names the patch it covers):
   quic-over-socks5            990       HTTP/3 to a local aioquic server through the SOCKS5 UDP relay,
                                         the origin sent to the proxy by NAME
   quic-socks5-no-relay        990       control: without --socks5-udp no QUIC packet leaves at all
+  webrtc-stun-name-via-proxy  991       a STUN server NAME is sent to the proxy, never resolved locally
+  webrtc-private-destination-dropped 973  the relay never delivers to 127.0.0.1 without the test switch
   webrtc-relay-exit-ip        973, 991  STUN through the relay; srflx present, no host candidate
   humanized-click             130       Browser.humanizedClickSelector: trusted click after a path
   humanized-type              993       Browser.humanizedType: trusted keys, Shift for capitals,
@@ -274,7 +276,9 @@ class Report:
 
 def page_loads(cdp: CDP, url: str, timeout=20) -> bool:
     cdp.call("Page.navigate", {"url": url})
-    return cdp.wait_for("document.title === 'camchrome network self-test'", timeout=timeout)
+    # The URL too: the page being left has the same title.
+    return cdp.wait_for("document.title === 'camchrome network self-test' && "
+                        f"location.href.startsWith({json.dumps(url)})", timeout=timeout)
 
 
 def launch(args, flags, profile=None):
@@ -383,6 +387,30 @@ def check_quic(args, rep, loop, tmp):
         h3.close()
 
 
+def gather_candidates(args, http, pport, ice_url, extra_flags=()):
+    b = launch(args, proxy_flags(f"socks5://127.0.0.1:{pport}") + ["--socks5-udp", *extra_flags])
+    try:
+        cdp = b.open_page()
+        cdp.call("Page.enable")
+        page_loads(cdp, f"http://localhost:{http.port}/", timeout=10)
+        cands = cdp.evaluate("""new Promise(resolve => {
+          const pc = new RTCPeerConnection({iceServers: [{urls: %s}]});
+          const out = [];
+          pc.createDataChannel('x');
+          pc.onicecandidate = e => { if (e.candidate) out.push(e.candidate.candidate);
+                                     else resolve(out); };
+          pc.createOffer().then(o => pc.setLocalDescription(o));
+          setTimeout(() => resolve(out), 8000);
+        })""" % json.dumps(ice_url))
+        cdp.close()
+    finally:
+        b.stop()
+    time.sleep(0.3)
+    cands = cands or []
+    return ([c for c in cands if " typ host" in c], [c for c in cands if " typ srflx" in c],
+            cands)
+
+
 def check_webrtc(args, rep, loop, http):
     stun = Stun()
     t, _ = loop.run(loop.loop.create_datagram_endpoint(lambda: stun,
@@ -392,27 +420,10 @@ def check_webrtc(args, rep, loop, http):
     srv = loop.run(serve("127.0.0.1", 0, proxy))
     pport = srv.sockets[0].getsockname()[1]
     try:
-        b = launch(args, proxy_flags(f"socks5://127.0.0.1:{pport}") + ["--socks5-udp"])
-        try:
-            cdp = b.open_page()
-            cdp.call("Page.enable")
-            page_loads(cdp, f"http://localhost:{http.port}/", timeout=10)
-            cands = cdp.evaluate("""new Promise(resolve => {
-              const pc = new RTCPeerConnection({iceServers: [{urls: 'stun:127.0.0.1:%d'}]});
-              const out = [];
-              pc.createDataChannel('x');
-              pc.onicecandidate = e => { if (e.candidate) out.push(e.candidate.candidate);
-                                         else resolve(out); };
-              pc.createOffer().then(o => pc.setLocalDescription(o));
-              setTimeout(() => resolve(out), 8000);
-            })""" % stun_port)
-            cdp.close()
-        finally:
-            b.stop()
-        time.sleep(0.3)
-        cands = cands or []
-        host = [c for c in cands if " typ host" in c]
-        srflx = [c for c in cands if " typ srflx" in c]
+        # 1. IP-literal STUN server. The test peers live on 127.0.0.1, which the relay refuses to
+        #    reach unless the test-only --socks5-udp-allow-private is set.
+        host, srflx, cands = gather_candidates(args, http, pport, f"stun:127.0.0.1:{stun_port}",
+                                               ["--socks5-udp-allow-private"])
         relayed = any(f"127.0.0.1:{stun_port}" in a["destinations"] for a in proxy.closed)
         if not cands:
             rep.add("webrtc-relay-exit-ip", "973, 991", True,
@@ -422,6 +433,26 @@ def check_webrtc(args, rep, loop, http):
                     bool(srflx) and not host and relayed and stun.seen,
                     f"srflx={srflx} host={host} stun requests={len(stun.seen)} "
                     f"relayed via proxy={relayed}")
+
+        # 2. STUN server given by NAME: the browser must not resolve it; the proxy gets the name
+        #    (ATYP=DOMAINNAME) and the reply still yields a srflx candidate.
+        proxy.closed.clear()
+        before = len(stun.seen)
+        host, srflx, cands = gather_candidates(args, http, pport, f"stun:localhost:{stun_port}")
+        named = any("localhost" in a.get("names", []) for a in proxy.closed)
+        direct = any(f"127.0.0.1:{stun_port}" in a["destinations"] for a in proxy.closed)
+        rep.add("webrtc-stun-name-via-proxy", "991",
+                bool(srflx) and not host and named and len(stun.seen) > before,
+                f"srflx={srflx} names sent to proxy={named} sent by address={direct} "
+                f"stun requests={len(stun.seen) - before}")
+
+        # 3. Without the test switch, a private destination is never relayed.
+        proxy.closed.clear()
+        before = len(stun.seen)
+        host, srflx, cands = gather_candidates(args, http, pport, f"stun:127.0.0.1:{stun_port}")
+        rep.add("webrtc-private-destination-dropped", "973",
+                len(stun.seen) == before and not srflx and not host,
+                f"stun requests={len(stun.seen) - before} srflx={srflx} host={host}")
     finally:
         srv.close()
         t.close()
@@ -527,12 +558,16 @@ def check_humanized_input(rep, cdp, browser_cdp, tid):
 
 
 def canvas_reads(args, flags, http) -> list[str]:
-    b = launch(args, flags)
+    # Two registrable domains mapped to the local server: per-site noise is keyed by eTLD+1, and
+    # 127.0.0.1 / localhost have none, so they share one seed by design.
+    hosts = ("alpha.example.com", "beta.example.org")
+    rules = ", ".join(f"MAP {h} 127.0.0.1" for h in hosts)
+    b = launch(args, flags + [f"--host-resolver-rules={rules}"])
     out = []
     try:
         cdp = b.open_page()
         cdp.call("Page.enable")
-        for host in ("127.0.0.1", "localhost"):
+        for host in hosts:
             page_loads(cdp, f"http://{host}:{http.port}/")
             out.append(cdp.evaluate("""(() => { const c = document.createElement('canvas');
               c.width = 200; c.height = 50; const x = c.getContext('2d');

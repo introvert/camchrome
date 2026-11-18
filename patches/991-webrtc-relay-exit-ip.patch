@@ -15,6 +15,14 @@ request reports the proxy's exit IP on its own.
 
 Use --webrtc-ip=auto only together with --socks5-udp and a SOCKS5 proxy: without the relay, STUN
 would leave from the real interface.
+
+A STUN/TURN server given by NAME is never resolved by this machine: in relay mode the network service
+(P2PSocketManager::GetHostAddress) answers with the relay placeholder for the name (198.18.0.0/15,
+see 990). SOCKS5UDPSocket sends to a placeholder with ATYP=DOMAINNAME, so the proxy resolves it, and
+reports the reply as coming from the placeholder so ICE matches it. Before, the name went to the local
+resolver, which a page can observe by pointing iceServers at a name under its own DNS zone.
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index a08f63edaa..d91a3d4e70 100644
 --- a/content/browser/renderer_host/render_process_host_impl.cc
 +++ b/content/browser/renderer_host/render_process_host_impl.cc
 @@ -7,6 +7,9 @@
@@ -27,7 +35,7 @@ would leave from the real interface.
  #include <algorithm>
  #include <atomic>
  #include <limits>
-@@ -3841,6 +3844,21 @@
+@@ -3841,6 +3844,21 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
        *base::CommandLine::ForCurrentProcess();
    PropagateBrowserCommandLineToRenderer(browser_command_line, command_line);
  
@@ -49,9 +57,95 @@ would leave from the real interface.
    // Pass on the browser locale.
    const std::string locale =
        GetContentClient()->browser()->GetApplicationLocale();
+diff --git a/services/network/p2p/socket_manager.cc b/services/network/p2p/socket_manager.cc
+index 3a814c12d1..b1de7348c9 100644
+--- a/services/network/p2p/socket_manager.cc
++++ b/services/network/p2p/socket_manager.cc
+@@ -12,6 +12,7 @@
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/strings/string_util.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/task/thread_pool.h"
+ #include "net/base/address_family.h"
+@@ -28,10 +29,12 @@
+ #include "net/log/net_log_source.h"
+ #include "net/log/net_log_with_source.h"
+ #include "net/socket/client_socket_factory.h"
++#include "net/socket/socks5_udp_relay.h"
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ #include "net/url_request/url_request_context.h"
+ #include "net/url_request/url_request_context_getter.h"
+ #include "services/network/p2p/socket.h"
++#include "services/network/p2p/socket_udp.h"
+ #include "services/network/proxy_resolving_client_socket_factory.h"
+ #include "services/network/public/cpp/p2p_param_traits.h"
+ #include "third_party/webrtc/media/base/rtp_utils.h"
+@@ -392,6 +395,27 @@ void P2PSocketManager::GetHostAddress(
+     std::optional<net::AddressFamily> address_family,
+     bool enable_mdns,
+     mojom::P2PSocketManager::GetHostAddressCallback callback) {
++  // camchrome: with WebRTC's UDP relayed through the SOCKS5 proxy, a STUN/TURN server NAME must
++  // not be looked up here: the query would leave from this machine's own resolver, which a page
++  // can observe by pointing iceServers at a name under its own DNS zone. Answer with the relay
++  // placeholder (198.18.0.0/15) for the name instead; SOCKS5UDPSocket sends to it with
++  // ATYP=DOMAINNAME so the proxy resolves it, and reports its replies as coming from it.
++  // IP literals need no lookup. mDNS (.local) and IPv6-only lookups have no relay answer and
++  // fail, as an unresolvable server does.
++  if (P2PUdpRelayedThroughSocks5()) {
++    net::IPAddress literal;
++    if (!literal.AssignFromIPLiteral(host_name)) {
++      net::IPAddressList result;
++      if (!host_name.empty() && !base::EndsWith(host_name, ".local") &&
++          address_family != net::ADDRESS_FAMILY_IPV6) {
++        result.push_back(net::Socks5UdpRelayPlaceholderFor(
++                             net::HostPortPair(host_name, 0))
++                             .address());
++      }
++      std::move(callback).Run(result);
++      return;
++    }
++  }
+   auto request = std::make_unique<DnsRequest>(
+       url_request_context_->host_resolver(), enable_mdns);
+   DnsRequest* request_ptr = request.get();
+diff --git a/services/network/p2p/socket_udp.cc b/services/network/p2p/socket_udp.cc
+index cb62beebb8..c7baa04d77 100644
+--- a/services/network/p2p/socket_udp.cc
++++ b/services/network/p2p/socket_udp.cc
+@@ -269,6 +269,10 @@ SetTosArguments GetSetTosEnumForLogging(net::DiffServCodePoint dscp,
+ 
+ namespace network {
+ 
++bool P2PUdpRelayedThroughSocks5() {
++  return Socks5UdpRelayTarget().has_value();
++}
++
+ P2PPendingPacket::P2PPendingPacket(
+     const net::IPEndPoint& to,
+     base::span<const uint8_t> content,
+diff --git a/services/network/p2p/socket_udp.h b/services/network/p2p/socket_udp.h
+index 6cd46c4693..dcda2aee76 100644
+--- a/services/network/p2p/socket_udp.h
++++ b/services/network/p2p/socket_udp.h
+@@ -54,6 +54,11 @@ struct P2PPendingPacket {
+   uint64_t id;
+ };
+ 
++// camchrome: true when every P2P UDP socket is relayed through a SOCKS5 proxy (--socks5-udp with a
++// SOCKS5 --proxy-server). Host names a P2P peer asks about (STUN/TURN servers) must then not be
++// resolved locally; see P2PSocketManager::GetHostAddress().
++COMPONENT_EXPORT(NETWORK_SERVICE) bool P2PUdpRelayedThroughSocks5();
++
+ class COMPONENT_EXPORT(NETWORK_SERVICE) P2PSocketUdp : public P2PSocket {
+  public:
+   friend class ThrottlingP2PNetworkInterceptor;
+diff --git a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
+index 35e9c966f2..226d6dfd7e 100644
 --- a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
 +++ b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
-@@ -1060,6 +1060,13 @@
+@@ -1060,6 +1060,13 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
        webrtc::SetForcedWebRtcSrflxIP(
            clearcoat_cmd->GetSwitchValueASCII("webrtc-ip"));
      }
@@ -65,7 +159,7 @@ would leave from the real interface.
    }
  
    // Copy the flag from Preference associated with this WebLocalFrame.
-@@ -1142,7 +1149,8 @@
+@@ -1142,7 +1149,8 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
    // a STUN server-reflexive candidate is produced (then rewritten to the proxy
    // IP in stun_port.cc). Real host candidates are suppressed in port.cc, so the
    // real LAN/public IP never leaks.
@@ -75,21 +169,8 @@ would leave from the real interface.
      port_config.enable_multiple_routes = true;
      port_config.enable_nonproxied_udp = true;
    }
---- a/third_party/webrtc/p2p/base/port.h
-+++ b/third_party/webrtc/p2p/base/port.h
-@@ -59,6 +59,12 @@
- RTC_EXPORT void SetForcedWebRtcSrflxIP(absl::string_view ip);
- RTC_EXPORT bool HasForcedWebRtcSrflxIP();
- RTC_EXPORT IPAddress ForcedWebRtcSrflxIP();
-+// camchrome: every UDP socket this process gets is relayed through a SOCKS5 proxy (the network
-+// service does it; the renderer is told with --webrtc-socks5-relay). Real STUN then reports the
-+// proxy's exit IP, so no --webrtc-ip is needed, but host candidates and the srflx related address
-+// would still describe this machine and are suppressed.
-+RTC_EXPORT void SetWebRtcProxyRelayMode(bool enabled);
-+RTC_EXPORT bool IsWebRtcProxyRelayMode();
- 
- enum class MdnsNameRegistrationStatus {
-   // IP concealment with mDNS is not enabled or the name registration process is
+diff --git a/third_party/webrtc/p2p/base/port.cc b/third_party/webrtc/p2p/base/port.cc
+index 579693a9a8..7f4934cd75 100644
 --- a/third_party/webrtc/p2p/base/port.cc
 +++ b/third_party/webrtc/p2p/base/port.cc
 @@ -13,6 +13,7 @@
@@ -100,7 +181,7 @@ would leave from the real interface.
  #include <cstddef>
  #include <cstdint>
  #include <functional>
-@@ -87,6 +88,20 @@
+@@ -87,6 +88,20 @@ IPAddress ForcedWebRtcSrflxIP() {
    MutexLock lock(&ClearcoatForcedIpMutex());
    return ClearcoatForcedIpStore().value_or(IPAddress());
  }
@@ -121,7 +202,7 @@ would leave from the real interface.
  namespace {
  
  PacketInfoProtocolType ConvertProtocolTypeToPacketInfoProtocolType(
-@@ -251,7 +266,8 @@
+@@ -251,7 +266,8 @@ void Port::AddAddress(const SocketAddress& address,
    // clearcoat: when mocking the WebRTC IP to the proxy egress, never expose a
    // real local host candidate (it would leak the LAN/real IP). Only the srflx
    // candidate (rewritten in stun_port.cc) is emitted.
@@ -131,9 +212,28 @@ would leave from the real interface.
      return;
    }
  
+diff --git a/third_party/webrtc/p2p/base/port.h b/third_party/webrtc/p2p/base/port.h
+index d46037ca6b..82eaa75c08 100644
+--- a/third_party/webrtc/p2p/base/port.h
++++ b/third_party/webrtc/p2p/base/port.h
+@@ -59,6 +59,12 @@ namespace webrtc {
+ RTC_EXPORT void SetForcedWebRtcSrflxIP(absl::string_view ip);
+ RTC_EXPORT bool HasForcedWebRtcSrflxIP();
+ RTC_EXPORT IPAddress ForcedWebRtcSrflxIP();
++// camchrome: every UDP socket this process gets is relayed through a SOCKS5 proxy (the network
++// service does it; the renderer is told with --webrtc-socks5-relay). Real STUN then reports the
++// proxy's exit IP, so no --webrtc-ip is needed, but host candidates and the srflx related address
++// would still describe this machine and are suppressed.
++RTC_EXPORT void SetWebRtcProxyRelayMode(bool enabled);
++RTC_EXPORT bool IsWebRtcProxyRelayMode();
+ 
+ enum class MdnsNameRegistrationStatus {
+   // IP concealment with mDNS is not enabled or the name registration process is
+diff --git a/third_party/webrtc/p2p/base/stun_port.cc b/third_party/webrtc/p2p/base/stun_port.cc
+index a61b4081de..56533cf7da 100644
 --- a/third_party/webrtc/p2p/base/stun_port.cc
 +++ b/third_party/webrtc/p2p/base/stun_port.cc
-@@ -607,6 +607,11 @@
+@@ -607,6 +607,11 @@ void UDPPort::OnStunBindingRequestSucceeded(
      if (!MaybeSetDefaultLocalAddress(&related_address)) {
        related_address = EmptySocketAddressWithFamily(related_address.family());
      }
