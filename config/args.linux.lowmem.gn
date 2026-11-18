@@ -1,0 +1,70 @@
+# Low-memory variant of config/args.linux.gn (no ThinLTO, no PGO). Everything else is identical.
+# Clearcote reference build configuration — Linux x64, built natively on Linux.
+#
+# This is the effective build configuration used to produce the published Linux pre-release
+# (v0.1.0-pre.25, Chromium 151). It is config/args.gn with the target flipped to Linux: target_os="linux",
+# use_sysroot=true (build against Chromium's bundled Debian bullseye sysroot -> glibc 2.31 floor),
+# and the Windows-only cross flags (rust_sysroot_absolute, dawn_use_built_dxc) dropped. The de-Google
+# set is identical to the Windows build; the release config differs only where Linux needs it
+# (its own PGO profile, CFI off, mold off, the HLSL translator on, NaCl off).
+# scripts/04-configure-build.sh copies this to out/Default/args.gn when TARGET=linux. (The build host
+# also sets cc_wrapper="ccache", a compile cache that does not change the output.)
+
+# --- De-Google (from ungoogled-chromium's flags.gn; kept explicit so this file is self-contained) ---
+clang_use_chrome_plugins = false
+disable_fieldtrial_testing_config = true
+enable_hangout_services_extension = false
+# On since Chromium 150 (the tree the binaries ship from). Which WebRTC candidates exist is decided
+# by 100-webrtc-leak, so this build still shows no .local host candidates.
+enable_mdns = true
+enable_remoting = false
+enable_reporting = false
+enable_service_discovery = false
+# Widevine EME *plumbing* only — clearcote does NOT bundle Google's proprietary CDM blob; the SDK
+# fetches it opt-in at runtime (Linux uses the CDM hint file, see sdk/python/clearcote/_widevine.py).
+enable_widevine = true
+exclude_unwind_tables = true
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+safe_browsing_mode = 0
+use_official_google_api_keys = false
+use_unofficial_version_number = false
+
+# --- Target + toolchain (Linux x64, native) ---
+target_os = "linux"
+target_cpu = "x64"
+is_clang = true
+clang_base_path = "//third_party/llvm-build/Release+Asserts"
+use_sysroot = true                    # Chromium's bundled amd64 bullseye sysroot -> glibc 2.31 floor
+use_mold = false                      # link with lld, as the Windows build does
+
+# --- Release configuration (low memory) ---
+# The official ThinLTO+PGO link peaks around 32-64 GB. This variant builds without LTO/PGO, the way
+# config/args.mac.gn does on a 24 GB Mac, so the patched tree can be built and tested on a smaller
+# machine (e.g. an x86-64 Docker container on Apple Silicon). Same patches, same features; the
+# binary is larger and somewhat slower than the official one.
+#   ARGS_FILE=config/args.linux.lowmem.gn scripts/02-build.sh
+is_debug = false
+is_official_build = false
+use_thin_lto = false
+dcheck_always_on = false
+is_cfi = false
+use_cfi_icall = false
+is_component_build = false
+symbol_level = 0
+blink_symbol_level = 0
+chrome_pgo_phase = 0
+pgo_data_path = ""
+use_remoteexec = false
+enable_iterator_debugging = false
+angle_enable_hlsl = true
+
+# --- Media / codecs (match a normal desktop browser) ---
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"
+
+# --- Build hygiene ---
+treat_warnings_as_errors = false
+fatal_linker_warnings = false
+v8_drumbrake_bounds_checks = true

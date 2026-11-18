@@ -4,7 +4,9 @@
 # macOS args (config/args.mac.gn) disable LTO/PGO/PCH so a 24 GB machine can build it.
 source "$(dirname "$0")/common.sh"
 [ -e "$SRC/.camchrome-patched" ] || { echo "run scripts/01-apply-patches.sh first"; exit 1; }
-ARGS="$REPO/config/args.$TARGET.gn"
+# ARGS_FILE picks another args file, e.g. config/args.linux.lowmem.gn on a machine below the
+# official build's ~32-64 GB peak.
+ARGS="${ARGS_FILE:-$REPO/config/args.$TARGET.gn}"
 [ -f "$ARGS" ] || { echo "no $ARGS"; exit 1; }
 cd "$SRC"
 

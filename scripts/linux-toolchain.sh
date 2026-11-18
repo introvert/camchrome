@@ -28,6 +28,10 @@ linux_toolchain() {
     python3 "$REPO/scripts/fetch-gcs-dep.py" "$SRC" src/third_party/llvm-libclang --match Linux_x64/
   [ -x "$SRC/third_party/node/linux/node-linux-x64/bin/node" ] ||
     python3 "$REPO/scripts/fetch-gcs-dep.py" "$SRC" src/third_party/node/linux
+  # clang-format: Crubit's generated bindings (rs_std/rs_alloc.h, ...) are formatted with it
+  # during the full build, so the browser does not link without it.
+  [ -x "$SRC/buildtools/linux64-format/clang-format" ] ||
+    python3 "$REPO/scripts/fetch-gcs-dep.py" "$SRC" src/buildtools/linux64-format
 
   # TypeScript (tsgo) for the WebUI/devtools build. DEPS pins the CIPD package
   # 'version:2@<v>'; the same release is on npm as @typescript/typescript-linux-x64.
