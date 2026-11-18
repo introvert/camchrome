@@ -359,6 +359,38 @@ class Server:
         self.httpd.server_close()
 
 
+# Two registrable domains, both mapped to the local server. Per-site noise is keyed by eTLD+1, and
+# 127.0.0.1 / localhost have none (an IP literal, and a name outside the public suffix list), so
+# they share one seed by design and cannot show the per-site difference.
+SITE_HOSTS = ("alpha.example.com", "beta.example.org")
+SITE_RULES = "--host-resolver-rules=MAP alpha.example.com 127.0.0.1, MAP beta.example.org 127.0.0.1"
+CANVAS_JS = """(() => { const c = document.createElement('canvas');
+  c.width = 200; c.height = 50; const x = c.getContext('2d');
+  x.font = '20px sans-serif'; x.fillStyle = '#f60'; x.fillRect(10, 5, 80, 30);
+  x.fillStyle = '#069'; x.fillText('camchrome \u2713', 4, 30);
+  return c.toDataURL(); })()"""
+
+
+def canvas_per_site(binary: str, flags: list[str], headless: bool) -> list[str]:
+    """One canvas export on each of two registrable domains, in one launch."""
+    server = Server()
+    browser = Browser(binary, flags=flags + [SITE_RULES], headless=headless)
+    out = []
+    try:
+        cdp = browser.open_page()
+        cdp.call("Page.enable")
+        for host in SITE_HOSTS:
+            cdp.call("Page.navigate", {"url": f"http://{host}:{server.port}/"})
+            cdp.wait_for("document.readyState === 'complete' && location.hostname === %s"
+                         % json.dumps(host), timeout=30)
+            out.append(cdp.evaluate(CANVAS_JS))
+        cdp.close()
+    finally:
+        browser.stop()
+        server.stop()
+    return out
+
+
 def collect(binary: str, flags: list[str], headless: bool, origins: list[str]) -> dict:
     """One browser launch; returns the probe result for each origin plus server headers."""
     server = Server()
@@ -541,8 +573,9 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
             m["canvas"]["hash"] == m["canvasAgain"]["hash"], "")
     rep.add("canvas-same-seed-same-site-stable", "001 060",
             m["canvas"]["hash"] == a_again[h1]["canvas"]["hash"], "relaunch with the same seed")
-    rep.add("canvas-differs-per-site", "001 060",
-            m["canvas"]["hash"] != m2["canvas"]["hash"], "127.0.0.1 vs localhost", persona=True)
+    sites = a.get("canvas_sites") or ["", ""]
+    rep.add("canvas-differs-per-site", "001 060", sites[0] != sites[1],
+            " vs ".join(SITE_HOSTS), persona=True)
     rep.add("canvas-differs-per-seed", "001 060",
             m["canvas"]["hash"] != b[h1]["canvas"]["hash"], "seed A vs seed B", persona=True)
     rep.add("measuretext-nonzero", "060", m["canvas"]["measure"] > 50, m["canvas"]["measure"])
@@ -714,6 +747,7 @@ def main() -> int:
         args.location = None
     origins = ["127.0.0.1", "localhost"]
     a = collect(args.binary, flags(args.seed), args.headless, origins)
+    a["canvas_sites"] = canvas_per_site(args.binary, flags(args.seed), args.headless)
     a_again = collect(args.binary, flags(args.seed), args.headless, origins[:1])
     b = collect(args.binary, flags(args.seed_b), args.headless, origins[:1])
     validator = None if args.stock else run_validator(args.binary, args.validator_count)
