@@ -60,8 +60,9 @@ locally with `tools/socks5_udp_proxy.py` (a SOCKS5 proxy with UDP ASSOCIATE).
 |---|---|
 | `992-android-persona-mobile-behaviour` | with `--fingerprint-platform=android` the mouse becomes touch on web pages (touchstart, `pointerType: "touch"`, taps), deviceorientation/devicemotion stream a phone held in a hand, fonts answer with the handset set from Android's `fonts.xml` (on Linux and macOS hosts), `getVoices()` lists the Google TTS voices, and `outerWidth` is the phone's screen width |
 
-The layout viewport is still the desktop window's, so launch the window phone-sized, e.g.
-`--window-size=412,915` for the Pixel 7 row. Drive it with mouse events, CDP `Input.dispatchMouseEvent` or `Browser.humanized*`
+The window is sized to the persona's screen (975), and since 997 Chrome's 500 px desktop minimum
+no longer widens it, so a `width=device-width` page lays out at exactly `screen.width` and a page
+without a viewport tag at Android's 980 px. Drive it with mouse events, CDP `Input.dispatchMouseEvent` or `Browser.humanized*`
 (all become touch; browser UI pages such as chrome:// and DevTools keep the mouse). A raw CDP
 `Input.dispatchTouchEvent` switches that tab to injected touch, and mouse events stay mouse events
 there afterwards.
@@ -85,6 +86,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 |---|---|
 | `995-ua-client-hints-coherence` | the UA string, `Sec-CH-UA`, the full-version list and `navigator.userAgentData` (page and workers) always agree: with a persona, with `--fingerprint-brand`, with `--user-agent`, and with CDP `Emulation.setUserAgentOverride` with or without `userAgentMetadata` (explicit metadata is kept exactly as given). No Chrome version is hard-coded any more |
 | `996-webgl-readback-no-farble` | `--cc-no-farble` also turns off the WebGL `readPixels` perturbation |
+| `997-android-persona-viewport` | an Android persona's content area is the phone's width (no 500 px desktop minimum), and viewport meta tags stay off under a desktop-site override, as on Android |
 
 Every Chrome version claim comes from the engine (157.0.8103.78, the newest ungoogled-chromium
 release; Google Chrome stable is already 158) or from `--fingerprint-brand-version`.

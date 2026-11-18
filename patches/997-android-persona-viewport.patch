@@ -1,0 +1,82 @@
+camchrome: an Android persona's content area is the phone's width; viewport tags follow desktop-site mode.
+
+* Chrome's desktop window has a hard 500 px minimum content width
+  (BrowserViewLayout::kMainBrowserContentsMinimumWidth). 975 sizes the window to the persona's work
+  area, but for a phone (360-430 CSS px) the minimum pushed it back to 500, so a
+  width=device-width page laid out at innerWidth 500 next to screen.width 360 -- the viewport
+  tag most mobile pages carry made the mismatch visible. The floor is dropped for a phone
+  persona; the toolbar's own minimum still applies. Measured: innerWidth == clientWidth ==
+  screen.width (360, 412) on width=device-width pages; 980 px layout without a tag, as on Android.
+
+* Chrome for Android stops honouring viewport meta tags while a desktop-site override is active
+  (a UA override whose metadata says not-mobile; web_contents_impl.cc). 002's mobile web-prefs
+  block forced them on after that decision. It now leaves them off in that state. (No desktop
+  code path creates such an override today -- CDP overrides do not go through it -- so this keeps
+  the block correct rather than changing current behaviour.)
+
+Tests: tools/fingerprint_selftest.py --platform android (android-device-width-equals-screen,
+android-no-meta-layout-980).
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index d6c459e549..665491471d 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -370,6 +370,7 @@
+ #include "content/public/browser/internal_webui_config.h"
+ #include "content/public/browser/isolated_web_apps_policy.h"
+ #include "content/public/browser/legacy_tech_cookie_issue_details.h"
++#include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/network_service_instance.h"
+@@ -4698,7 +4699,19 @@ void ChromeContentBrowserClient::OverrideWebPreferences(
+   if (ungoogled::CurrentPersona().mobile) {
+     const ungoogled::PersonaProfile& cc_p = ungoogled::CurrentPersona();
+     web_prefs->viewport_enabled = true;
+-    web_prefs->viewport_meta_enabled = true;
++    // camchrome (997): Chrome for Android ignores viewport meta tags while a
++    // desktop-site override is active (a UA override whose metadata says
++    // not-mobile; web_contents_impl.cc). Forcing them on here undid that.
++    {
++      content::NavigationEntry* entry =
++          web_contents->GetController().GetVisibleEntry();
++      const auto& ua_override = web_contents->GetUserAgentOverride();
++      const bool desktop_site_override =
++          entry && entry->GetIsOverridingUserAgent() &&
++          ua_override.ua_metadata_override.has_value() &&
++          !ua_override.ua_metadata_override->mobile;
++      web_prefs->viewport_meta_enabled = !desktop_site_override;
++    }
+     web_prefs->viewport_style = blink::mojom::ViewportStyle::kMobile;
+     web_prefs->shrinks_viewport_contents_to_fit = true;
+     web_prefs->main_frame_resizes_are_orientation_changes = true;
+diff --git a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+index 7764d4a472..5d873297d0 100644
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.h"
+ 
++#include "components/ungoogled/persona_profile.h"
++
+ #include <algorithm>
+ #include <memory>
+ #include <optional>
+@@ -793,10 +795,16 @@ gfx::Size BrowserViewTabbedLayoutImpl::GetMinimumSize(
+ 
+   // This assumes a horizontal tabstrip. There is also a hard minimum on the
+   // width of the browser defined by `kMainBrowserContentsMinimumWidth`.
++  // camchrome (997): not for a phone persona. Its screen is 360-430 CSS px wide
++  // and 975 sizes the window to that work area; the 500 px floor made the
++  // content area (and so CSS device-width and innerWidth) wider than the
++  // persona's own screen.width. The toolbar's real minimum still applies.
++  const bool phone_persona =
++      ungoogled::PersonaActive() && ungoogled::CurrentPersona().mobile;
+   int min_width = vertical_tabstrip_size.width() +
+                   std::max({horizontal_tabstrip_size.width(),
+                             side_panel_size.width() + main_area_size.width(),
+-                            kMainBrowserContentsMinimumWidth});
++                            phone_persona ? 0 : kMainBrowserContentsMinimumWidth});
+ 
+   // Maybe adjust for additional padding when the side panel is visible.
+   if (side_panel_size.width() > 0 && !delegate().IsActiveTabSplit()) {
