@@ -618,8 +618,14 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
             au.get("sampleRate"), skip="error" in au)
 
     # --- devices ------------------------------------------------------------------
-    rep.add("voices-not-empty", "170", len(m.get("voices") or []) > 0,
-            len(m.get("voices") or []), persona=True)
+    # A Linux persona reports getVoices() == [] by design (Chrome on Linux without
+    # speech-dispatcher; persona_profile.cc, and persona_validator.cc only requires voices for
+    # Windows and macOS). Every other persona must have voices.
+    n_voices = len(m.get("voices") or [])
+    linux_persona = ud.get("platform") == "Linux"
+    rep.add("voices-not-empty", "170", n_voices > 0 or linux_persona,
+            f"{n_voices}" + (" (Linux persona: empty by design)" if linux_persona and not n_voices
+                             else ""), persona=True)
     kinds = {d[0] for d in m.get("devices") or []}
     rep.add("media-devices-present", "148", {"audioinput", "audiooutput"} <= kinds, kinds,
             persona=True)
