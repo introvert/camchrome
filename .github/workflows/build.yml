@@ -92,9 +92,8 @@ jobs:
         env:
           MODE: ${{ inputs.mode || (startsWith(github.ref, 'refs/tags/v') && 'full') || 'compile' }}
           # Pushes and PRs compile-check Linux x64 only: each macOS compile job takes ~2 h on a
-          # hosted macOS runner, billed at 10x Linux minutes; two of them per push used up
-          # the account's Actions minutes, most likely (no run started after 2026-11-18 03:13 UTC). Dispatch
-          # the workflow, or push a v* tag, for the other targets.
+          # hosted macOS runner, billed at 10x Linux minutes, two per push. Dispatch the
+          # workflow, or push a v* tag, for the other targets.
           TARGETS: ${{ inputs.targets || (startsWith(github.ref, 'refs/tags/v') && 'linux-x64,linux-arm64,mac-arm64,mac-x64') || 'linux-x64' }}
           LINUX_RUNNER: ${{ inputs.linux_runner || vars.CAMCHROME_LINUX_RUNNER || 'ubuntu-24.04' }}
           MAC_RUNNER: ${{ inputs.mac_runner || vars.CAMCHROME_MAC_RUNNER || 'macos-26' }}

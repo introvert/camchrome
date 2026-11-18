@@ -244,8 +244,8 @@ tools/fingerprint_selftest.py --stock --binary "$(command -v google-chrome)"   #
 `.github/workflows/build.yml` runs the repository checks and the self-test harnesses on every
 push, then fetches, patches, runs `gn gen` and compiles the patched files for linux-x64. The
 other targets (linux-arm64, mac-arm64, mac-x64) are compile-checked when the workflow is
-dispatched or a `v*` tag is pushed: hosted macOS minutes cost 10x and two ~2 h macOS jobs per
-push most likely used up the Actions minutes (no run has started since 2026-11-18 03:13 UTC). `upstream-watch.yml` checks the pins weekly.
+dispatched or a `v*` tag is pushed: hosted macOS minutes cost 10x, and two ~2 h macOS jobs on
+every push are most of a month's free minutes. `upstream-watch.yml` checks the pins weekly.
 Dispatch it with `mode=full` (or push a `v*` tag) to build
 and upload the browser. A full build does not fit GitHub's standard runners (disk and the 6 h
 limit): set `linux_runner` / `mac_runner`, or the repository variables
