@@ -1,0 +1,268 @@
+# 994-persona-validator-cli.patch
+#
+# camchrome: the persona validator as a small standalone binary, and the persona bugs it found.
+#
+# persona_validator_cli (components/ungoogled, testonly) runs exactly what
+# `chrome --clearcote-validate-persona=...` runs, but links only //base and the ungoogled
+# component (~300 ninja steps instead of a browser), so CI and
+# tools/fingerprint_library.py can check seed-derived personas and imported captures on every
+# push:
+#
+#   persona_validator_cli --clearcote-validate-persona=512 --fingerprint-platform=macos
+#   persona_validator_cli --clearcote-validate-persona=current \
+#       --fingerprint-platform=android --fingerprint-profile=H4sI...
+#
+# Running it across platforms showed the validator and the derivation had drifted apart:
+#
+#   * The validator still treated macOS as "not modelled" and checked it against the Windows
+#     rules, so every macOS seed failed (Metal renderer "not Direct3D", "metal-3" not a known
+#     WebGPU architecture). 987 gave macOS its own block; the validator now has macOS rules:
+#     Metal backend, an Apple Silicon RAM configuration, a speech engine, no touchscreen.
+#   * Schema 2's desktop draw can give a Windows touch laptop's 10 touch points, and the macOS
+#     block kept them: maxTouchPoints 10 under a Mac UA. The macOS block now sets 0.
+#   * The android and macOS blocks run after the --fingerprint-profile import and overwrite
+#     the device wholesale. An imported Android capture lost its own GPU and screen to a random
+#     device row (WebGL said Mali while the captured WebGPU said qualcomm); a partial macOS
+#     capture skipped the macOS block and kept Windows SAPI voices and Realtek devices. Both
+#     platform blocks now run, then the capture is re-applied, so it wins for every field it
+#     carries and the platform table fills only the rest.
+#   * Without --fingerprint-platform DerivePersona() takes the host platform, but the validator
+#     assumed Windows, so `chrome --clearcote-validate-persona=64` on a Linux build failed
+#     every seed. It now mirrors the host mapping.
+#   * The macOS tier/screen pairing is not modelled (Mac screens are logical points sized by
+#     the model), so that one schema-2 rule is skipped for macOS.
+#
+# Tests: CI builds the binary on linux-x64 and runs
+# tools/fingerprint_library.py selftest --validator ..., which sweeps 256 seeds on every
+# platform for both schemas, imports a capture-shaped profile for each OS, and checks that
+# broken imports (Direct3D or touch on macOS, no touch on Android, GL under Windows, WebGPU
+# vendor mismatch) are refused.
+--- a/components/ungoogled/BUILD.gn
++++ b/components/ungoogled/BUILD.gn
+@@ -31,3 +31,16 @@
+     "//components/os_crypt/async/browser:key_provider_interface",
+   ]
+ }
++
++# camchrome: the persona validator as a small executable, so CI and
++# tools/fingerprint_library.py can check personas and library profiles without
++# a full browser build.
++executable("persona_validator_cli") {
++  testonly = true
++  sources = [ "persona_validator_main.cc" ]
++  deps = [
++    ":ungoogled_switches",
++    "//base",
++    "//components/version_info",
++  ]
++}
+--- a/components/ungoogled/persona_profile.cc
++++ b/components/ungoogled/persona_profile.cc
+@@ -1137,9 +1137,9 @@
+   // camchrome: macOS persona. The derivation above is Windows-shaped (ANGLE
+   // Direct3D, SAPI voices, WASAPI devices, Windows screen pool); under a macOS
+   // claim each of those is provable incoherence. Rewrite them to what Chrome on
+-  // Apple Silicon reports. An imported capture is authoritative and untouched.
+-  if (platform == PersonaPlatform::kMacOS &&
+-      !DecodedProfileSwitch()) {
++  // Apple Silicon reports. An imported capture is re-applied on top below, so
++  // it stays authoritative for every field it has and this fills the rest.
++  if (platform == PersonaPlatform::kMacOS) {
+     const MacScreen& ms = kMacScreens[rng() % std::size(kMacScreens)];
+     p.screen_width = ms.w;
+     p.screen_height = ms.h;
+@@ -1147,6 +1147,10 @@
+     p.avail_screen_height = ms.avail_h;
+     p.device_pixel_ratio = 2.0;
+     p.color_depth = 24;
++    // No Mac has a touchscreen: Chrome on macOS reports maxTouchPoints 0 and
++    // any-pointer:fine. The schema-2 desktop draw above can pick a Windows
++    // touch laptop's 10 points, which a Mac UA turns into a contradiction.
++    p.max_touch_points = 0;
+ 
+     // The host's real core count is measured by the audit's worker test, so a
+     // claim below it is provably false. Pick an Apple tier at or above it.
+@@ -1246,6 +1250,15 @@
+         {"audiooutput", "MacBook Pro Speakers", mac_spk, mac_grp},
+     };
+   }
++  // camchrome (994): the android and macOS blocks rewrite the whole device
++  // (screen, cores, RAM, GPU, limits, devices) from their own tables, after
++  // ApplyProfileOverride() ran. Without this an imported Android capture lost
++  // its own GPU and screen to a random device row (WebGL said Mali while the
++  // captured WebGPU said qualcomm), and a partial macOS capture kept the
++  // Windows SAPI voices and Realtek devices. Re-applying the capture makes it
++  // win for every field it carries; the platform table fills only the rest.
++  if (platform == PersonaPlatform::kAndroid || platform == PersonaPlatform::kMacOS)
++    ApplyProfileOverride(&p);
+   if (cmd->HasSwitch(switches::kFingerprintGpuVendor))
+     p.webgl_vendor = cmd->GetSwitchValueASCII(switches::kFingerprintGpuVendor);
+   if (cmd->HasSwitch(switches::kFingerprintGpuRenderer))
+--- a/components/ungoogled/persona_validator.cc
++++ b/components/ungoogled/persona_validator.cc
+@@ -132,11 +132,21 @@
+ std::string S(double v) { return base::NumberToString(v); }
+ 
+ PersonaPlatform EffectivePlatform(PersonaPlatform p) {
+-  // DerivePersona() only rewrites the Windows-shaped defaults for kLinux and
+-  // kAndroid. kUnset and kMacOS keep them, so they validate as Windows-shaped.
+-  if (p == PersonaPlatform::kLinux || p == PersonaPlatform::kAndroid)
++  // DerivePersona() rewrites the Windows-shaped defaults for kLinux, kAndroid
++  // and (987) kMacOS, and a launch without --fingerprint-platform takes the
++  // HOST platform there. Mirror that, or `chrome --clearcote-validate-persona`
++  // on a Linux build checks a Linux persona against the Windows rules.
++  if (p != PersonaPlatform::kUnset)
+     return p;
++#if BUILDFLAG(IS_MAC)
++  return PersonaPlatform::kMacOS;
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++  return PersonaPlatform::kLinux;
++#elif BUILDFLAG(IS_ANDROID)
++  return PersonaPlatform::kAndroid;
++#else
+   return PersonaPlatform::kWindows;
++#endif
+ }
+ 
+ void CheckScreen(const PersonaProfile& p, PersonaPlatform plat, Collector& c) {
+@@ -209,7 +219,16 @@
+     c.Error("hw.memory_positive", "device_memory_gb " + S(p.device_memory_gb));
+     return;
+   }
+-  if (!IsPowerOfTwoLike(p.device_memory_gb)) {
++  // Apple Silicon ships 18/24/36/48 GB configurations, so the power-of-two
++  // rule only holds off macOS; there the RAM must be one Apple sells.
++  if (plat == PersonaPlatform::kMacOS) {
++    static constexpr float kAppleRam[] = {8, 16, 18, 24, 32, 36, 48, 64, 96, 128, 192};
++    bool sold = false;
++    for (float g : kAppleRam) sold |= p.device_memory_gb == g;
++    if (!sold)
++      c.Error("hw.macos_memory_config", "device_memory_gb " + S(p.device_memory_gb) +
++                                            " is not an Apple Silicon configuration");
++  } else if (!IsPowerOfTwoLike(p.device_memory_gb)) {
+     c.Warn("hw.memory_bucket", "device_memory_gb " + S(p.device_memory_gb) +
+                                    " is not a power-of-two bucket");
+   }
+@@ -282,6 +301,9 @@
+                   "', platformVersion='" + p.android_platform_version + "')");
+     }
+   } else {
++    if (plat == PersonaPlatform::kMacOS && p.max_touch_points != 0)
++      c.Error("touch.macos_no_touchscreen",
++              "macOS persona with maxTouchPoints " + S(p.max_touch_points));
+     // r10: a touch-capable desktop keeps a mouse as its PRIMARY pointer, so the
+     // touchscreen is visible only through any-pointer:coarse. Coarse primary or
+     // hover:none on a desktop persona is the mobile/desktop contradiction that
+@@ -347,9 +369,11 @@
+                 "Android persona with renderer '" + p.webgl_renderer + "'");
+       break;
+     case PersonaPlatform::kMacOS:
+-      if (d3d)
+-        c.Warn("gpu.macos_backend", "macOS persona with Direct3D renderer '" +
+-                                        p.webgl_renderer + "' (macOS persona is not modelled)");
++      // Chrome on macOS runs ANGLE on Metal; Direct3D, OpenGL ES or a non-Metal
++      // ANGLE string under a Mac UA is the incoherence 987 removed.
++      if (d3d || gles || !Has(p.webgl_renderer, "Metal"))
++        c.Error("gpu.macos_backend_is_metal",
++                "macOS persona with renderer '" + p.webgl_renderer + "'");
+       break;
+   }
+   // WebGPU features must be the claimed model's reference set (file 72) when the model is one
+@@ -396,7 +420,9 @@
+         static constexpr const char* kArchVocab[] = {
+             "gen-8", "gen-9", "gen-11", "gen-12lp", "gen-12-lp", "gen-12hp", "xe-lpg", "xe-2lpg",
+             "xe-3lpg", "kepler", "maxwell", "pascal", "turing", "ampere", "lovelace", "blackwell",
+-            "gcn-4", "gcn-5", "rdna-1", "rdna-2", "rdna-3", "rdna-4", "warp"};
++            "gcn-4", "gcn-5", "rdna-1", "rdna-2", "rdna-3", "rdna-4", "warp",
++            // Dawn's Metal backend on Apple Silicon.
++            "metal-3"};
+         bool known = false;
+         for (const char* a : kArchVocab) known |= (p.webgpu_architecture == a);
+         if (!known)
+@@ -583,6 +609,9 @@
+   if (windows_like && p.voices.empty()) {
+     c.Error("voices.windows_has_voices", "Windows persona with getVoices() == []");
+   }
++  if (plat == PersonaPlatform::kMacOS && p.voices.empty()) {
++    c.Error("voices.macos_has_voices", "macOS persona with getVoices() == []");
++  }
+   if (!windows_like && !p.voices.empty() && base::StartsWith(p.voices.front().name, "Microsoft")) {
+     c.Error("voices.platform_voice_pack",
+             std::string(PersonaPlatformName(plat)) + " persona with Windows SAPI voice '" +
+@@ -623,9 +652,13 @@
+     c.Error("tier.recorded", "schema-2 persona with hw_tier " + S(p.hw_tier));
+     return;
+   }
+-  if (p.hw_tier == 1 && p.screen_width >= 2560)
++  // macOS screens are logical points from the Mac pool (987), sized by the
++  // model rather than the Windows tier, so the screen-class pairing is not
++  // modelled there; the GPU-class rules below still apply.
++  const bool tiered_screens = plat != PersonaPlatform::kMacOS;
++  if (tiered_screens && p.hw_tier == 1 && p.screen_width >= 2560)
+     c.Error("tier.screen_class", "entry tier with " + S(p.screen_width) + "x" + S(p.screen_height));
+-  if (p.hw_tier >= 3 && p.screen_width < 1920)
++  if (tiered_screens && p.hw_tier >= 3 && p.screen_width < 1920)
+     c.Error("tier.screen_class", "tier " + S(p.hw_tier) + " with " + S(p.screen_width) + "x" +
+                                      S(p.screen_height));
+   const GpuFamily gf = FamilyOfGlString(p.webgl_vendor);
+@@ -670,19 +703,6 @@
+                                               const PersonaValidationContext& ctx) {
+   Collector c;
+   const PersonaPlatform plat = EffectivePlatform(ctx.platform);
+-#if !BUILDFLAG(IS_WIN)
+-  if (ctx.platform == PersonaPlatform::kUnset) {
+-    c.Warn("platform.unset_on_non_windows_host",
+-           "no --fingerprint-platform: persona keeps Windows-shaped defaults on a non-Windows build");
+-  }
+-#endif
+-  if (ctx.platform == PersonaPlatform::kMacOS) {
+-    // DerivePersona() has no macOS block: a macos launch serves the Windows-shaped
+-    // defaults (Direct3D renderer, SAPI voices, Realtek roster) under a Mac UA.
+-    // Validated as Windows-shaped here, and said so, until that block exists.
+-    c.Warn("platform.macos_not_modelled",
+-           "macOS persona is the Windows-shaped default set; its own coherence rules are not modelled");
+-  }
+   CheckScreen(p, plat, c);
+   CheckHardware(p, plat, c);
+   CheckTouchAndForm(p, plat, c);
+--- /dev/null
++++ b/components/ungoogled/persona_validator_main.cc
+@@ -0,0 +1,38 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++//
++// camchrome: the persona validator without the browser. Runs the same code as
++// `chrome --clearcote-validate-persona=...` (persona_validator.h), so persona
++// derivation, --fingerprint-profile import and every coherence invariant can be
++// checked from a cheap build of one component:
++//
++//   persona_validator_cli --clearcote-validate-persona=64 --fingerprint-platform=android
++//   persona_validator_cli --clearcote-validate-persona=current \
++//       --fingerprint-platform=windows --fingerprint-profile=H4sI...
++//
++// Exit codes are the validator's: 0 clean, 3 contradictions, 2 bad arguments.
++
++#include <cstdio>
++#include <optional>
++#include <string>
++
++#include "base/at_exit.h"
++#include "base/command_line.h"
++#include "components/ungoogled/persona_validator.h"
++#include "components/version_info/version_info.h"
++
++int main(int argc, char** argv) {
++  base::AtExitManager exit_manager;
++  base::CommandLine::Init(argc, argv);
++  const std::optional<int> rc = ungoogled::MaybeRunPersonaValidationCli(
++      *base::CommandLine::ForCurrentProcess(),
++      std::string(version_info::GetVersionNumber()));
++  if (!rc) {
++    fprintf(stderr,
++            "usage: persona_validator_cli --clearcote-validate-persona=<N|a,b,c|current> "
++            "[--fingerprint-platform=...] [--fingerprint-profile=...]\n");
++    return 2;
++  }
++  return *rc;
++}

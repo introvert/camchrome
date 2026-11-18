@@ -274,6 +274,46 @@ FRAME_HTML = ("<!doctype html><script>" + COMMON_JS +
               "collectCommon().then(o => parent.postMessage(o, '*'));</script>")
 WORKER_JS = COMMON_JS + "collectCommon().then(o => postMessage(o));"
 
+# Phone behaviour (992): touch feature detection, a few deviceorientation / devicemotion
+# events, which handset-only and desktop-only families render, and listeners that record
+# what a mouse click turns into.
+MOBILE_JS = r"""
+(async () => {
+  const o = {touchProp: 'ontouchstart' in window};
+  const once = type => new Promise(r => {
+    const h = e => { window.removeEventListener(type, h); r(e); };
+    window.addEventListener(type, h);
+    setTimeout(() => { window.removeEventListener(type, h); r(null); }, 2000);
+  });
+  const take = async (type, n, pick) => {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const e = await once(type);
+      if (!e) break;
+      out.push(pick(e));
+      await new Promise(r => setTimeout(r, 120));
+    }
+    return out;
+  };
+  o.orientation = await take('deviceorientation', 3, e => [e.alpha, e.beta, e.gamma]);
+  o.motion = await take('devicemotion', 3, e => {
+    const g = e.accelerationIncludingGravity, r = e.rotationRate;
+    return {g: g && [g.x, g.y, g.z], r: r && [r.alpha, r.beta, r.gamma], interval: e.interval};
+  });
+  const c = document.createElement('canvas').getContext('2d');
+  const w = f => { c.font = `72px ${f}`; return c.measureText('mmmmmmmmmmlli10OOwW').width; };
+  const has = f => ['monospace', 'serif', 'sans-serif'].some(b => w(`"${f}", ${b}`) !== w(b));
+  o.fonts = {};
+  for (const f of ['sans-serif-condensed', 'Droid Sans Mono', 'Segoe UI', 'Helvetica Neue',
+                   'Calibri'])
+    o.fonts[f] = has(f);
+  window.__input = [];
+  for (const t of ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'click'])
+    window.addEventListener(t, e => window.__input.push(t + ':' + (e.pointerType || '')), true);
+  return o;
+})()
+"""
+
 
 class Server:
     """Serves the probe pages and records each request's headers."""
@@ -344,6 +384,13 @@ def collect(binary: str, flags: list[str], headless: bool, origins: list[str]) -
                 "new Promise(r => navigator.geolocation.getCurrentPosition("
                 "p => r([p.coords.latitude, p.coords.longitude]), e => r({error: e.message}),"
                 "{timeout: 5000}))")
+            result["mobile"] = cdp.evaluate(MOBILE_JS)
+            # Away from the top-left corner, where collectMain left its probe iframe.
+            for kind in ("mousePressed", "mouseReleased"):
+                cdp.call("Input.dispatchMouseEvent", {"type": kind, "x": 600, "y": 450,
+                                                      "button": "left", "clickCount": 1})
+            result["mobile"]["input"] = cdp.evaluate(
+                "new Promise(r => setTimeout(() => r(window.__input), 400))")
             result["headers"] = server.last(host)
             out[host] = result
     finally:
@@ -570,6 +617,31 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     # --- OS oracles -------------------------------------------------------------
     if args.platform == "windows":
         rep.add("url-drive-letter-is-file", "160", m.get("urlC") == "file:", m.get("urlC"))
+
+    # --- phone behaviour (992) ---------------------------------------------------
+    mob = m.get("mobile") or {}
+    clicks = mob.get("input") or []
+    if args.platform == "android" and not args.stock:
+        rep.add("android-touch-feature-detected", "002", mob.get("touchProp") is True,
+                mob.get("touchProp"))
+        rep.add("android-mouse-becomes-touch", "992",
+                "touchstart:" in clicks and "pointerdown:touch" in clicks, clicks)
+        o = mob.get("orientation") or []
+        rep.add("android-orientation-streams", "992",
+                len(o) >= 2 and all(v is not None for v in o[0])
+                and 20 <= (o[0][1] or 0) <= 80, o)
+        mo = mob.get("motion") or []
+        g = (mo[0].get("g") if mo else None) or [0, 0, 0]
+        norm = sum(v * v for v in g if v is not None) ** 0.5
+        rep.add("android-motion-has-gravity", "992", 9.3 <= norm <= 10.3, mo[:1])
+        f = mob.get("fonts") or {}
+        rep.add("android-handset-fonts", "040 992",
+                f.get("sans-serif-condensed") and not f.get("Segoe UI")
+                and not f.get("Helvetica Neue") and not f.get("Calibri"), f)
+    else:
+        rep.add("desktop-mouse-stays-mouse", "992",
+                "touchstart:" not in clicks and "pointerdown:mouse" in clicks, clicks,
+                skip=not clicks)
 
     # --- integrity --------------------------------------------------------------
     rep.add("patched-getters-are-native", "all (C++ only)", not m["native"], m["native"])

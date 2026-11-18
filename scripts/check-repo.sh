@@ -61,7 +61,9 @@ fi
 
 # --- python -----------------------------------------------------------------------
 python3 -m py_compile tools/*.py || err "py_compile"
-for t in tools/stealth_audit.py tools/fingerprint_selftest.py tools/site_checks.py; do
+for t in tools/stealth_audit.py tools/fingerprint_selftest.py tools/site_checks.py tools/socks5_udp_proxy.py \
+         tools/network_selftest.py tools/fingerprint_library.py tools/camauto.py \
+         tools/camauto_selftest.py; do
   [ -f "$t" ] || continue
   [ -x "$t" ] || err "$t is not executable"
   "./$t" --help >/dev/null || err "$t --help"

@@ -13,7 +13,7 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 |---|---|---|
 | ungoogled-chromium base (Linux, Windows) | `157.0.8103.78-1` | pinned in `UPSTREAM` |
 | ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | pinned, built and audited on macOS arm64 |
-| Fingerprint patches (`patches/`) | 66 patches | verified against 157: built on macOS; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
+| Fingerprint patches (`patches/`) | 71 patches | verified against 157: built on macOS; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
 | Clearcote stealth audit | 365 checks | **100/100 · 236/236 scored checks agree · 0 findings** |
 
 The shipped and audited binary is Chromium `157.0.8103.78` — the latest ungoogled-chromium
@@ -24,7 +24,7 @@ Linux binary has been linked or audited yet. Windows is not ported.
 The patches in `patches/` come from
 [Clearcote](https://github.com/clearcotelabs/clearcote-browser) at commit
 `ac40bdc` (BSD-3-Clause; see `LICENSE.clearcote` and `CREDITS.md`), rebased from 151 to
-157 and extended with patches 986–989 (see below). They cover canvas, WebGL, WebGPU,
+157 and extended with patches 986–994 (see below). They cover canvas, WebGL, WebGPU,
 audio, fonts, GPU info, screen, timezone/locale, WebRTC, client hints, `navigator.webdriver`,
 headless and CDP `Runtime.enable` signals, and more.
 
@@ -36,6 +36,65 @@ headless and CDP `Runtime.enable` signals, and more.
 | `987-engine-version-and-macos-persona` | every version surface derives from the engine; macOS personas get Apple Silicon GPU/screen/voices/devices |
 | `988-webgl-readback-and-timing` | readPixels clips to the framebuffer, PBO and array exits agree, and spoofed `getParameter` values pay Chrome's GPU round-trip latency |
 | `989-cpu-tier-and-netinfo-hints` | `navigator.cpuPerformance` follows the persona's cores; `Sec-CH-RTT/Downlink/ECT` match `navigator.connection` |
+
+### What 990–991 add (network)
+
+| Patch | Fix |
+|---|---|
+| `990-quic-over-socks5-udp` | HTTP/3 through a SOCKS5 proxy's UDP relay (`--socks5-udp`), with the origin resolved by the proxy, never locally; named relay proxies; no relaying to private addresses |
+| `991-webrtc-relay-exit-ip` | WebRTC's srflx candidate is the proxy's exit IP without `--webrtc-ip`: real STUN runs through the relay, host candidates stay hidden |
+
+Through a SOCKS5 proxy that supports UDP ASSOCIATE:
+
+```bash
+chrome --proxy-server=socks5://proxy.example:1080 --socks5-credentials=user:pass --socks5-udp
+```
+
+QUIC and WebRTC then leave through the proxy like TCP does. If the proxy refuses UDP, QUIC falls
+back to HTTP/2 over the TCP tunnel and WebRTC has no UDP path (no direct fallback). Test the relay
+locally with `tools/socks5_udp_proxy.py` (a SOCKS5 proxy with UDP ASSOCIATE).
+
+### What 992 adds (Android personas)
+
+| Patch | Fix |
+|---|---|
+| `992-android-persona-mobile-behaviour` | with `--fingerprint-platform=android` the mouse becomes touch (touchstart, `pointerType: "touch"`, taps), deviceorientation/devicemotion stream a phone held in a hand, and fonts answer with the handset set from Android's `fonts.xml` |
+
+Launch the window phone-sized so the layout viewport matches the persona screen, e.g.
+`--window-size=412,915` for the Pixel 7 row. Drive it with mouse events or `Browser.humanized*`
+(both become touch); a raw CDP `Input.dispatchTouchEvent` switches that tab back to plain mouse
+events afterwards.
+
+### What 993 adds (human input)
+
+| Patch | Fix |
+|---|---|
+| `993-humanized-typing-scroll-drag` | `Browser.humanizedType`, `Browser.humanizedScroll` and `Browser.humanizedDrag` next to 130's `humanizedClick`: human typing rhythm with Shift handling and corrected typos, per-OS wheel/trackpad/swipe scrolling, and drags, all as trusted input without attaching to the page |
+| `994-persona-validator-cli` | The persona validator as a small standalone binary that CI builds on every push, plus the persona bugs it found: macOS personas validated against Windows rules, 10 touch points under a Mac UA, imported Android and macOS captures overwritten by the platform tables, and an unset platform validated as Windows |
+
+```python
+browser.call("Browser.humanizedClickSelector", {"targetId": tid, "selector": "#email"})
+browser.call("Browser.humanizedType", {"targetId": tid, "text": "me@example.com", "typoRate": 0.03})
+browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
+```
+
+## Automation: local API, MCP, recorder, synchronised windows
+
+`tools/camauto.py` drives camchrome with the engine's human input and never touches the page's
+main world (reads run in an isolated world; `Runtime.enable` is never sent).
+
+```bash
+tools/camauto.py api --port 7878 -- --proxy-server=socks5://proxy:1080 --socks5-udp
+#   POST /v1/browsers {"pick": {"os": "windows", "seed": "c42"}}  ->  {"id": "b1", ...}
+#   POST /v1/browsers/b1/actions {"action": "click", "selector": "#login"}
+tools/camauto.py mcp                       # MCP server on stdio (browser_launch, _click, _type, ...)
+tools/camauto.py record --out flow.json --url https://example.com -- --fingerprint=alice
+tools/camauto.py replay flow.json --secrets '{"#password": "..."}' -- --fingerprint=bob
+tools/camauto.py sync --count 3 --flags-each "--fingerprint=s{n}" --url https://example.com
+```
+
+The API binds to loopback and wants the bearer token it prints. Add the MCP server to a client
+as a stdio command: `python3 /path/to/camchrome/tools/camauto.py --binary /path/to/chrome mcp`.
 
 ## Customizing the persona
 
@@ -58,13 +117,16 @@ build/src/out/Default/Chromium.app/Contents/MacOS/Chromium \
 | `--fingerprint-screen-width/-height/-avail-width/-avail-height/-color-depth/-device-pixel-ratio/-max-touch-points` | Explicit screen/touch values. |
 | `--timezone=<IANA>`, `--fingerprint-location=<lat,lng>` | Timezone and geolocation. |
 | `--fingerprint-schema=2` | Versioned derivation: couples screen class and GPU class to the hardware tier and sizes the JS heap from RAM. |
-| `--fingerprint-profile=<base64>` | Import a captured profile. It is authoritative over the seed; fields it omits keep the seed's values. |
+| `--fingerprint-profile=<base64>` | Import a captured profile. It is authoritative over the seed; fields it omits keep the seed's values. `tools/fingerprint_library.py` captures real devices into `profiles/library/` and prints these flags for one (see `profiles/README.md`). |
 | `--fingerprint-tls-profile=chrome-156` | TLS ClientHello persona; absent/native leaves BoringSSL stock. |
 | `--disable-gpu-fingerprint` | Present the real GPU (strings, limits, extensions, pixels) instead of the persona. |
 | `--disable-gpu-string-spoof` | Only the UNMASKED vendor/renderer strings go real; limits, extensions and noise stay on the persona. |
 | `--disable-canvas-noise`, `--disable-fingerprint-noise` | Turn canvas-only, or all, farbling off. |
 | `--portable-profile`, `--profile-encryption-key=<secret>` | Store the profile's cookie key in the profile, or derive it from a caller secret. |
 | `--canvas-bridge-url=ws://…` | Forward canvas/WebGL rendering to a real-GPU host (see 065). |
+| `--socks5-udp` | With a SOCKS5 `--proxy-server`: relay QUIC (990) and WebRTC (973) UDP through the proxy's UDP ASSOCIATE. |
+| `--socks5-credentials=user:pass` | RFC 1929 credentials for the SOCKS5 proxy (TCP and the UDP relay). |
+| `--webrtc-ip=<ip>\|auto` | `<ip>`: fabricate the WebRTC srflx candidate at that IP, no STUN (100). `auto` or absent with `--socks5-udp`: real STUN through the relay finds the exit IP (991). |
 
 ## Requirements
 

@@ -64,3 +64,8 @@
 987-engine-version-and-macos-persona.patch
 988-webgl-readback-and-timing.patch
 989-cpu-tier-and-netinfo-hints.patch
+990-quic-over-socks5-udp.patch
+991-webrtc-relay-exit-ip.patch
+992-android-persona-mobile-behaviour.patch
+993-humanized-typing-scroll-drag.patch
+994-persona-validator-cli.patch

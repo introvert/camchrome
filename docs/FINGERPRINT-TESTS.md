@@ -9,6 +9,9 @@ test covers it, and where nothing does.
 |---|---|---|---|
 | **Self-test** (`tools/fingerprint_selftest.py`, new) | Up to 53 local checks (47 on a host-platform persona; the rest depend on `--platform`, `--cores` and the like), each named after the patch it covers. Three launches (seed A twice, seed B once), two sites (`127.0.0.1` and `localhost`), probes in the window, an iframe and a dedicated worker, plus request headers recorded by its own server. | A built binary. No network. | `tools/fingerprint_selftest.py [--platform windows]` |
 | **Clearcote audit** (`tools/stealth_audit.py`) | 365 remote coherence checks, 236 scored. The acceptance test. | Network, headful, ideally a GPU. | `tools/stealth_audit.py --seed demo --interact` |
+| **Network self-test** (`tools/network_selftest.py`) | 15 local checks for the patches one page load can't reach: SOCKS5 and HTTP proxy auth, QUIC over the SOCKS5 relay (with a no-relay control), WebRTC exit IP via the relay, humanized click, typing, drag and wheel scroll, rects, shadow root, no-farble, portable profile. Needs `aioquic` for QUIC. | A camchrome build; loopback only. | `tools/network_selftest.py` |
+| **Automation self-test** (`tools/camauto_selftest.py`) | 11 checks for `tools/camauto.py`: the recorder is invisible to the page, records clicks/typing across a navigation, hides passwords, folds link navigations into the click; isolated reads; MCP handshake and tools; API token and actions. | Any Chromium (CI: stock Chrome). | `tools/camauto_selftest.py` |
+| **Relay self-test** (`socks5_udp_relay_selftest`) | Net-level checks of the 990 relay socket against `tools/socks5_udp_proxy.py`. Built and run in CI (`build.yml`, compile linux-x64). | Only `//net`, no browser. | `tools/socks5_udp_proxy.py --run-selftest-binary …` |
 | **Public check sites** (`tools/site_checks.py`, new) | browserleaks QUIC/JA4, Twilio WebRTC, fingerprint.com, deviceandbrowserinfo, ProxyShard checker, pixelscan, browserscan, antcpt reCAPTCHA. See [TEST-MATRIX.md](TEST-MATRIX.md). | Network, a residential proxy with SOCKS5 UDP for the QUIC/WebRTC rows. | `tools/site_checks.py --proxy socks5://… --socks5-udp …` |
 
 Plus `--clearcote-validate-persona=<N>` (patch 974), which derives N personas and checks the
@@ -40,12 +43,12 @@ review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
 |---|---|---|---|---|
 | 000 switches | flag plumbing to child processes | every check depends on it; `iframe-*`, `worker-*` prove renderer and worker processes see the flags | all | — |
 | 001 farble seed | per-eTLD+1 noise seed | ✓ `canvas-same-seed-same-site-stable`, `canvas-differs-per-site`, `canvas-differs-per-seed` | Render & GPU | — |
-| 002 persona | one coherent persona; profile import | ✓ `iframe/worker-identity-matches-window`, `persona-platform-honoured` | Identity coherence | `--fingerprint-profile` import is not exercised by any test. |
+| 002 persona | one coherent persona; profile import | ✓ `iframe/worker-identity-matches-window`, `persona-platform-honoured`; library entries checked by `tools/fingerprint_library.py check` (CI) | Identity coherence | `--fingerprint-profile` import is not exercised in a browser yet. |
 | 010 UA / UA-CH / webdriver | `navigator.userAgent`, `userAgentData`, `Sec-CH-UA*`, `webdriver` | ✓ `webdriver-false`, `ua-no-headless`, `header-ua-equals-js`, `header-platform-equals-uadata`, `navigator-platform-coherent`, `uach-brand-equals-ua`, `header-full-version-list-sent` | HTTP vs runtime, Navigator identity | — |
 | 020 audio | AudioContext metadata, offline render | ✓ `audio-same-seed-stable`, `audio-sample-rate-plausible` | Render & GPU | Per-site audio difference is not asserted (020's noise was retired on 157; the render is deterministic). |
 | 030 cores / memory | `hardwareConcurrency`, `deviceMemory` | ✓ `device-memory-on-chrome-grid`, `cores-override` (with `--cores`) | Navigator identity | — |
 | 040 fonts | font allowlist | — | Engine & OS oracles | **Gap.** No local check that host-only fonts are hidden. Add a `document.fonts.check()` probe of a host-only family. |
-| 050 shadow DOM / client rects | closed shadow access, no rect noise | — | Automation surface | **Gap.** Add `getClientRects()[0]` vs `getBoundingClientRect()` equality. |
+| 050 shadow DOM / client rects | closed shadow access, no rect noise | ✓ `rects-not-noised` (network_selftest) | Automation surface | — |
 | 060 canvas | 2D noise, export paths, `measureText` | ✓ `canvas-stable-within-page`, `measuretext-nonzero` | Render & GPU | — |
 | 065 canvas bridge | remote GPU rendering | — | — | **Gap.** Opt-in feature with no test and no host in the repo. |
 | 070 / 071 WebGL | GPU strings, parameters, extensions | ✓ `webgl-session-constant-across-sites`, `iframe/worker-webgl-matches-window` | Render & GPU | — |
@@ -55,7 +58,8 @@ review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
 | 100 WebRTC | no host IP, synthesized srflx | ✓ `webrtc-no-private-ip` | Network & WebRTC | `--webrtc-ip` srflx value needs a STUN server; covered by the Twilio row in the test matrix. |
 | 110 Runtime.enable | CDP tell | indirectly (the harness uses `Runtime.evaluate`) | Automation surface | — |
 | 120 headless | headless tell | ✓ `ua-no-headless` (when run `--headless`) | Automation surface | — |
-| 130 humanized input | `Browser.humanizedClick*` CDP commands | — | Input & behaviour | **Gap.** No test calls the commands. |
+| 130 humanized input | `Browser.humanizedClick*` CDP commands | ✓ `humanized-click` (network_selftest): trusted click on the target after ≥5 moves | Input & behaviour | — |
+| 993 humanized typing, scroll, drag | `Browser.humanizedType`, `humanizedScroll`, `humanizedDrag` | ✓ `humanized-type`, `humanized-type-corrects-typos`, `humanized-drag`, `humanized-scroll-wheel` (network_selftest) | Input & behaviour | — |
 | 140 screen | `screen.*`, outer window | ✓ `avail-within-screen`, `window-fits-screen`, `color-depth-24-or-30` | Screen & display | — |
 | 141 / 142 media queries, touch | pointer/hover, device-size | ✓ `mq-device-size-equals-screen`, `no-touch-means-fine-pointer` | Screen & display | — |
 | 145 storage quota | `storage.estimate()` | ✓ `storage-quota-present` | Capability surfaces | — |
@@ -68,24 +72,24 @@ review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
 | 180 geolocation | `--fingerprint-location` | ✓ `geolocation-from-flag` | Capability surfaces | — |
 | 200 agent | in-browser LLM agent | — | — | **Gap.** Needs an LLM endpoint; no test. |
 | 210 TLS persona | ClientHello per claimed major | — | TLS & network layer | **Gap locally.** Covered by the browserleaks JA4 row in the test matrix. |
-| 220 no-farble switch | `--cc-no-farble` | — | — | **Gap.** Add a run asserting `canvas-differs-per-site` flips to equal. |
+| 220 no-farble switch | `--cc-no-farble` | ✓ `no-farble-switch` (network_selftest): canvas differs across sites with noise, equal with the switch | — | — |
 | 900 / 905 | Windows cross-build | — | — | Build-only. Applies on Linux (verified). |
 | 955 WebGL parity | advertised = returned extensions | — | Render & GPU | **Gap locally**; audit covers it. |
-| 960 | `fakeShadowRoot` unexposed | — | Automation surface | **Gap.** One-line check: `'fakeShadowRoot' in Element.prototype` is false. |
+| 960 | `fakeShadowRoot` unexposed | ✓ `no-fake-shadow-root` (network_selftest) | Automation surface | — |
 | 961 Sec-CH-DPR | header = `devicePixelRatio` | ✓ `sec-ch-dpr-equals-dpr` | HTTP vs runtime | — |
 | 962 DPR coherence | `resolution` media query | ✓ `mq-resolution-equals-dpr` | Screen & display | — |
-| 963 / 984 SOCKS5 auth | RFC 1929 | — | — | **Gap.** Needs a SOCKS5 server in the test (e.g. a local `microsocks`/`dante`). |
-| 964 portable profile key | cookie key | — | — | **Gap.** |
+| 963 / 984 SOCKS5 auth | RFC 1929 | ✓ `socks5-auth`, `socks5-auth-wrong-password` (network_selftest, against `tools/socks5_udp_proxy.py --auth`) | — | — |
+| 964 portable profile key | cookie key | ✓ `portable-profile` (network_selftest): a copied profile keeps its cookie. On Linux with `--password-store=basic` stock Chrome passes too; the cross-machine case (Keychain/DPAPI) needs macOS/Windows. | — | — |
 | 965 `Math.tanh` | Windows-exact result | records `tanh` in the raw output | Engine & OS oracles | Expected Windows value not pinned yet. |
 | 966 / 968 / 969 | D3D11 shader dialect, precision, extensions on a non-D3D host | — | Render & GPU | **Gap locally**; audit covers it with a Windows persona. |
 | 967 / 982 / 983 / 970 WebGPU | limits, features, architecture, preferred format | ✓ `webgpu-preferred-format-windows` (Windows persona) | Render & GPU | GPU machine only. |
 | 971 system-ui font (Linux) | `system-ui` resolves | — | Engine & OS oracles | **Gap.** |
 | 972 / 975 window | frame coherence, fits work area | ✓ `window-fits-screen` | Screen & display | — |
-| 973 SOCKS5 UDP | WebRTC UDP via ASSOCIATE | — | Network & WebRTC | **Gap locally.** Twilio row in the test matrix; a local test needs a UDP-capable SOCKS5 server. |
+| 973 SOCKS5 UDP, 990 QUIC relay, 991 WebRTC exit IP | WebRTC and QUIC UDP via ASSOCIATE | — | Network & WebRTC | `socks5_udp_relay_selftest` (net-level, against `tools/socks5_udp_proxy.py`, run by CI's `relay-selftest` job) covers the relay socket, named origins and proxies, refusal and fallback. The browser path is covered by the browserleaks and Twilio rows of the test matrix. |
 | 974 validator | in-engine invariants | ✓ `persona-validator-clean` | — | — |
-| 976 Android uniforms | WebGL2 limits on Android personas | — | Render & GPU | **Gap.** Run the self-test with `--platform android`. |
+| 976 Android uniforms | WebGL2 limits on Android personas | run by `full-build.yml` (`fingerprint_selftest.py --platform android`) | Render & GPU | — |
 | 977 activation rule | persona on/off/profile | ✓ `uach-full-version-equals-engine` | Identity coherence | — |
-| 978 proxy auth | HTTP proxy Basic/Digest | — | — | **Gap.** Needs an authenticating proxy in the test. |
+| 978 proxy auth | HTTP proxy Basic/Digest | ✓ `http-proxy-auth` (network_selftest, Basic) | — | Digest not exercised. |
 | 979 battery dispatcher | events vs getters | ✓ `battery-plausible` | Capability surfaces | Events not exercised. |
 | 980 / 981 schema 2 | coupled draws | — | — | Run the self-test with `--extra-flag=--fingerprint-schema=2`; no schema-2-specific assertion yet. |
 | 985 stencil masks | WebGL stencil | — | Render & GPU | **Gap locally**; audit covers it. |

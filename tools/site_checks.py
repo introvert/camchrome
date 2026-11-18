@@ -10,7 +10,7 @@ matching the result is "unparsed" and the saved text and screenshot are the reco
 
     tools/site_checks.py --seed demo \\
         --proxy socks5://host:1080 --socks5-credentials user:pass --socks5-udp \\
-        --webrtc-ip <proxy exit IP> --timezone Europe/Ljubljana
+        --timezone Europe/Ljubljana
 
     tools/site_checks.py --only browserleaks-quic,twilio
     tools/site_checks.py --list
@@ -19,8 +19,9 @@ Output: build/site-checks/<site>.txt, .png and build/site-checks/summary.json.
 
 Notes
 - QUIC and WebRTC only go through the proxy when it supports SOCKS5 UDP ASSOCIATE and the
-  browser runs with --socks5-udp (patch 973). Without it QUIC is off when a SOCKS proxy
-  is set (stock Chromium behaviour) and browserleaks/quic reports QUIC false.
+  browser runs with --socks5-udp (patches 973, 990, 991). Without it QUIC is off when a SOCKS
+  proxy is set (stock Chromium behaviour) and browserleaks/quic reports QUIC false. With it,
+  WebRTC finds the exit IP itself; --webrtc-ip is only for proxies without UDP.
 - reCAPTCHA (antcpt) and fingerprint.com score the IP as much as the browser: a datacenter
   or flagged proxy lowers the result whatever the fingerprint does.
 - Run headful on a desktop with a GPU. Headless and GPU-less runs are what these sites
@@ -146,8 +147,8 @@ def main() -> int:
     ap.add_argument("--socks5-credentials", help="user:pass for an authenticated SOCKS5 proxy (963/984)")
     ap.add_argument("--proxy-auth", help="user:pass for an HTTP(S) proxy (978)")
     ap.add_argument("--socks5-udp", action="store_true",
-                    help="relay UDP (WebRTC) through SOCKS5 UDP ASSOCIATE (973)")
-    ap.add_argument("--webrtc-ip", help="the proxy exit IP, reported as the WebRTC srflx candidate (100)")
+                    help="relay UDP (QUIC and WebRTC) through SOCKS5 UDP ASSOCIATE (973, 990, 991)")
+    ap.add_argument("--webrtc-ip", help="fabricate the WebRTC srflx candidate at this IP (100); not needed with --socks5-udp")
     ap.add_argument("--timezone", help="IANA zone matching the proxy exit")
     ap.add_argument("--lang", help="e.g. sl-SI, matching the proxy exit country")
     ap.add_argument("--extra-flag", action="append", default=[], help="extra browser switch")

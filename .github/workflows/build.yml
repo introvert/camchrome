@@ -6,6 +6,8 @@ name: build
 #            pinned source, apply the series, gn gen, then compile every patched source
 #            file for the target. This proves the series builds without a full link.
 #   full     on demand (workflow_dispatch, mode=full) or a v* tag: the whole browser.
+#            full-build.yml does the same for Linux and then runs every local test and,
+#            optionally, the public check sites (docs/FULL-BUILD.md).
 #
 # Targets: linux-x64, linux-arm64 (cross-compiled on an x64 host, the way Chromium builds
 # Linux arm64), mac-arm64 and mac-x64 (cross-compiled on an Apple Silicon host).
@@ -56,6 +58,12 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck python3-yaml
       - name: Repository checks
         run: scripts/check-repo.sh
+      - name: SOCKS5 UDP test proxy
+        run: tools/socks5_udp_proxy.py --selftest
+      - name: Fingerprint library
+        run: |
+          tools/fingerprint_library.py check
+          tools/fingerprint_library.py selftest --binary "$(command -v google-chrome || command -v chromium)"
       - name: Self-test harness on stock Chrome
         # Stock Chrome has no persona, so persona-only checks are XFAIL; any FAIL means
         # the harness (or a check that should hold on any Chrome) is broken.
@@ -63,6 +71,8 @@ jobs:
           tools/fingerprint_selftest.py --stock --headless \
             --binary "$(command -v google-chrome || command -v chromium)" \
             --json selftest-stock.json
+      - name: Automation self-test on stock Chrome
+        run: tools/camauto_selftest.py --binary "$(command -v google-chrome || command -v chromium)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -180,9 +190,31 @@ jobs:
         if: needs.plan.outputs.mode == 'full'
         run: scripts/02-build.sh
 
+      # SOCKS5 UDP relay (973/990): build the net-level self-test and run it against the
+      # local SOCKS5 proxy in tools/. ~1,300 ninja steps on top of the compile check.
+      - name: SOCKS5 relay self-test
+        if: matrix.os == 'linux' && matrix.cpu == 'x64'
+        run: |
+          NINJA_TARGETS=socks5_udp_relay_selftest scripts/02-build.sh
+          tools/socks5_udp_proxy.py --selftest
+          tools/socks5_udp_proxy.py --run-selftest-binary build/src/out/Default/socks5_udp_relay_selftest
+
+      # Persona derivation and capture import (994): build the standalone validator (~300 ninja
+      # steps) and sweep every platform and schema, plus capture-shaped imports and refusals.
+      - name: Persona validator self-test
+        if: matrix.os == 'linux' && matrix.cpu == 'x64'
+        run: |
+          NINJA_TARGETS=components/ungoogled:persona_validator_cli scripts/02-build.sh
+          tools/fingerprint_library.py selftest --validator build/src/out/Default/persona_validator_cli
+          tools/fingerprint_library.py check --validator build/src/out/Default/persona_validator_cli
+
       - name: Persona validator
         if: needs.plan.outputs.mode == 'full' && matrix.os == 'linux' && matrix.cpu == 'x64'
-        run: build/src/out/Default/chrome --no-sandbox --clearcote-validate-persona=64
+        run: |
+          for p in "" windows macos linux android; do
+            build/src/out/Default/chrome --no-sandbox --clearcote-validate-persona=64 \
+              ${p:+--fingerprint-platform=$p}
+          done
 
       - name: Package
         if: needs.plan.outputs.mode == 'full'
