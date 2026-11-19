@@ -1,0 +1,126 @@
+camchrome: a Windows persona's fonts answer by every name, and its text lays out like DirectWrite.
+
+Clearcote audit, Windows persona on a Linux host (with 040's clone fonts installed):
+
+- "a Windows CJK font answers to its localized family name": 11 of the 15 English/localized pairs
+  DirectWrite answers to were missing (新宋体, 微軟正黑體, 游ゴシック, 맑은 고딕, ...). They are on the
+  Windows font list now and render through their English twin's clone, so both names measure
+  identically.
+- "core Windows fonts that measure as installed also load by name": local() asked the host's
+  unique-name table only. A miss now retries with the persona's clone for names on the persona
+  OS's font list (Calibri -> Carlito); other names still miss.
+- "text layout uses the font scaler of the operating system claimed": under a Windows or macOS
+  persona, text is unhinted with linear, subpixel-positioned advances, as DirectWrite and CoreText
+  lay it out; stepping the size by 0.01 px changes the width on nearly every step. Linux and
+  Android personas keep FreeType's own behaviour.
+
+--- a/third_party/blink/renderer/platform/fonts/font_cache.cc
++++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
+@@ -254,7 +254,9 @@
+       "Webdings", "Wide Latin", "Wingdings", "Wingdings 2", "Wingdings 3",
+       "Yu Gothic", "Yu Gothic Light", "Yu Gothic Medium", "Yu Gothic UI", "Yu Gothic UI Light",
+       "Yu Gothic UI Semibold",
+-      "宋体", "微软雅黑", "ＭＳ ゴシック", "ＭＳ Ｐゴシック"
++      "宋体", "微软雅黑", "ＭＳ ゴシック", "ＭＳ Ｐゴシック",
++      // camchrome (1014): the other localized CJK family names DirectWrite answers to.
++      "新宋体", "微軟正黑體", "游ゴシック", "맑은 고딕", "微软雅黑 Light", "微軟正黑體 Light", "游ゴシック Light", "游ゴシック Medium", "細明體-ExtB", "新細明體-ExtB", "細明體_HKSCS-ExtB"
+     };
+   } else if (platform == "macos") {
+     return {
+@@ -603,6 +605,18 @@
+       {"\u5b8b\u4f53", "WenQuanYi Zen Hei"}, {"\u5fae\u8f6f\u96c5\u9ed1", "WenQuanYi Zen Hei"},
+       {"\uff2d\uff33 \u30b4\u30b7\u30c3\u30af", "IPAGothic"},
+       {"\uff2d\uff33 \uff30\u30b4\u30b7\u30c3\u30af", "IPAPGothic"},
++      // camchrome (1014): each localized name renders through its English twin's clone.
++      {"新宋体", "WenQuanYi Zen Hei Mono"},
++      {"微軟正黑體", "WenQuanYi Zen Hei"},
++      {"游ゴシック", "IPAGothic"},
++      {"맑은 고딕", "WenQuanYi Zen Hei"},
++      {"微软雅黑 Light", "WenQuanYi Zen Hei"},
++      {"微軟正黑體 Light", "WenQuanYi Zen Hei"},
++      {"游ゴシック Light", "IPAGothic"},
++      {"游ゴシック Medium", "IPAGothic"},
++      {"細明體-ExtB", "WenQuanYi Zen Hei"},
++      {"新細明體-ExtB", "WenQuanYi Zen Hei"},
++      {"細明體_HKSCS-ExtB", "WenQuanYi Zen Hei"},
+       // --- Windows complex-script UI fonts: these supply the glyph ranges a fallback probe
+       // exercises (U+20B9 rupee comes from the Nirmala UI class), so map by script. ---
+       {"Nirmala UI", "Noto Sans Devanagari"},
+@@ -931,6 +945,24 @@
+   NOTREACHED();
+ }
+ 
++// camchrome (1014): the installed clone a cross-OS persona renders `name` through, for
++// local() lookups; "" when the host is the persona OS or the name is not one of its fonts.
++static std::string PersonaCloneForLocalName(const std::string& name) {
++#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++  const char* persona = ungoogled::PersonaPlatformName(ungoogled::GetPersonaPlatform());
++  if (!persona || persona[0] == 0 || std::string_view(persona) == "linux")
++    return std::string();
++  std::vector<std::string> fonts = GetPlatformFonts(persona);
++  if (!ungoogled::CurrentPersona().fonts.empty())
++    fonts = ungoogled::CurrentPersona().fonts;
++  if (!FontInListCaseInsensitive(fonts, name))
++    return std::string();
++  return MetricCompatibleSubstitute(name, "linux");
++#else
++  return std::string();
++#endif
++}
++
+ sk_sp<SkTypeface> FontCache::CreateTypefaceFromUniqueName(
+     const FontFaceCreationParams& creation_params) {
+   const AtomicString& unique_name = creation_params.Family();
+@@ -953,6 +985,19 @@
+   DCHECK(unique_name_lookup);
+   sk_sp<SkTypeface> uniquely_identified_font =
+       unique_name_lookup->MatchUniqueName(unique_name);
++  // camchrome (1014): local("Calibri") under a cross-OS persona. The family path renders a
++  // persona font through its installed clone, but local() asked the host's unique-name table
++  // only, so a font that measured as present could not be loaded by name (on Windows both
++  // come from one DirectWrite collection). Only names on the persona OS's font list map;
++  // any other name still misses, as it would on that OS.
++  if (!uniquely_identified_font && !unique_name.empty()) {
++    const std::string clone = PersonaCloneForLocalName(unique_name.Utf8());
++    if (!clone.empty()) {
++      uniquely_identified_font =
++          unique_name_lookup->MatchUniqueName(
++              String::FromUtf8(base::as_byte_span(clone)));
++    }
++  }
+   if (!uniquely_identified_font) {
+     // Do not cache misses: where the lookup table is populated asynchronously,
+     // a name that does not match yet may match once the table is ready.
+--- a/third_party/blink/renderer/platform/fonts/web_font_render_style.cc
++++ b/third_party/blink/renderer/platform/fonts/web_font_render_style.cc
+@@ -5,6 +5,7 @@
+ #include "third_party/blink/public/platform/web_font_render_style.h"
+ 
+ #include "build/build_config.h"
++#include "components/ungoogled/persona_profile.h"
+ #include "third_party/blink/renderer/platform/fonts/font_cache.h"
+ #include "third_party/blink/renderer/platform/fonts/font_description.h"
+ #include "third_party/blink/renderer/platform/web_test_support.h"
+@@ -111,6 +112,22 @@
+   font->setSubpixel(force_subpixel_positioning || use_subpixel_positioning);
+ 
+   font->setLinearMetrics(use_subpixel_positioning == 1);
++
++  // camchrome (1014): text under a Windows or macOS persona is laid out the way DirectWrite and
++  // CoreText lay it out: unhinted, subpixel-positioned, linear advances. FreeType's hinted
++  // advances move on a coarser grid, so stepping the font size by 0.01 px changed a text's
++  // width on ~63% of steps where Windows changes it on nearly every step (Clearcote audit:
++  // "text layout uses the font scaler of the operating system claimed"). Linux and Android
++  // personas keep FreeType's own behaviour, which is theirs.
++  if (ungoogled::PersonaActive()) {
++    const ungoogled::PersonaPlatform platform = ungoogled::GetPersonaPlatform();
++    if (platform == ungoogled::PersonaPlatform::kWindows ||
++        platform == ungoogled::PersonaPlatform::kMacOS) {
++      font->setHinting(SkFontHinting::kNone);
++      font->setSubpixel(true);
++      font->setLinearMetrics(true);
++    }
++  }
+ }
+ 
+ }  // namespace blink
