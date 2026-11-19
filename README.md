@@ -102,7 +102,18 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 |---|---|
 | `1000-persona-webgl-without-gpu` | a persona always has WebGL. Since Chrome 137 a host without a usable GPU (server, VM, Xvfb) gets `getContext("webgl") === null`, which no real visitor shows; a persona now opts into SwiftShader, under the persona's GPU strings, limits and extensions. With a GPU nothing changes |
 | `1001-android-persona-page-scale` | an Android persona takes Android's page-scale range (0.25 to 5), so a page without a viewport tag is zoomed out to fit (innerWidth 980, scale ~0.42) instead of scrolling sideways at scale 1; `-webkit-text-size-adjust` is honoured |
-| `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is in screen units and stays within the screen when the page is zoomed out |
+| `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is the window's height: the same in every frame, unchanged by page zoom, within the screen |
+
+### What 1003–1008 add (found by the Clearcote audit on a Linux server)
+
+| Patch | Fix |
+|---|---|
+| `1003-persona-cpu-affinity` | the persona's core count is true: on Linux the browser pins itself to as many CPUs as the persona claims before any thread pool or child process starts, so a 64-core server no longer runs 16 workers in parallel under a 6-core claim |
+| `1004-persona-webgl-no-performance-caveat` | a persona GPU does not refuse `failIfMajorPerformanceCaveat` (over SwiftShader that refusal exposed software rendering) |
+| `1005-persona-webcodecs-hardware-coherence` | WebCodecs `prefer-hardware` answers from the same persona codec table as MediaCapabilities `powerEfficient` |
+| `1006-linux-persona-and-viewport-coherence` | a Linux persona sends the empty platformVersion Chromium on Linux sends, and Mesa's GL limits next to a Mesa renderer string; `MAX_VIEWPORT_DIMS` is the persona GPU's (D3D11: 32767) |
+| `1007-windows-persona-coherence` | D3D11 renderer strings carry the 8-digit device id ANGLE prints; `ActiveText` is the Windows hotlight colour; the UA stylesheet follows the persona OS; shaders translate to HLSL under a D3D11 renderer string (966 on by default); Web Bluetooth for Windows, macOS and Android personas |
+| `1008-android-persona-platform-surface` | an Android persona has Chrome for Android's API surface (no EyeDropper, `navigator.keyboard`, `windowControlsOverlay`, Document PiP, Local Font Access, WebHID; BarcodeDetector present), rasterises at its devicePixelRatio (`--force-device-scale-factor`), and claims the Google Chrome brand by default |
 
 ## Running on a Linux server without a GPU
 
@@ -133,7 +144,14 @@ How to look like a real browser on such a host:
    `--accept-lang`, `--fingerprint-location`. A server's own IP is a datacenter IP and its
    clock is usually UTC: pixelscan reports "Timezone spoofed, Proxy detected" for stock Chrome
    there too. Use a residential proxy (`--proxy-server=socks5://… --socks5-udp`).
-5. **Known limits on SwiftShader**: WebGL `MAX_TEXTURE_SIZE` stays at SwiftShader's 8192, so
+5. **A Windows persona on a Linux host has tells the engine cannot remove**: text is rasterised
+   by FreeType (font-size stepping and anti-aliasing levels), Noto Color Emoji draws country
+   flags (Segoe UI Emoji has none), localized Windows CJK family names do not resolve, and
+   `C:/x` parses as a URL scheme. A Linux or Android persona has none of these on a Linux host;
+   use a Windows host for Windows personas.
+6. **Fullscreen** under Xvfb does not cover the screen, for stock Chrome too (even with a window
+   manager); a page that requests fullscreen sees the window keep its size.
+7. **Known limits on SwiftShader**: WebGL `MAX_TEXTURE_SIZE` stays at SwiftShader's 8192, so
    textures the page allocates really fit (a desktop D3D11 GPU would report 16384); there is
    no WebGPU adapter (as on a real GPU-less Windows VM); WebGL draws are CPU-speed. For
    pixel-exact GPU output use the canvas bridge (`--canvas-bridge-url`, 065) to a host with a GPU.
