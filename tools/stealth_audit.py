@@ -275,6 +275,7 @@ def run_audit(args) -> int:
     flags = [f"--fingerprint={args.seed}", f"--window-size={args.window_size}"]
     if args.platform != "auto":
         flags.append(f"--fingerprint-platform={args.platform}")
+    flags += args.extra_flag
     browser = None
     cdp = None
     (REPO / "build").mkdir(exist_ok=True)
@@ -328,8 +329,8 @@ def run_audit(args) -> int:
 
         result = parse_audit(text)
         (REPO / "build").mkdir(exist_ok=True)
-        out_txt = REPO / "build/stealth-audit.txt"
-        out_json = REPO / "build/stealth-audit.json"
+        out_txt = Path(args.out) if args.out else REPO / "build/stealth-audit.txt"
+        out_json = out_txt.with_suffix(".json")
         out_txt.write_text(text)
         out_json.write_text(json.dumps(result, indent=2) + "\n")
 
@@ -417,6 +418,10 @@ def main() -> int:
                         help="persona OS; auto omits --fingerprint-platform so the "
                              "host platform is used")
     parser.add_argument("--window-size", default="1280,800")
+    parser.add_argument("--extra-flag", action="append", default=[],
+                        help="extra browser switch (repeatable), e.g. --extra-flag=--fingerprint-brand=chrome")
+    parser.add_argument("--out", default=None,
+                        help="where to write the full result (default build/stealth-audit.txt)")
     parser.add_argument("--audit-url", default=DEFAULT_AUDIT)
     parser.add_argument("--timeout", type=float, default=600,
                         help="seconds to wait for the audit to finish")

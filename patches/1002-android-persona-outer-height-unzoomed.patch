@@ -1,30 +1,28 @@
-camchrome: an Android persona's outerHeight is in screen units, whatever the page zoom.
+camchrome: an Android persona's outerHeight is the window's height, in every frame and at every zoom.
 
-140 made a phone's outerHeight equal innerHeight (no desktop window chrome). innerHeight is in
-CSS pixels at the current page scale, so once a page without a viewport tag is zoomed out to fit
-(1001), innerHeight grows to ~2.5x the screen and outerHeight followed it: a window taller than
-its screen (fingerprint_selftest window-fits-screen). On a phone outerHeight is the window's height
-in DIPs and does not change with zoom; it is now innerHeight times the page scale, capped at the
-screen height, which is what 992 already does for outerWidth.
+140 made a phone's outerHeight equal innerHeight. innerHeight is per frame and in CSS pixels at
+the current page scale, so an iframe reported its own height (Clearcote audit: "a frame reports the
+browser window's outer size, not its own") and a page zoomed out to fit (1001) reported a window
+~2.5x taller than its screen (fingerprint_selftest window-fits-screen). outerHeight is now the
+window's height (ChromeClient::RootWindowRect, as stock Chrome reports it, the same for every
+frame), capped at the persona screen height like 992's outerWidth.
 
 --- a/third_party/blink/renderer/core/frame/local_dom_window.cc
 +++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
-@@ -1771,8 +1771,19 @@
+@@ -1771,8 +1771,17 @@
    if (PersonaWindowActive()) {
      // clearcote: a phone browser has no desktop window chrome, so outerHeight
      // equals innerHeight (no tab/url delta).
 -    if (ungoogled::CurrentPersona().mobile)
 -      return innerHeight();
 +    if (ungoogled::CurrentPersona().mobile) {
-+      // camchrome (1002): in screen units, as on a phone, not CSS pixels at the current
-+      // page scale. A page zoomed out to fit (1001) has innerHeight ~2.5x the screen;
-+      // outerHeight stays the window's height, like 992's outerWidth.
++      // camchrome (1002): the window's height in screen units, the same in every frame and
++      // at every page zoom, as on a phone. innerHeight is per frame (an iframe reported its
++      // own 150 px) and in CSS pixels at the page scale (a page zoomed out to fit, 1001,
++      // reported ~2.5x the screen). Capped at the screen, like 992's outerWidth.
 +      Page* page = GetFrame()->GetPage();
-+      const float scale =
-+          page && GetFrame()->IsOutermostMainFrame()
-+              ? page->GetVisualViewport().Scale()
-+              : 1.f;
-+      int oh = static_cast<int>(innerHeight() * (scale > 0 ? scale : 1.f) + 0.5f);
++      int oh = page ? page->GetChromeClient().RootWindowRect(*GetFrame()).height()
++                    : innerHeight();
 +      const int sh = static_cast<int>(ungoogled::CurrentPersona().screen_height);
 +      return sh > 0 && oh > sh ? sh : oh;
 +    }

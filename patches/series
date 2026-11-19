@@ -77,3 +77,9 @@
 1000-persona-webgl-without-gpu.patch
 1001-android-persona-page-scale.patch
 1002-android-persona-outer-height-unzoomed.patch
+1003-persona-cpu-affinity.patch
+1004-persona-webgl-no-performance-caveat.patch
+1005-persona-webcodecs-hardware-coherence.patch
+1006-linux-persona-and-viewport-coherence.patch
+1007-windows-persona-coherence.patch
+1008-android-persona-platform-surface.patch

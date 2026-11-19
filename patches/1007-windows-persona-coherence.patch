@@ -1,0 +1,159 @@
+camchrome: a Windows persona on a Linux host reads as Windows where the engine can make it.
+
+Clearcote audit findings under a Windows persona on a Linux x64 host:
+
+- Renderer strings: ANGLE's D3D11 backend prints the DXGI device id zero-padded to 8 hex digits
+  (0x0000A780), never 0xA780, and prints it for NVIDIA too (RTX 3060: 0x00002504).
+- ActiveText is the Windows hotlight colour, rgb(0, 102, 204), not Chromium's red.
+- The UA stylesheet follows the persona OS: linux.css (a <select> painted ButtonFace) only for
+  Linux; Windows and macOS add nothing; Android adds android.css as LayoutThemeMobile does.
+- getTranslatedShaderSource answers in HLSL under a Direct3D 11 renderer string: the browser sets
+  966's CLEARCOTE_SHADER_DIALECT=hlsl opt-in for a Windows persona (an explicit value is kept).
+- Web Bluetooth is exposed for Windows, macOS and Android personas, where Chrome ships it.
+
+Not fixable on a Linux host and left as they are: text goes through FreeType (font-scaler and
+anti-aliasing probes), Noto Color Emoji draws flags, localized Windows CJK family names do not
+resolve, and "C:/x" parses as a URL scheme. Use a Linux or Android persona on a Linux host.
+
+--- a/components/ungoogled/persona_profile.cc
++++ b/components/ungoogled/persona_profile.cc
+@@ -268,11 +268,12 @@
+ 
+ constexpr std::array<WeightedEntry<WebGLGPU>, 3> kWebGLGPUs = {{
+     {{"Google Inc. (Intel)",
+-      "ANGLE (Intel, Intel(R) UHD Graphics 770 (0xA780) Direct3D11 vs_5_0 "
++      "ANGLE (Intel, Intel(R) UHD Graphics 770 (0x0000A780) Direct3D11 vs_5_0 "
+       "ps_5_0, D3D11)"},
+      0.50},
+     {{"Google Inc. (NVIDIA)",
+-      "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"},
++      "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 "
++      "ps_5_0, D3D11)"},
+      0.35},
+     {{"Google Inc. (AMD)",
+       "ANGLE (AMD, AMD Radeon(TM) Graphics (0x000015D8) Direct3D11 vs_5_0 "
+--- a/third_party/blink/renderer/core/layout/layout_theme.cc
++++ b/third_party/blink/renderer/core/layout/layout_theme.cc
+@@ -21,6 +21,8 @@
+ 
+ #include "third_party/blink/renderer/core/layout/layout_theme.h"
+ 
++#include "components/ungoogled/persona_profile.h"
++
+ #include "build/build_config.h"
+ #include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
+ #include "third_party/blink/public/resources/grit/blink_resources.h"
+@@ -77,6 +79,13 @@
+ 
+ namespace blink {
+ 
++namespace {
++bool PersonaIsWindows() {
++  return ungoogled::PersonaActive() &&
++         ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kWindows;
++}
++}  // namespace
++
+ using mojom::blink::FormControlType;
+ 
+ namespace {
+@@ -659,6 +668,9 @@
+                  ? GetAccentColorText(color_scheme, can_expose_accent_color)
+                  : Color();
+     case CSSValueID::kActivetext:
++      // camchrome (1007): on Windows ActiveText is the system hotlight colour.
++      if (PersonaIsWindows())
++        return Color::FromRGBA32(0xFF0066CC);
+       return Color::FromRGBA32(0xFFFF0000);
+     case CSSValueID::kButtonborder:
+     // The following system colors were deprecated to default to ButtonBorder.
+@@ -798,7 +810,9 @@
+   switch (css_value_id) {
+     case CSSValueID::kActivetext:
+       system_theme_color =
+-          color_provider->GetColor(ui::kColorCssSystemActiveText);
++          PersonaIsWindows()
++              ? SkColorSetRGB(0x00, 0x66, 0xCC)  // camchrome (1007): hotlight
++              : color_provider->GetColor(ui::kColorCssSystemActiveText);
+       break;
+     case CSSValueID::kButtonface:
+     case CSSValueID::kButtonhighlight:
+--- a/third_party/blink/renderer/core/layout/layout_theme_linux.cc
++++ b/third_party/blink/renderer/core/layout/layout_theme_linux.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "third_party/blink/renderer/core/layout/layout_theme_linux.h"
+ 
++#include "components/ungoogled/persona_profile.h"
+ #include "third_party/blink/public/resources/grit/blink_resources.h"
+ #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
+ #include "third_party/blink/renderer/platform/data_resource_helper.h"
+@@ -20,6 +21,24 @@
+ }
+ 
+ String LayoutThemeLinux::ExtraDefaultStyleSheet() {
++  // camchrome (1007): the UA stylesheet of the persona OS. linux.css (a <select> painted as a
++  // ButtonFace button) is Linux's alone: Windows and macOS add nothing to the default sheet,
++  // and Android adds android.css on top of it (LayoutThemeMobile).
++  if (ungoogled::PersonaActive()) {
++    switch (ungoogled::GetPersonaPlatform()) {
++      case ungoogled::PersonaPlatform::kWindows:
++      case ungoogled::PersonaPlatform::kMacOS:
++        return LayoutThemeDefault::ExtraDefaultStyleSheet();
++      case ungoogled::PersonaPlatform::kAndroid:
++        return StrCat(
++            {LayoutThemeDefault::ExtraDefaultStyleSheet(),
++             UncompressResourceAsASCIIString(IDR_UASTYLE_THEME_CHROMIUM_LINUX_CSS),
++             UncompressResourceAsASCIIString(
++                 IDR_UASTYLE_THEME_CHROMIUM_ANDROID_CSS)});
++      default:
++        break;
++    }
++  }
+   String stylesheet = StrCat(
+       {LayoutThemeDefault::ExtraDefaultStyleSheet(),
+        UncompressResourceAsASCIIString(IDR_UASTYLE_THEME_CHROMIUM_LINUX_CSS)});
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -1227,6 +1227,17 @@
+   }
+ #endif
+ 
++  // camchrome (1007): a Direct3D 11 renderer string translates shaders to HLSL. 966 can answer
++  // getTranslatedShaderSource in that dialect on a non-D3D host but reads its opt-in from the
++  // environment (the GPU process gets no fingerprint switches); set it before any child starts.
++  // An explicit CLEARCOTE_SHADER_DIALECT is left as it is.
++  if (ungoogled::PersonaActive() &&
++      ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kWindows &&
++      !ungoogled::CurrentPersona().webgl_real &&
++      ungoogled::CurrentPersona().webgl_renderer.find("Direct3D11") != std::string::npos) {
++    setenv("CLEARCOTE_SHADER_DIALECT", "hlsl", /*overwrite=*/0);
++  }
++
+ #if BUILDFLAG(IS_CHROMEOS)
+   ash::BootTimesRecorder::Get()->SaveChromeMainStats();
+ #endif
+--- a/content/child/runtime_features.cc
++++ b/content/child/runtime_features.cc
+@@ -457,6 +457,21 @@
+     WebRuntimeFeatures::EnableOverlayScrollbars(true);
+     WebRuntimeFeatures::EnableFluentScrollbars(false);
+   }
++  // camchrome (1007): Chrome ships Web Bluetooth on Windows, macOS and Android, and on Linux
++  // only behind a flag. A persona of those OSes without navigator.bluetooth (next to WebUSB,
++  // Web Serial and WebHID) is a Linux host showing through. With no adapter getAvailability()
++  // resolves false and requestDevice() rejects, as on a PC without Bluetooth.
++  if (ungoogled::PersonaActive()) {
++    switch (ungoogled::GetPersonaPlatform()) {
++      case ungoogled::PersonaPlatform::kWindows:
++      case ungoogled::PersonaPlatform::kMacOS:
++      case ungoogled::PersonaPlatform::kAndroid:
++        WebRuntimeFeatures::EnableWebBluetooth(true);
++        break;
++      default:
++        break;
++    }
++  }
+ #if BUILDFLAG(IS_ANDROID)
+   WebRuntimeFeatures::EnableAudioOutputDevices(
+       base::FeatureList::IsEnabled(features::kAAudioPerStreamDeviceSelection) &&

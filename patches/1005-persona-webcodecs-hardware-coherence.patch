@@ -1,0 +1,57 @@
+camchrome: WebCodecs prefer-hardware agrees with MediaCapabilities powerEfficient.
+
+Both answers come from Chrome's GPU decoder check. 147 answers MediaCapabilities from the
+persona's codec table, while VideoDecoder.isConfigSupported({hardwareAcceleration:
+"prefer-hardware"}) still asked the host, which on a machine without hardware decoders said
+unsupported next to powerEfficient true (Clearcote audit: "MediaCapabilities powerEfficient
+agrees with WebCodecs prefer-hardware"). Under a persona, prefer-hardware support for the
+codecs in the persona's table is that table's supported && powerEfficient.
+
+--- a/third_party/blink/renderer/modules/webcodecs/video_decoder.cc
++++ b/third_party/blink/renderer/modules/webcodecs/video_decoder.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "third_party/blink/renderer/modules/webcodecs/video_decoder.h"
+ 
++#include "components/ungoogled/persona_profile.h"
++
+ #include <algorithm>
+ #include <utility>
+ #include <vector>
+@@ -11,6 +13,7 @@
+ #include "base/containers/span.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/time/time.h"
++#include "media/base/video_codecs.h"
+ #include "media/base/decoder_buffer.h"
+ #include "media/base/limits.h"
+ #include "media/base/media_util.h"
+@@ -320,6 +323,28 @@
+     return ToResolvedPromise<VideoDecoderSupport>(script_state, support);
+   }
+ 
++  // camchrome (1005): MediaCapabilities' powerEfficient and WebCodecs' prefer-hardware both
++  // read Chrome's GPU decoder check. The persona answers MediaCapabilities from its own codec
++  // table (147), so answer prefer-hardware from the same table; on a host without hardware
++  // decoders the real check said "unsupported" next to powerEfficient true.
++  if (hw_pref == HardwarePreference::kPreferHardware && ungoogled::PersonaActive()) {
++    const char* key = nullptr;
++    switch (video_type->codec) {
++      case media::VideoCodec::kH264: key = "h264"; break;
++      case media::VideoCodec::kVP8: key = "vp8"; break;
++      case media::VideoCodec::kVP9: key = "vp9"; break;
++      case media::VideoCodec::kAV1: key = "av1"; break;
++      case media::VideoCodec::kHEVC: key = "hevc"; break;
++      default: break;
++    }
++    const auto& codecs = ungoogled::CurrentPersona().media_codecs;
++    auto it = key ? codecs.find(key) : codecs.end();
++    if (it != codecs.end()) {
++      support->setSupported(it->second.supported && it->second.power_efficient);
++      return ToResolvedPromise<VideoDecoderSupport>(script_state, support);
++    }
++  }
++
+   // If hardware is preferred, asynchronously check for a hardware decoder.
+   if (hw_pref == HardwarePreference::kPreferHardware) {
+     auto* resolver =
