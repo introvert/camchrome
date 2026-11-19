@@ -14,7 +14,7 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 | ungoogled-chromium base (Linux, Windows) | Chromium `158.0.8127.36` | pinned in `UPSTREAM` to the head of ungoogled-chromium [PR #4050](https://github.com/ungoogled-software/ungoogled-chromium/pull/4050) ("Update to Chromium 158.0.8127.36"; not tagged yet). Move the pin to the `158.0.8127.36-1` tag when it is published |
 | ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | no 158 overlay yet; macOS stays on 157 until ungoogled-chromium-macos tags 158 |
 | Fingerprint patches (`patches/`) | 88 patches | Linux x64 and arm64 built on 158 (official ThinLTO+PGO; arm64 cross-compiled); on Linux x64 every local self-test passes for Linux, Windows, macOS and Android personas (fingerprint 52/56/54/60, UA 12, network 17) and the Clearcote audit was run (see below). macOS arm64 was built and audited on 157 |
-| Clearcote stealth audit | 365 checks | **100/100 · 236/236 scored checks agree · 0 findings** |
+| Clearcote stealth audit | 365 checks | 158 Linux x64, no GPU (`tools/persona_display.py`): **Linux persona 100/100** (one finding, the same one stock Chrome 158 gets on that host), **Android persona 100/100 (206/206)**, Windows persona 98/100 (four Linux-host text-rendering tells). 157 macOS arm64: 100/100 |
 
 The current release is Chromium `158.0.8127.36` for Linux x64 and arm64 (Google Chrome stable on
 Linux is 158; Windows and macOS stable moved to 159 on 2026-11-18). ungoogled-chromium has not

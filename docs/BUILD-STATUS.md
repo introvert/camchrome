@@ -1,14 +1,18 @@
 # Build status per platform
 
-As of 2026-11-17, Chromium `157.0.8103.78`, ungoogled `157.0.8103.78-1`.
+As of 2026-11-19, Chromium `158.0.8127.36` (ungoogled-chromium PR #4050 head `76f39e0`, Windows
+overlay `157.0.8103.78-1.1`), 88 patches.
 
-| Target | Patches apply | `gn gen` | Patched files compile | Full build links | Audit | Where verified |
+| Target | Patches apply | `gn gen` | Full build links | Local tests | Clearcote audit | Where verified |
 |---|---|---|---|---|---|---|
-| mac-arm64 | ✅ 64/64 (900/905 skipped) | ✅ | ✅ | ✅ `Chromium.app` | ✅ 100/100 | macOS 26.1, 10-core M-series, 24 GB (NOTES.md) |
-| linux-x64 | ✅ 76/76 | ✅ | ✅ 113/113 (7,817 steps, 2026-11-18); 998/999 files rebuilt 2026-11-19 | not attempted | not run; persona validator 40/40 and 5,000 personas with 0 errors and (since 998) 0 warnings, relay self-test 15/15 | Ubuntu 24.04 container, 4 cores, 15 GB RAM |
-| linux-arm64 | ✅ | ✅ | ✅ | ✅ official ThinLTO+PGO | not run (self-tests: fingerprint 49/49 Linux, 51/51 Windows, 55/55 Android persona; UA 12/12; network 17/17) | native arm64 container, 2026-11-18 (commit `fa445b6`) |
-| mac-x64 | same source as arm64 | CI | CI | CI (`mode=full`) | — | `.github/workflows/build.yml`, cross-compiled from arm64 |
+| linux-x64 | ✅ 88/88 | ✅ | ✅ official ThinLTO+PGO | fingerprint 52/57/59/56/61 (host, Linux, Windows, macOS, Android persona), UA 12/12, network 17/17, validator 2,500 personas 0 errors 0 warnings | Linux 100/100 (the one finding stock Chrome 158 also gets), Android 100/100 (206/206), Windows 98/100 (Linux-host text rendering only) | Ubuntu 24.04 container on a 64-core x64 server, no GPU, Xvfb + openbox via `tools/persona_display.py` |
+| linux-arm64 | ✅ 88/88 | ✅ | ✅ official ThinLTO (no PGO), cross-compiled from x64 | not run (same source as x64; x64 results apply) | not run | same server |
+| mac-arm64 | 157 only | — | 157 ✅ | — | 157: 100/100 | no 158 macOS overlay yet |
+| mac-x64 | 157 only | — | — | — | — | — |
 | windows-x64 | not ported | — | — | — | — | needs Clearcote's xwin setup |
+
+The 157 tree (`v157.0.8103.78-camchrome.2`) and its Linux x64 build were used to develop
+1000-1011; the same patches regenerated against 158 apply with no fuzz to a fresh 158 tree.
 
 "CI" means the workflow does it but it had not run yet when this was written: the branch
 was pushed with this review, so the first run is on the pull request.
