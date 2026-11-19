@@ -1,0 +1,107 @@
+camchrome: Windows persona text metrics and anti-aliasing in every process; local() by full name.
+
+1014/1015 did not reach the audit's numbers:
+- Font-size stepping still changed the width on ~60% of 0.01 px steps: FreeType sets the size in
+  26.6 fixed point (1/64 px), so linear advances move in steps whatever the hinting. Under a
+  Windows persona Skia's FreeType scaler now takes advances from design units scaled by the
+  exact float size, as DirectWrite computes them (CAMCHROME_FT_FLOAT_ADVANCES).
+- The anti-aliasing ladder was set in the renderer only, while an accelerated canvas's glyphs
+  are rasterised in the GPU process, which gets no fingerprint switches. The browser now sets
+  CAMCHROME_FT_COVERAGE_LEVELS=16 before any child starts, and Skia reads it in every process.
+- local() looked the clone up by its family name; unique names are the full and PostScript
+  names ("Carlito Regular", "Carlito-Regular"), which are tried now.
+
+--- a/third_party/skia/src/ports/SkFontHost_FreeType.cpp
++++ b/third_party/skia/src/ports/SkFontHost_FreeType.cpp
+@@ -47,12 +47,31 @@
+ #include <array>
+ #include <memory>
+ #include <atomic>
++#include <cstdlib>
+ 
+ // camchrome (1015): glyph coverage levels for 8-bit masks (0 = FreeType's own).
+ namespace {
+ std::atomic<int> gSkFreeTypeCoverageLevels{0};
+ int SkFreeTypeCoverageLevels() {
+-    return gSkFreeTypeCoverageLevels.load(std::memory_order_relaxed);
++    // camchrome (1018): or from CAMCHROME_FT_COVERAGE_LEVELS, which the browser sets for a
++    // Windows persona before any child process starts; the GPU process, which rasterises the
++    // glyphs of an accelerated canvas, gets no fingerprint switches.
++    static const int kFromEnv = [] {
++        const char* v = getenv("CAMCHROME_FT_COVERAGE_LEVELS");
++        return v ? atoi(v) : 0;
++    }();
++    const int set = gSkFreeTypeCoverageLevels.load(std::memory_order_relaxed);
++    return set ? set : kFromEnv;
++}
++
++// camchrome (1018): advances from design units scaled by the exact float size, as DirectWrite
++// computes them, instead of FreeType's linear advance at a size quantized to 1/64 px (26.6).
++bool SkFreeTypeFloatAdvances() {
++    static const bool kOn = [] {
++        const char* v = getenv("CAMCHROME_FT_FLOAT_ADVANCES");
++        return v && v[0] == '1';
++    }();
++    return kOn;
+ }
+ }  // namespace
+ 
+@@ -1394,7 +1413,16 @@
+         }
+     } else {
+         if (fDoLinearMetrics) {
+-            const SkScalar advanceScalar = SkFT_FixedToScalar(fFace->glyph->linearHoriAdvance);
++            SkScalar advanceScalar = SkFT_FixedToScalar(fFace->glyph->linearHoriAdvance);
++            // camchrome (1018): see SkFreeTypeFloatAdvances(). Stepping a font size by 0.01 px
++            // then changes a text's width on nearly every step, as on Windows.
++            if (SkFreeTypeFloatAdvances() && fFace->units_per_EM > 0) {
++                FT_Fixed units = 0;
++                if (FT_Get_Advance(fFace, glyph.getGlyphID(),
++                                   FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING, &units) == 0) {
++                    advanceScalar = SkIntToScalar(units) * fScale.fX / fFace->units_per_EM;
++                }
++            }
+             mx.advance.fX = fMatrix22Scalar.getScaleX() * advanceScalar;
+             mx.advance.fY = fMatrix22Scalar.getSkewY() * advanceScalar;
+         } else {
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -1248,6 +1248,15 @@
+     setenv("CLEARCOTE_SHADER_DIALECT", "hlsl", /*overwrite=*/0);
+   }
+ 
++  // camchrome (1018): text as DirectWrite renders it, in every process (the GPU process
++  // rasterises an accelerated canvas's glyphs and gets no fingerprint switches): float
++  // design-unit advances, and the coarse grayscale anti-aliasing ladder (16 levels).
++  if (persona_browser_process && ungoogled::PersonaActive() &&
++      ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kWindows) {
++    setenv("CAMCHROME_FT_FLOAT_ADVANCES", "1", /*overwrite=*/0);
++    setenv("CAMCHROME_FT_COVERAGE_LEVELS", "16", /*overwrite=*/0);
++  }
++
+   // camchrome (1008): browser-process defaults that make a persona true rather than reported.
+   // Children copy both switches from the browser's command line.
+   if (persona_browser_process && ungoogled::PersonaActive()) {
+--- a/third_party/blink/renderer/platform/fonts/font_cache.cc
++++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
+@@ -1085,9 +1085,17 @@
+   if (!uniquely_identified_font && !unique_name.empty()) {
+     const std::string clone = PersonaCloneForLocalName(unique_name.Utf8());
+     if (!clone.empty()) {
+-      uniquely_identified_font =
+-          unique_name_lookup->MatchUniqueName(
+-              String::FromUtf8(base::as_byte_span(clone)));
++      // camchrome (1018): a font's unique names are its full name and PostScript name,
++      // e.g. "Carlito Regular" / "Carlito-Regular", not the bare family.
++      std::string compact = clone;
++      compact.erase(std::remove(compact.begin(), compact.end(), ' '), compact.end());
++      for (const std::string& candidate :
++           {clone, clone + " Regular", compact + "-Regular", compact}) {
++        uniquely_identified_font = unique_name_lookup->MatchUniqueName(
++            String::FromUtf8(base::as_byte_span(candidate)));
++        if (uniquely_identified_font)
++          break;
++      }
+     }
+   }
+   if (!uniquely_identified_font) {
