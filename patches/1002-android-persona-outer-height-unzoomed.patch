@@ -1,0 +1,33 @@
+camchrome: an Android persona's outerHeight is in screen units, whatever the page zoom.
+
+140 made a phone's outerHeight equal innerHeight (no desktop window chrome). innerHeight is in
+CSS pixels at the current page scale, so once a page without a viewport tag is zoomed out to fit
+(1001), innerHeight grows to ~2.5x the screen and outerHeight followed it: a window taller than
+its screen (fingerprint_selftest window-fits-screen). On a phone outerHeight is the window's height
+in DIPs and does not change with zoom; it is now innerHeight times the page scale, capped at the
+screen height, which is what 992 already does for outerWidth.
+
+--- a/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
+@@ -1772,8 +1772,19 @@
+   if (PersonaWindowActive()) {
+     // clearcote: a phone browser has no desktop window chrome, so outerHeight
+     // equals innerHeight (no tab/url delta).
+-    if (ungoogled::CurrentPersona().mobile)
+-      return innerHeight();
++    if (ungoogled::CurrentPersona().mobile) {
++      // camchrome (1002): in screen units, as on a phone, not CSS pixels at the current
++      // page scale. A page zoomed out to fit (1001) has innerHeight ~2.5x the screen;
++      // outerHeight stays the window's height, like 992's outerWidth.
++      Page* page = GetFrame()->GetPage();
++      const float scale =
++          page && GetFrame()->IsOutermostMainFrame()
++              ? page->GetVisualViewport().Scale()
++              : 1.f;
++      int oh = static_cast<int>(innerHeight() * (scale > 0 ? scale : 1.f) + 0.5f);
++      const int sh = static_cast<int>(ungoogled::CurrentPersona().screen_height);
++      return sh > 0 && oh > sh ? sh : oh;
++    }
+     // clearcote(#12): the frame delta must be the REAL one, not a constant.
+     //
+     // A pointer event's screenY is derived from the true viewport origin, and is

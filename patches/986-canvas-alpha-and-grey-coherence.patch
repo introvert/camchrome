@@ -2,7 +2,7 @@ diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
 index b0af835803..2b43ed98a8 100644
 --- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
 +++ b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
-@@ -233,12 +233,26 @@ void StaticBitmapImage::ShuffleSubchannelColorData(const void *addr, const SkIma
+@@ -233,12 +233,26 @@
          continue;
        }
        // Alpha is never touched -- a changed alpha is visible, not sub-perceptual.

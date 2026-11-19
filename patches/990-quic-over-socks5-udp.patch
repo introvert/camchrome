@@ -52,7 +52,7 @@ diff --git a/content/browser/service_host/utility_process_host.cc b/content/brow
 index 74dba0892c..fe3ea573b3 100644
 --- a/content/browser/service_host/utility_process_host.cc
 +++ b/content/browser/service_host/utility_process_host.cc
-@@ -423,6 +423,8 @@ bool UtilityProcessHost::StartProcess() {
+@@ -423,6 +423,8 @@
        // socket factory lives there), so without forwarding them the feature silently
        // does nothing and looks like a proxy that refuses UDP.
        "socks5-udp",
@@ -61,11 +61,9 @@ index 74dba0892c..fe3ea573b3 100644
        "proxy-server",
        network::switches::kAdditionalTrustTokenKeyCommitments,
        network::switches::kForceEffectiveConnectionType,
-diff --git a/net/BUILD.gn b/net/BUILD.gn
-index d89fbe94b3..565373a71c 100644
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -1063,6 +1063,8 @@ component("net") {
+@@ -1067,6 +1067,8 @@
      "socket/socket_tag.h",
      "socket/socks5_client_socket.cc",
      "socket/socks5_client_socket.h",
@@ -74,7 +72,7 @@ index d89fbe94b3..565373a71c 100644
      "socket/socks5_udp_socket.cc",
      "socket/socks5_udp_socket.h",
      "socket/socks_client_socket.cc",
-@@ -4570,3 +4572,14 @@ executable("socks5_udp_smoke") {
+@@ -4601,3 +4603,14 @@
      "//base",
    ]
  }
@@ -89,8 +87,6 @@ index d89fbe94b3..565373a71c 100644
 +    "//base",
 +  ]
 +}
-diff --git a/net/http/http_network_session.cc b/net/http/http_network_session.cc
-index 05fc047000..41a0966852 100644
 --- a/net/http/http_network_session.cc
 +++ b/net/http/http_network_session.cc
 @@ -4,6 +4,8 @@
@@ -102,7 +98,7 @@ index 05fc047000..41a0966852 100644
  #include <inttypes.h>
  
  #include <utility>
-@@ -397,7 +399,9 @@ bool HttpNetworkSession::ShouldForceQuic(const url::SchemeHostPort& destination,
+@@ -397,7 +399,9 @@
    }
    // If a proxy is being used, the last proxy in the chain must be QUIC if we
    // are to use QUIC on top of it.
@@ -113,8 +109,6 @@ index 05fc047000..41a0966852 100644
      return false;
    }
    return OriginToForceQuicOnInternal(*context_.quic_context->params(),
-diff --git a/net/http/http_stream_factory_job.cc b/net/http/http_stream_factory_job.cc
-index f6c684a247..e16fa8a152 100644
 --- a/net/http/http_stream_factory_job.cc
 +++ b/net/http/http_stream_factory_job.cc
 @@ -42,6 +42,7 @@
@@ -125,7 +119,7 @@ index f6c684a247..e16fa8a152 100644
  #include "net/quic/bidirectional_stream_quic_impl.h"
  #include "net/quic/quic_http_stream.h"
  #include "net/quic/quic_session_key.h"
-@@ -739,8 +740,11 @@ int HttpStreamFactory::Job::DoInitConnection() {
+@@ -739,8 +740,11 @@
  int HttpStreamFactory::Job::DoInitConnectionImpl() {
    DCHECK(!connection_->is_initialized());
  
@@ -138,7 +132,7 @@ index f6c684a247..e16fa8a152 100644
      // QUIC can not be spoken to non-QUIC proxies.  This error should not be
      // user visible, because the non-alternative Job should be resumed.
      return ERR_NO_SUPPORTED_PROXIES;
-@@ -865,7 +869,8 @@ int HttpStreamFactory::Job::DoInitConnectionImplQuic() {
+@@ -865,7 +869,8 @@
        (job_type_ == DNS_ALPN_H3) || (job_type_ == PRECONNECT_DNS_ALPN_H3);
  
    ProxyChain proxy_chain = proxy_info_.proxy_chain();
@@ -148,11 +142,9 @@ index f6c684a247..e16fa8a152 100644
      // We only support proxying QUIC over QUIC. While MASQUE defines mechanisms
      // to carry QUIC traffic over non-QUIC proxies, the performance of these
      // mechanisms would be worse than simply using H/1 or H/2 to reach the
-diff --git a/net/quic/quic_chromium_client_session.cc b/net/quic/quic_chromium_client_session.cc
-index fb776e028e..74cd32d6a7 100644
 --- a/net/quic/quic_chromium_client_session.cc
 +++ b/net/quic/quic_chromium_client_session.cc
-@@ -3611,6 +3611,12 @@ void QuicChromiumClientSession::MaybeStartProbing(
+@@ -3563,6 +3563,12 @@
  
  void QuicChromiumClientSession::CreateContextForMultiPortPath(
      std::unique_ptr<quic::MultiPortPathContextObserver> context_observer) {
@@ -165,8 +157,6 @@ index fb776e028e..74cd32d6a7 100644
    // Create and configure socket on default network
    // TODO(crbug.com/518753285): Once we no longer bindToNetwork via
    // `ConnectAndConfigureSocket`, bind the socket via this `CreateSocket` call,
-diff --git a/net/quic/quic_session_pool.cc b/net/quic/quic_session_pool.cc
-index 15841a5a8a..e85c85fe16 100644
 --- a/net/quic/quic_session_pool.cc
 +++ b/net/quic/quic_session_pool.cc
 @@ -4,6 +4,8 @@
@@ -178,7 +168,7 @@ index 15841a5a8a..e85c85fe16 100644
  #include <algorithm>
  #include <memory>
  #include <optional>
-@@ -990,11 +992,17 @@ int QuicSessionPool::RequestSession(
+@@ -990,11 +992,17 @@
    QuicConnectionReuseDetails quic_connection_reuse_details =
        DetermineQuicConnectionReuseDetails(session_key);
  
@@ -198,7 +188,7 @@ index 15841a5a8a..e85c85fe16 100644
        job = std::make_unique<AsyncDnsJob>(
            this, quic_version, host_resolver_, std::move(key),
            CreateCryptoConfigHandle(QuicCryptoClientConfigKey(session_key)),
-@@ -1474,6 +1482,21 @@ std::unique_ptr<DatagramClientSocket> QuicSessionPool::CreateSocket(
+@@ -1474,6 +1482,21 @@
    return socket;
  }
  
@@ -220,7 +210,7 @@ index 15841a5a8a..e85c85fe16 100644
  void QuicSessionPool::OnIPAddressChanged(
      NetworkChangeNotifier::IPAddressChangeType change_type) {
    net_log_.AddEvent(NetLogEventType::QUIC_SESSION_POOL_ON_IP_ADDRESS_CHANGED);
-@@ -2194,8 +2217,9 @@ int QuicSessionPool::CreateSessionSync(
+@@ -2194,8 +2217,9 @@
    *session = nullptr;
    // TODO(crbug.com/40256842): This logic only knows how to try one IP
    // endpoint.
@@ -232,7 +222,7 @@ index 15841a5a8a..e85c85fe16 100644
  
    // If migrate_sessions_on_network_change_v2 is on, passing in
    // handles::kInvalidNetworkHandle will bind the socket to the default network.
-@@ -2247,8 +2271,9 @@ int QuicSessionPool::CreateSessionAsync(
+@@ -2247,8 +2271,9 @@
      std::optional<ConnectionManagementConfig> connection_management_config) {
    // TODO(crbug.com/40256842): This logic only knows how to try one IP
    // endpoint.
@@ -244,11 +234,9 @@ index 15841a5a8a..e85c85fe16 100644
    DatagramClientSocket* socket_ptr = socket.get();
    ConnectAndConfigureCallback connect_and_configure_callback = base::BindOnce(
        [](CompletionOnceCallback cb, int rv,
-diff --git a/net/quic/quic_session_pool.h b/net/quic/quic_session_pool.h
-index aec9c649cc..05b6447d67 100644
 --- a/net/quic/quic_session_pool.h
 +++ b/net/quic/quic_session_pool.h
-@@ -516,6 +516,13 @@ class NET_EXPORT_PRIVATE QuicSessionPool
+@@ -516,6 +516,13 @@
        NetLog* net_log,
        const NetLogSource& source);
  
@@ -262,8 +250,6 @@ index aec9c649cc..05b6447d67 100644
    // NetworkChangeNotifier::IPAddressObserver methods:
  
    // Until the servers support roaming, close all connections when the local
-diff --git a/net/quic/quic_session_pool_direct_job.cc b/net/quic/quic_session_pool_direct_job.cc
-index fe50a96087..9eb117319b 100644
 --- a/net/quic/quic_session_pool_direct_job.cc
 +++ b/net/quic/quic_session_pool_direct_job.cc
 @@ -19,6 +19,7 @@
@@ -274,7 +260,7 @@ index fe50a96087..9eb117319b 100644
  #include "net/spdy/multiplexed_session_creation_initiator.h"
  #include "net/ssl/ssl_config_service.h"
  #include "net/third_party/quiche/src/quiche/quic/core/quic_versions.h"
-@@ -132,9 +133,50 @@ int QuicSessionPool::DirectJob::DoLoop(int rv) {
+@@ -132,9 +133,50 @@
    return rv;
  }
  
@@ -325,7 +311,7 @@ index fe50a96087..9eb117319b 100644
    io_state_ = STATE_RESOLVE_HOST_COMPLETE;
  
    HostResolver::ResolveHostParameters parameters;
-@@ -168,9 +210,8 @@ int QuicSessionPool::DirectJob::DoResolveHostComplete(int rv) {
+@@ -168,9 +210,8 @@
    // provides new IP endpoints. Iterate through them to check if we
    // can perform cross-origin IP pooling with an existing session, which will
    // set up a session alias, if found.
@@ -337,7 +323,7 @@ index fe50a96087..9eb117319b 100644
      // Only consider endpoints that would have been eligible for QUIC.
      quic::ParsedQuicVersion endpoint_quic_version = pool_->SelectQuicVersion(
          quic_version_, endpoint.metadata, svcb_optional);
-@@ -178,8 +219,7 @@ int QuicSessionPool::DirectJob::DoResolveHostComplete(int rv) {
+@@ -178,8 +219,7 @@
        continue;
      }
      if (pool_->HasMatchingIpSession(key_, endpoint.ip_endpoints,
@@ -347,7 +333,7 @@ index fe50a96087..9eb117319b 100644
        LogConnectionIpPooling(true);
        return OK;
      }
-@@ -191,13 +231,12 @@ int QuicSessionPool::DirectJob::DoResolveHostComplete(int rv) {
+@@ -191,13 +231,12 @@
  int QuicSessionPool::DirectJob::DoAttemptSession() {
    // TODO(crbug.com/40256842): This logic only knows how to try one
    // endpoint result.
@@ -363,7 +349,7 @@ index fe50a96087..9eb117319b 100644
      quic::ParsedQuicVersion endpoint_quic_version = pool_->SelectQuicVersion(
          quic_version_, candidate.metadata, svcb_optional);
      if (endpoint_quic_version.IsKnown()) {
-@@ -212,15 +251,14 @@ int QuicSessionPool::DirectJob::DoAttemptSession() {
+@@ -212,15 +251,14 @@
    }
  
    std::set<std::string> dns_aliases =
@@ -381,11 +367,9 @@ index fe50a96087..9eb117319b 100644
        retry_on_alternate_network_before_handshake_, use_dns_aliases_,
        std::move(dns_aliases), /*crypto_client_config_handle=*/nullptr,
        session_creation_initiator_, quic_connection_reuse_details_,
-diff --git a/net/quic/quic_session_pool_direct_job.h b/net/quic/quic_session_pool_direct_job.h
-index 327179b165..4c37b9eaf3 100644
 --- a/net/quic/quic_session_pool_direct_job.h
 +++ b/net/quic/quic_session_pool_direct_job.h
-@@ -61,6 +61,12 @@ class QuicSessionPool::DirectJob : public QuicSessionPool::Job {
+@@ -61,6 +61,12 @@
    int DoResolveHostComplete(int rv);
    int DoAttemptSession();
  
@@ -398,7 +382,7 @@ index 327179b165..4c37b9eaf3 100644
    void OnResolveHostComplete(int rv);
    void OnSessionAttemptComplete(int rv);
  
-@@ -90,6 +96,9 @@ class QuicSessionPool::DirectJob : public QuicSessionPool::Job {
+@@ -90,6 +96,9 @@
    HostResolverEndpointResult endpoint_result_;
    CompletionOnceCallback callback_;
    std::unique_ptr<HostResolver::ResolveHostRequest> resolve_host_request_;
@@ -408,9 +392,6 @@ index 327179b165..4c37b9eaf3 100644
    base::TimeTicks dns_resolution_start_time_;
    base::TimeTicks dns_resolution_end_time_;
    std::unique_ptr<QuicSessionAttempt> session_attempt_;
-diff --git a/net/socket/socks5_udp_relay.cc b/net/socket/socks5_udp_relay.cc
-new file mode 100644
-index 0000000000..7528b9ea3b
 --- /dev/null
 +++ b/net/socket/socks5_udp_relay.cc
 @@ -0,0 +1,358 @@
@@ -772,9 +753,6 @@ index 0000000000..7528b9ea3b
 +}
 +
 +}  // namespace net
-diff --git a/net/socket/socks5_udp_relay.h b/net/socket/socks5_udp_relay.h
-new file mode 100644
-index 0000000000..7c127e3cbf
 --- /dev/null
 +++ b/net/socket/socks5_udp_relay.h
 @@ -0,0 +1,169 @@
@@ -947,9 +925,6 @@ index 0000000000..7c127e3cbf
 +}  // namespace net
 +
 +#endif  // NET_SOCKET_SOCKS5_UDP_RELAY_H_
-diff --git a/net/socket/socks5_udp_relay_selftest.cc b/net/socket/socks5_udp_relay_selftest.cc
-new file mode 100644
-index 0000000000..d8bc92b800
 --- /dev/null
 +++ b/net/socket/socks5_udp_relay_selftest.cc
 @@ -0,0 +1,273 @@
@@ -1226,8 +1201,6 @@ index 0000000000..d8bc92b800
 +  printf("\n%d passed, %d failed\n", g_passed, g_failed);
 +  return g_failed ? 1 : 0;
 +}
-diff --git a/net/socket/socks5_udp_socket.cc b/net/socket/socks5_udp_socket.cc
-index 6bc56f2c3c..b6f778b813 100644
 --- a/net/socket/socks5_udp_socket.cc
 +++ b/net/socket/socks5_udp_socket.cc
 @@ -7,19 +7,50 @@
@@ -1281,7 +1254,7 @@ index 6bc56f2c3c..b6f778b813 100644
  constexpr uint8_t kAtypIPv6 = 0x04;
  
  int HeaderSizeFor(const IPEndPoint& address) {
-@@ -43,10 +74,32 @@ size_t WriteHeader(const IPEndPoint& address, base::span<uint8_t> out) {
+@@ -43,10 +74,32 @@
    return port_off + 2u;
  }
  
@@ -1315,7 +1288,7 @@ index 6bc56f2c3c..b6f778b813 100644
    if (pkt.size() < 10u || pkt[0] != 0x00 || pkt[1] != 0x00) {
      return 0u;
    }
-@@ -58,6 +111,19 @@ size_t ParseHeader(base::span<const uint8_t> pkt, IPEndPoint* source) {
+@@ -58,6 +111,19 @@
      addr_len = 4u;
    } else if (pkt[3] == kAtypIPv6) {
      addr_len = 16u;
@@ -1335,7 +1308,7 @@ index 6bc56f2c3c..b6f778b813 100644
    } else {
      return 0u;
    }
-@@ -95,8 +161,102 @@ SOCKS5UDPSocket::SOCKS5UDPSocket(
+@@ -95,8 +161,102 @@
        proxy_(proxy),
        traffic_annotation_(traffic_annotation) {}
  
@@ -1438,7 +1411,7 @@ index 6bc56f2c3c..b6f778b813 100644
  int SOCKS5UDPSocket::Listen(const IPEndPoint& address) {
    const int rv = inner_->Listen(address);
    if (rv != OK) {
-@@ -104,22 +264,26 @@ int SOCKS5UDPSocket::Listen(const IPEndPoint& address) {
+@@ -104,22 +264,26 @@
    }
    // Start the association but do not wait on it: Listen() has no completion callback to hand a
    // pending result to. Datagrams sent before it completes are queued in SendTo().
@@ -1470,7 +1443,7 @@ index 6bc56f2c3c..b6f778b813 100644
      return;
    }
    // Only now is it safe to wrap: SOCKS5ClientSocket writes its greeting inside Connect().
-@@ -134,19 +298,28 @@ void SOCKS5UDPSocket::OnTransportConnected(int result) {
+@@ -134,19 +298,28 @@
  }
  
  void SOCKS5UDPSocket::OnAssociateComplete(int result) {
@@ -1504,7 +1477,7 @@ index 6bc56f2c3c..b6f778b813 100644
      }
    }
    if (result == OK) {
-@@ -155,6 +328,7 @@ void SOCKS5UDPSocket::OnAssociateComplete(int result) {
+@@ -155,6 +328,7 @@
      association_error_ = result;
    }
    FlushPending(result);
@@ -1512,7 +1485,7 @@ index 6bc56f2c3c..b6f778b813 100644
  }
  
  void SOCKS5UDPSocket::FlushPending(int result) {
-@@ -169,8 +343,12 @@ void SOCKS5UDPSocket::FlushPending(int result) {
+@@ -169,8 +343,12 @@
      // one callback -- whether the retry completes asynchronously or inline. Split it: one half
      // rides into the async binding, the other runs here on a synchronous completion.
      auto split = base::SplitOnceCallback(std::move(p.callback));
@@ -1527,7 +1500,7 @@ index 6bc56f2c3c..b6f778b813 100644
      if (rv != ERR_IO_PENDING) {
        std::move(split.second).Run(rv);
      }
-@@ -187,7 +365,30 @@ int SOCKS5UDPSocket::SendFramed(IOBuffer* buf,
+@@ -187,7 +365,30 @@
    DCHECK_EQ(written, static_cast<size_t>(header_size));
    framed->span().subspan(written).copy_prefix_from(
        buf->span().first(static_cast<size_t>(buf_len)));
@@ -1558,7 +1531,7 @@ index 6bc56f2c3c..b6f778b813 100644
    // The caller is owed the length IT asked to send, not our framed length, so success is
    // translated back. `framed` rides along in the binding to stay alive for the async write.
    auto on_done = base::BindOnce(
-@@ -199,8 +400,8 @@ int SOCKS5UDPSocket::SendFramed(IOBuffer* buf,
+@@ -199,8 +400,8 @@
        },
        framed, buf_len, std::move(callback));
  
@@ -1569,7 +1542,7 @@ index 6bc56f2c3c..b6f778b813 100644
    if (rv == ERR_IO_PENDING) {
      return rv;
    }
-@@ -214,6 +415,26 @@ int SOCKS5UDPSocket::SendTo(IOBuffer* buf,
+@@ -214,6 +415,26 @@
    if (association_error_ != OK) {
      return association_error_;
    }
@@ -1596,7 +1569,7 @@ index 6bc56f2c3c..b6f778b813 100644
    if (!associated_) {
      // Queue rather than drop. Silent early loss is indistinguishable from a flaky network and is
      // miserable to trace back to this layer.
-@@ -224,6 +445,26 @@ int SOCKS5UDPSocket::SendTo(IOBuffer* buf,
+@@ -224,6 +445,26 @@
    return SendFramed(buf, buf_len, address, std::move(callback));
  }
  
@@ -1623,7 +1596,7 @@ index 6bc56f2c3c..b6f778b813 100644
  int SOCKS5UDPSocket::RecvFrom(IOBuffer* buf,
                                int buf_len,
                                IPEndPoint* address,
-@@ -237,31 +478,71 @@ int SOCKS5UDPSocket::RecvFrom(IOBuffer* buf,
+@@ -237,31 +478,71 @@
    recv_callback_ = std::move(callback);
    // Room for the caller's payload plus the largest header we might have to strip.
    framed_recv_buf_ =
@@ -1710,7 +1683,7 @@ index 6bc56f2c3c..b6f778b813 100644
    }
    const size_t payload_len = static_cast<size_t>(result) - offset;
    if (payload_len > static_cast<size_t>(recv_buf_len_)) {
-@@ -281,7 +562,14 @@ void SOCKS5UDPSocket::OnRecvComplete(int result) {
+@@ -281,7 +562,14 @@
    if (!recv_callback_) {
      return;
    }
@@ -1726,7 +1699,7 @@ index 6bc56f2c3c..b6f778b813 100644
  }
  
  // -- Everything below is delegation ----------------------------------------
-@@ -346,6 +634,7 @@ void SOCKS5UDPSocket::DetachFromThread() {
+@@ -346,6 +634,7 @@
  }
  void SOCKS5UDPSocket::Close() {
    // Closing the control connection is what tears the association down proxy-side.
@@ -1734,8 +1707,6 @@ index 6bc56f2c3c..b6f778b813 100644
    control_.reset();
    associated_ = false;
    inner_->Close();
-diff --git a/net/socket/socks5_udp_socket.h b/net/socket/socks5_udp_socket.h
-index 0213a0f785..11c1428f01 100644
 --- a/net/socket/socks5_udp_socket.h
 +++ b/net/socket/socks5_udp_socket.h
 @@ -10,8 +10,14 @@
@@ -1763,7 +1734,7 @@ index 0213a0f785..11c1428f01 100644
  class NetLog;
  class StreamSocket;
  
-@@ -55,6 +63,16 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+@@ -55,6 +63,16 @@
                    const HostPortPair& proxy,
                    const NetworkTrafficAnnotationTag& traffic_annotation);
  
@@ -1780,7 +1751,7 @@ index 0213a0f785..11c1428f01 100644
    SOCKS5UDPSocket(const SOCKS5UDPSocket&) = delete;
    SOCKS5UDPSocket& operator=(const SOCKS5UDPSocket&) = delete;
  
-@@ -65,6 +83,21 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+@@ -65,6 +83,21 @@
    // the MTU presents as packet loss rather than as an error.
    static constexpr int kHeaderOverheadIPv4 = 10;
    static constexpr int kHeaderOverheadIPv6 = 22;
@@ -1802,7 +1773,7 @@ index 0213a0f785..11c1428f01 100644
  
    // True once the association is up and datagrams flow without queueing.
    bool associated() const { return associated_; }
-@@ -119,9 +152,20 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+@@ -119,9 +152,20 @@
      scoped_refptr<IOBuffer> buf;
      int buf_len;
      IPEndPoint address;
@@ -1823,7 +1794,7 @@ index 0213a0f785..11c1428f01 100644
    // The association is two async steps. SOCKS5ClientSocket writes its greeting the moment
    // Connect() is called, so the transport must already be connected when it is handed over --
    // which is why the TCP connect happens first and the wrapper is built only afterwards.
-@@ -133,7 +177,20 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+@@ -133,7 +177,20 @@
                   int buf_len,
                   const IPEndPoint& address,
                   CompletionOnceCallback callback);
@@ -1844,7 +1815,7 @@ index 0213a0f785..11c1428f01 100644
    // Strips the header off a completed read and copies the payload into the caller's buffer.
    // Returns the payload length, or a net error. Shared by the sync and async read paths so they
    // cannot disagree about framing.
-@@ -146,6 +203,12 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+@@ -146,6 +203,12 @@
    const HostPortPair proxy_;
    const NetworkTrafficAnnotationTag traffic_annotation_;
  
@@ -1857,7 +1828,7 @@ index 0213a0f785..11c1428f01 100644
    bool associated_ = false;
    // Set once the handshake fails; every later operation reports it rather than hanging.
    int association_error_ = OK;
-@@ -163,6 +226,12 @@ class NET_EXPORT SOCKS5UDPSocket : public DatagramServerSocket {
+@@ -163,6 +226,12 @@
    // source, which is why it is read from the header instead and this value discarded.
    IPEndPoint relay_seen_;
  
@@ -1870,8 +1841,6 @@ index 0213a0f785..11c1428f01 100644
    base::WeakPtrFactory<SOCKS5UDPSocket> weak_factory_{this};
  };
  
-diff --git a/services/network/p2p/socket_udp.cc b/services/network/p2p/socket_udp.cc
-index 65b85068c0..cb62beebb8 100644
 --- a/services/network/p2p/socket_udp.cc
 +++ b/services/network/p2p/socket_udp.cc
 @@ -27,6 +27,10 @@
@@ -1885,7 +1854,7 @@ index 65b85068c0..cb62beebb8 100644
  #include "net/socket/tcp_client_socket.h"
  #include "net/traffic_annotation/network_traffic_annotation.h"
  
-@@ -142,46 +146,43 @@ constexpr net::NetworkTrafficAnnotationTag kSocks5UdpControlAnnotation =
+@@ -142,46 +146,43 @@
          })");
  
  // clearcote: the SOCKS5 proxy to relay UDP through, or nullopt when the feature is off, no proxy
@@ -1958,7 +1927,7 @@ index 65b85068c0..cb62beebb8 100644
  }
  
  std::unique_ptr<net::DatagramServerSocket> DefaultSocketFactory(
-@@ -196,17 +197,23 @@ std::unique_ptr<net::DatagramServerSocket> DefaultSocketFactory(
+@@ -196,17 +197,23 @@
  
    // clearcote: relay this socket's datagrams through the SOCKS5 proxy when asked to. With the
    // switch unset this returns the plain socket and behaviour is identical to stock.

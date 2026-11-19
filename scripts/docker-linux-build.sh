@@ -8,7 +8,7 @@
 #   docker logs -f camchrome-linux-x64           # follow
 #
 # Output: /work/<cpu>/src/out/Default in volume camchrome-linux-<cpu>. ARGS_FILE defaults to the
-# low-memory config; pass ARGS_FILE=config/args.linux.gn on a 64 GB machine for the official build.
+# low-memory config; STAGE=check stops after listing the series patches that no longer apply; pass ARGS_FILE=config/args.linux.gn on a 64 GB machine for the official build.
 set -euo pipefail
 CPU="${1:-x64}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,6 +19,7 @@ docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d --name "$NAME" --platform linux/amd64 \
   -v "$NAME:/work" -v "$REPO:/repo:ro" \
   -e TARGET=linux -e TARGET_CPU="$CPU" -e WORK="/work/$CPU" -e ARGS_FILE="/repo/$ARGS_FILE" \
+  -e STAGE="${STAGE:-build}" -e NINJA_FLAGS="${NINJA_FLAGS:-}" \
   -e NINJA_TARGETS="${NINJA_TARGETS:-chrome chrome_sandbox chrome_crashpad_handler socks5_udp_relay_selftest components/ungoogled:persona_validator_cli}" \
   ubuntu:24.04 bash -c '
 set -euo pipefail
@@ -43,6 +44,7 @@ cd /work/repo
 echo "== fetch $(date -u)"
 scripts/00-fetch-source.sh   # resumable; re-run so toolchain additions reach an existing tree
 echo "== patch $(date -u)"
+if [ "$STAGE" = check ]; then scripts/01-apply-patches.sh --check; echo "== checked $(date -u)"; exit 0; fi
 [ -e "$WORK/src/.camchrome-patched" ] || scripts/01-apply-patches.sh
 echo "== build $(date -u)"
 scripts/02-build.sh

@@ -2,7 +2,7 @@ diff --git a/components/ungoogled/persona_profile.cc b/components/ungoogled/pers
 index d0633d9df0..78010723ac 100644
 --- a/components/ungoogled/persona_profile.cc
 +++ b/components/ungoogled/persona_profile.cc
-@@ -802,4 +802,204 @@ const PersonaProfile& CurrentPersona() {
+@@ -802,4 +802,204 @@
    return *profile;
  }
  
@@ -207,11 +207,9 @@ index d0633d9df0..78010723ac 100644
 +}
 +
  }  // namespace ungoogled
-diff --git a/components/ungoogled/persona_profile.h b/components/ungoogled/persona_profile.h
-index 40a34f3010..f2806ac749 100644
 --- a/components/ungoogled/persona_profile.h
 +++ b/components/ungoogled/persona_profile.h
-@@ -243,6 +243,26 @@ COMPONENT_EXPORT(UNGOOGLED) PersonaProfile DerivePersona(uint64_t seed);
+@@ -243,6 +243,26 @@
  // persona; later calls return the same one. Thread-safe (std::call_once).
  COMPONENT_EXPORT(UNGOOGLED) const PersonaProfile& CurrentPersona();
  
@@ -238,8 +236,6 @@ index 40a34f3010..f2806ac749 100644
  }  // namespace ungoogled
  
  #endif  // COMPONENTS_UNGOOGLED_PERSONA_PROFILE_H_
-diff --git a/content/browser/speech/speech_synthesis_impl.cc b/content/browser/speech/speech_synthesis_impl.cc
-index 766a22c54c..413afdb973 100644
 --- a/content/browser/speech/speech_synthesis_impl.cc
 +++ b/content/browser/speech/speech_synthesis_impl.cc
 @@ -4,12 +4,15 @@
@@ -258,7 +254,7 @@ index 766a22c54c..413afdb973 100644
  #include "services/metrics/public/cpp/ukm_builders.h"
  #include "services/metrics/public/cpp/ukm_recorder.h"
  
-@@ -99,9 +102,56 @@ class EventThunk : public UtteranceEventDelegate {
+@@ -99,9 +102,56 @@
    bool is_audible_;
  };
  
@@ -316,7 +312,7 @@ index 766a22c54c..413afdb973 100644
    std::vector<blink::mojom::SpeechSynthesisVoicePtr> out_voices;
    out_voices.resize(voices.size());
    for (size_t i = 0; i < voices.size(); ++i) {
-@@ -155,7 +205,8 @@ void SpeechSynthesisImpl::AddVoiceListObserver(
+@@ -155,7 +205,8 @@
    // every observer as soon as loading completes.
    if (!voices.empty() ||
        !TtsControllerImpl::GetInstance()->TtsPlatformLoading()) {
@@ -326,7 +322,7 @@ index 766a22c54c..413afdb973 100644
    }
  
    observer_set_.Add(std::move(observer));
-@@ -216,7 +267,8 @@ void SpeechSynthesisImpl::OnVoicesChanged() {
+@@ -216,7 +267,8 @@
    std::vector<VoiceData> voices;
    TtsController::GetInstance()->GetVoices(browser_context_, GURL(), &voices);
    for (auto& observer : observer_set_)
@@ -336,8 +332,6 @@ index 766a22c54c..413afdb973 100644
  }
  
  }  // namespace content
-diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.cc b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
-index 891a81543b..1933f6f9cf 100644
 --- a/third_party/blink/renderer/modules/speech/speech_synthesis.cc
 +++ b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
 @@ -28,12 +28,21 @@
@@ -371,7 +365,7 @@ index 891a81543b..1933f6f9cf 100644
  
  namespace blink {
  
-@@ -95,9 +106,64 @@ void SpeechSynthesis::OnSetVoiceList(
+@@ -95,9 +106,64 @@
  const HeapVector<Member<SpeechSynthesisVoice>>& SpeechSynthesis::getVoices() {
    // Kick off initialization here to ensure voice list gets populated.
    std::ignore = TryEnsureMojomSynthesis();
@@ -436,11 +430,9 @@ index 891a81543b..1933f6f9cf 100644
  bool SpeechSynthesis::speaking() const {
    // If we have a current speech utterance, then that means we're assumed to be
    // in a speaking state. This state is independent of whether the utterance
-diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.h b/third_party/blink/renderer/modules/speech/speech_synthesis.h
-index 0199d00326..4b4a19fa43 100644
 --- a/third_party/blink/renderer/modules/speech/speech_synthesis.h
 +++ b/third_party/blink/renderer/modules/speech/speech_synthesis.h
-@@ -101,6 +101,11 @@ class MODULES_EXPORT SpeechSynthesis final
+@@ -101,6 +101,11 @@
  
   private:
    void VoicesDidChange();
@@ -452,7 +444,7 @@ index 0199d00326..4b4a19fa43 100644
    void StartSpeakingImmediately();
    void HandleSpeakingCompleted(
        SpeechSynthesisUtterance*,
-@@ -135,6 +140,9 @@ class MODULES_EXPORT SpeechSynthesis final
+@@ -135,6 +140,9 @@
    HeapVector<Member<SpeechSynthesisVoice>> voice_list_;
    HeapDeque<Member<SpeechSynthesisUtterance>> utterance_queue_;
    bool is_paused_ = false;

@@ -27,8 +27,8 @@ to report the real frame width.
 
 --- a/third_party/blink/renderer/core/frame/local_dom_window.cc
 +++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
-@@ -203,6 +203,22 @@
-   return document->RequestAnimationFrame(frame_callback);
+@@ -202,6 +202,22 @@
+                                          FrameCallbackType::kWebExposed);
  }
  
 +
@@ -50,7 +50,7 @@ to report the real frame width.
  }  // namespace
  
  class LocalDOMWindow::NetworkStateObserver final
-@@ -1722,31 +1738,30 @@
+@@ -1755,31 +1771,30 @@
    }
    if (PersonaWindowActive()) {
      // clearcote: a phone browser has no desktop window chrome, so outerHeight

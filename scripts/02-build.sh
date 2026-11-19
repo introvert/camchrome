@@ -122,7 +122,7 @@ export -n TARGET TARGET_CPU 2>/dev/null || true
 # e.g. NINJA_TARGETS="../../components/ungoogled/persona_profile.cc^ ...").
 if [ -n "${NINJA_TARGETS:-}" ]; then
   # shellcheck disable=SC2086
-  exec ninja -C out/Default ${NINJA_JOBS:+-j "$NINJA_JOBS"} $NINJA_TARGETS
+  exec ninja -C out/Default ${NINJA_JOBS:+-j "$NINJA_JOBS"} ${NINJA_FLAGS:-} $NINJA_TARGETS
 fi
 case "$TARGET" in
   linux) exec ninja -C out/Default chrome chrome_sandbox chrome_crashpad_handler ;;

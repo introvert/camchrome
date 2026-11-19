@@ -9,7 +9,7 @@
  
  #include "services/metrics/public/cpp/ukm_builders.h"
  #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
-@@ -103,6 +105,41 @@
+@@ -104,6 +106,41 @@
    }
    description_ = String::FromUtf8(info.device);
    driver_ = String::FromUtf8(info.description);
@@ -51,7 +51,7 @@
    if (supportsPropertiesD3D) {
      d3d_shader_model_ = d3dProperties.shaderModel;
    }
-@@ -117,6 +154,58 @@
+@@ -118,6 +155,58 @@
  
    GPUSupportedLimits::ComboLimits limits;
    GetHandle().GetLimits(limits.GetLinked());

@@ -10,7 +10,7 @@ index 270c78bfd0..b190e3db8d 100644
  #include "mojo/public/cpp/bindings/pending_remote.h"
  #include "mojo/public/cpp/bindings/remote.h"
  #include "third_party/blink/public/common/features.h"
-@@ -63,6 +64,14 @@ String GetTimezoneId(const icu::TimeZone& timezone) {
+@@ -63,6 +64,14 @@
  }
  
  String GetCurrentTimezoneId() {
@@ -25,7 +25,7 @@ index 270c78bfd0..b190e3db8d 100644
    std::unique_ptr<icu::TimeZone> timezone(icu::TimeZone::createDefault());
    CHECK(timezone);
    return GetTimezoneId(*timezone.get());
-@@ -99,6 +108,15 @@ TimeZoneController::TimeZoneController() {
+@@ -99,6 +108,15 @@
    if (!base::FeatureList::IsEnabled(kLazyBlinkTimezoneInit)) {
      host_timezone_id_ = GetCurrentTimezoneId();
    }
@@ -41,7 +41,7 @@ index 270c78bfd0..b190e3db8d 100644
  }
  
  TimeZoneController::~TimeZoneController() = default;
-@@ -224,9 +242,25 @@ void TimeZoneController::ChangeTimeZoneOverride(const String& timezone_id) {
+@@ -224,9 +242,25 @@
  }
  
  bool TimeZoneController::SetIcuTimeZoneAndNotifyV8(const String& timezone_id) {

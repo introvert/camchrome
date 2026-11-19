@@ -1,3 +1,26 @@
+--- a/chrome/browser/ui/browser_window_state.cc
++++ b/chrome/browser/ui/browser_window_state.cc
+@@ -167,6 +167,10 @@
+ 
+   internal::UpdateWindowBoundsAndShowStateFromCommandLine(parsed_command_line,
+                                                           bounds, show_state);
++  // clearcote: the command-line override above bypassed the sizer's persona
++  // work-area clamp; re-apply it last so every browser window on a seeded
++  // persona satisfies inner <= outer <= avail <= screen.
++  WindowSizer::ClampToPersonaWorkArea(bounds, show_state);
+ }
+ 
+ namespace internal {
+--- a/chrome/browser/ui/window_sizer/BUILD.gn
++++ b/chrome/browser/ui/window_sizer/BUILD.gn
+@@ -37,6 +37,7 @@
+     "//chrome/browser/ui/web_applications",
+     "//chrome/common:non_code_constants",
+     "//components/prefs",
++    "//components/ungoogled:ungoogled_switches",
+     "//ui/base",
+     "//ui/display",
+   ]
 --- a/chrome/browser/ui/window_sizer/window_sizer.cc
 +++ b/chrome/browser/ui/window_sizer/window_sizer.cc
 @@ -8,6 +8,7 @@
@@ -81,7 +104,7 @@
  // Minimum height of the visible part of a window.
  const int kMinVisibleHeight = 30;
  // Minimum width of the visible part of a window.
-@@ -276,6 +336,9 @@
+@@ -278,6 +338,9 @@
        display::Screen::Get()->GetDisplayMatching(*bounds).work_area();
  
    AdjustWorkAreaForPlatform(work_area);
@@ -91,7 +114,7 @@
  
    // Resize so that it fits.
    bounds->AdjustToFit(work_area);
-@@ -283,6 +346,29 @@
+@@ -285,6 +348,29 @@
  
  void WindowSizer::AdjustWorkAreaForPlatform(gfx::Rect& work_area) {}
  
@@ -121,7 +144,7 @@
  bool WindowSizer::GetLastActiveWindowBounds(
      gfx::Rect* bounds,
      ui::mojom::WindowShowState* show_state) const {
-@@ -315,7 +401,7 @@
+@@ -317,7 +403,7 @@
  
  gfx::Rect WindowSizer::GetDefaultWindowBounds(
      const display::Display& display) const {
@@ -130,7 +153,7 @@
  
    // The default size is either some reasonably wide width, or if the work
    // area is narrower, then the work area width less some aesthetic padding.
-@@ -327,6 +413,13 @@
+@@ -329,6 +415,13 @@
    // For wider aspect ratio displays at higher resolutions, we might size the
    // window narrower to allow two windows to easily be placed side-by-side.
    gfx::Rect screen_size = display::Screen::Get()->GetPrimaryDisplay().bounds();
@@ -144,7 +167,7 @@
    double width_to_height =
        static_cast<double>(screen_size.width()) / screen_size.height();
  
-@@ -378,12 +471,18 @@
+@@ -380,12 +473,18 @@
    bounds->set_height(std::max(kMinVisibleHeight, bounds->height()));
    bounds->set_width(std::max(kMinVisibleWidth, bounds->width()));
  
@@ -182,26 +205,3 @@
    // An interface implemented by an object that can retrieve state from either a
    // persistent store or an existing window.
    class StateProvider {
---- a/chrome/browser/ui/window_sizer/BUILD.gn
-+++ b/chrome/browser/ui/window_sizer/BUILD.gn
-@@ -36,6 +36,7 @@
-     "//chrome/browser/ui/web_applications",
-     "//chrome/common:non_code_constants",
-     "//components/prefs",
-+    "//components/ungoogled:ungoogled_switches",
-     "//ui/base",
-     "//ui/display",
-   ]
---- a/chrome/browser/ui/browser_window_state.cc
-+++ b/chrome/browser/ui/browser_window_state.cc
-@@ -160,6 +160,10 @@
- 
-   internal::UpdateWindowBoundsAndShowStateFromCommandLine(parsed_command_line,
-                                                           bounds, show_state);
-+  // clearcote: the command-line override above bypassed the sizer's persona
-+  // work-area clamp; re-apply it last so every browser window on a seeded
-+  // persona satisfies inner <= outer <= avail <= screen.
-+  WindowSizer::ClampToPersonaWorkArea(bounds, show_state);
- }
- 
- namespace internal {

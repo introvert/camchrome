@@ -42,7 +42,7 @@
  GeolocationPositionError* CreatePositionError(
      const device::mojom::blink::GeopositionError& error) {
    GeolocationPositionError::ErrorCode error_code =
-@@ -615,6 +643,18 @@
+@@ -726,6 +754,18 @@
  }
  
  void Geolocation::QueryNextPosition() {

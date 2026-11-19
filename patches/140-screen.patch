@@ -10,8 +10,8 @@
  #include "base/metrics/histogram_macros.h"
  #include "base/task/single_thread_task_runner.h"
  #include "base/trace_event/trace_id_helper.h"
-@@ -1659,11 +1662,91 @@
-   return true;
+@@ -1692,11 +1695,91 @@
+   return GetFrame()->GetPage()->AlwaysOnTopPopup();
  }
  
 +namespace {
@@ -102,7 +102,7 @@
    LocalFrame* frame = GetFrame();
  
    // FencedFrames should return innerHeight to prevent passing
-@@ -1770,6 +1853,24 @@
+@@ -1813,6 +1896,24 @@
      return 0;
    }
  
@@ -127,7 +127,7 @@
    Page* page = frame->GetPage();
    if (!page) {
      return 0;
-@@ -1790,6 +1891,23 @@
+@@ -1838,6 +1939,23 @@
      return 0;
    }
  
@@ -151,7 +151,7 @@
    Page* page = frame->GetPage();
    if (!page) {
      return 0;
-@@ -1911,6 +2029,33 @@
+@@ -1964,6 +2082,33 @@
      return 0.0;
    }
  
@@ -198,8 +198,8 @@
 +
  #include "base/numerics/safe_conversions.h"
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
- #include "third_party/blink/renderer/core/event_target_names.h"
-@@ -40,6 +45,60 @@
+ #include "third_party/blink/renderer/core/dom/document.h"
+@@ -41,6 +46,60 @@
  
  namespace blink {
  
@@ -260,7 +260,7 @@
  Screen::Screen(LocalDOMWindow* window, int64_t display_id)
      : ExecutionContextClient(window), display_id_(display_id) {}
  
-@@ -81,12 +140,22 @@
+@@ -90,12 +149,22 @@
  int Screen::height() const {
    if (!DomWindow())
      return 0;
@@ -283,7 +283,7 @@
    return GetRect(/*available=*/false).width();
  }
  
-@@ -100,6 +169,11 @@
+@@ -109,6 +178,11 @@
    if (!DomWindow()) {
      return unknown_color_depth;
    }
@@ -295,7 +295,7 @@
    return GetScreenInfo().depth == 0
               ? unknown_color_depth
               : base::saturated_cast<unsigned>(GetScreenInfo().depth);
-@@ -112,24 +186,38 @@
+@@ -121,24 +195,38 @@
  int Screen::availLeft() const {
    if (!DomWindow())
      return 0;
@@ -334,7 +334,7 @@
    return GetRect(/*available=*/true).width();
  }
  
-@@ -151,6 +239,8 @@
+@@ -160,6 +248,8 @@
    if (!DomWindow()) {
      return false;
    }

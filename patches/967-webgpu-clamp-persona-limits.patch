@@ -22,7 +22,7 @@ doing that first would expose all 36 unbacked claims to the web at once.
 
 --- a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
 +++ b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
-@@ -163,11 +163,25 @@
+@@ -164,11 +164,25 @@
    // always-on WebGL getParameter spoof (an imported profile can override).
    {
      const auto& cc_pl = ungoogled::CurrentPersona().webgpu_limits;

@@ -6,21 +6,6 @@ parser and the two-method greeting. The shipped r19 binary has all of it; the st
 not, so a rebuild from patches-151 alone fails to link SOCKS5ClientSocket::DoAuthWrite.
 This patch carries the missing implementation exactly as it stands in the build tree.
 
---- a/net/socket/socks5_client_socket.h
-+++ b/net/socket/socks5_client_socket.h
-@@ -100,6 +100,12 @@
-     STATE_GREET_WRITE_COMPLETE,
-     STATE_GREET_READ,
-     STATE_GREET_READ_COMPLETE,
-+    // clearcote: RFC 1929 username/password sub-negotiation, entered only when
-+    // the server selects method 0x02.
-+    STATE_AUTH_WRITE,
-+    STATE_AUTH_WRITE_COMPLETE,
-+    STATE_AUTH_READ,
-+    STATE_AUTH_READ_COMPLETE,
-     STATE_HANDSHAKE_WRITE,
-     STATE_HANDSHAKE_WRITE_COMPLETE,
-     STATE_HANDSHAKE_READ,
 --- a/net/socket/socks5_client_socket.cc
 +++ b/net/socket/socks5_client_socket.cc
 @@ -11,6 +11,7 @@
@@ -184,3 +169,18 @@ This patch carries the missing implementation exactly as it stands in the build 
    read_buf_.reset();
    next_state_ = STATE_HANDSHAKE_WRITE;
    return OK;
+--- a/net/socket/socks5_client_socket.h
++++ b/net/socket/socks5_client_socket.h
+@@ -100,6 +100,12 @@
+     STATE_GREET_WRITE_COMPLETE,
+     STATE_GREET_READ,
+     STATE_GREET_READ_COMPLETE,
++    // clearcote: RFC 1929 username/password sub-negotiation, entered only when
++    // the server selects method 0x02.
++    STATE_AUTH_WRITE,
++    STATE_AUTH_WRITE_COMPLETE,
++    STATE_AUTH_READ,
++    STATE_AUTH_READ_COMPLETE,
+     STATE_HANDSHAKE_WRITE,
+     STATE_HANDSHAKE_WRITE_COMPLETE,
+     STATE_HANDSHAKE_READ,

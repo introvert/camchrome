@@ -74,3 +74,6 @@
 997-android-persona-viewport.patch
 998-persona-heap-and-webgpu-texture-coherence.patch
 999-android-persona-overlay-scrollbars.patch
+1000-persona-webgl-without-gpu.patch
+1001-android-persona-page-scale.patch
+1002-android-persona-outer-height-unzoomed.patch

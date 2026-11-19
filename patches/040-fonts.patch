@@ -1,6 +1,6 @@
 --- a/third_party/blink/renderer/platform/fonts/font_cache.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
-@@ -33,15 +33,20 @@
+@@ -35,15 +35,20 @@
  #include <memory>
  
  #include "base/byte_size.h"
@@ -21,7 +21,7 @@
  #include "build/build_config.h"
  #include "skia/ext/font_utils.h"
  #include "third_party/blink/public/common/features.h"
-@@ -125,6 +130,456 @@
+@@ -153,6 +158,456 @@
  }
  #endif
  
@@ -478,7 +478,7 @@
  const FontPlatformData* FontCache::GetFontPlatformData(
      const FontDescription& font_description,
      const FontFaceCreationParams& creation_params,
-@@ -138,6 +593,93 @@
+@@ -166,6 +621,93 @@
    }
  #endif
  

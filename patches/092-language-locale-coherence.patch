@@ -17,7 +17,7 @@ index 4bb64aa..e304de4 100644
  
  namespace blink {
  
-@@ -65,6 +69,25 @@ void NavigatorLanguage::SetLanguagesForTesting(const String& languages) {
+@@ -65,6 +69,25 @@
    languages_ = ParseAndSanitize(languages);
  }
  
@@ -43,7 +43,7 @@ index 4bb64aa..e304de4 100644
  void NavigatorLanguage::EnsureUpdatedLanguage() {
    String accept_languages_override;
    probe::ApplyAcceptLanguageOverride(execution_context_,
-@@ -77,6 +100,7 @@ void NavigatorLanguage::EnsureUpdatedLanguage() {
+@@ -77,6 +100,7 @@
      // Mark the language as dirty, so that if the override is removed, the
      // language will be updated.
      languages_dirty_ = true;
@@ -51,7 +51,7 @@ index 4bb64aa..e304de4 100644
      return;
    }
  
-@@ -89,6 +113,7 @@ void NavigatorLanguage::EnsureUpdatedLanguage() {
+@@ -89,6 +113,7 @@
        languages_ = Vector<String>({languages_.front()});
      }
      languages_dirty_ = false;

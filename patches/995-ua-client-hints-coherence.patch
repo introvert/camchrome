@@ -43,7 +43,7 @@ diff --git a/components/ungoogled/fingerprint_data.h b/components/ungoogled/fing
 index 62e87c594c..47dba290ce 100644
 --- a/components/ungoogled/fingerprint_data.h
 +++ b/components/ungoogled/fingerprint_data.h
-@@ -23,24 +23,27 @@ constexpr const char* kVivaldiDisplayName = "Vivaldi";
+@@ -23,24 +23,27 @@
  // Browser Default Versions
  // =============================================================================
  
@@ -87,7 +87,7 @@ index 62e87c594c..47dba290ce 100644
  
  // User-Agent string suffixes
  constexpr const char* kEdgeUASuffix = " Edg/";
-@@ -60,9 +63,12 @@ constexpr const char* kAndroidPlatform = "Android";
+@@ -60,9 +63,12 @@
  // Platform version arrays (most common first, for seed-based selection)
  constexpr const char* kWindowsVersions[] = {"19.0.0", "15.0.0"};
  constexpr const char* kLinuxVersions[] = {"6.14.0", "6.8.0"};
@@ -102,11 +102,9 @@ index 62e87c594c..47dba290ce 100644
  };
  // Android platform versions (Sec-CH-UA-Platform-Version). All v1 devices ship
  // Android 14; the atomic per-device value is carried in PersonaProfile.
-diff --git a/components/ungoogled/persona_profile.cc b/components/ungoogled/persona_profile.cc
-index fffec96695..2498e4080d 100644
 --- a/components/ungoogled/persona_profile.cc
 +++ b/components/ungoogled/persona_profile.cc
-@@ -69,9 +69,9 @@ struct WebGLGPU {
+@@ -69,9 +69,9 @@
    const char* renderer;
  };
  
@@ -119,8 +117,6 @@ index fffec96695..2498e4080d 100644
  constexpr std::array<WeightedEntry<ChromeVer>, 4> kChromeVersions = {{
      {{151, "151.0.7922.109"}, 0.45},
      {{151, "151.0.7922.108"}, 0.30},
-diff --git a/content/browser/client_hints/client_hints.cc b/content/browser/client_hints/client_hints.cc
-index 32f4a051fd..73dedf533e 100644
 --- a/content/browser/client_hints/client_hints.cc
 +++ b/content/browser/client_hints/client_hints.cc
 @@ -4,6 +4,8 @@
@@ -132,7 +128,7 @@ index 32f4a051fd..73dedf533e 100644
  #include "components/ungoogled/persona_profile.h"
  
  #include <algorithm>
-@@ -745,10 +747,17 @@ void UpdateNavigationRequestClientUaHeadersImpl(
+@@ -746,10 +748,17 @@
    }
  
    if (!disable_due_to_custom_ua) {
@@ -151,8 +147,6 @@ index 32f4a051fd..73dedf533e 100644
  
      // The `Sec-CH-UA` client hint is attached to all outgoing requests. This is
      // (intentionally) different than other client hints.
-diff --git a/content/browser/devtools/protocol/emulation_handler.cc b/content/browser/devtools/protocol/emulation_handler.cc
-index a886747b00..c5687bd479 100644
 --- a/content/browser/devtools/protocol/emulation_handler.cc
 +++ b/content/browser/devtools/protocol/emulation_handler.cc
 @@ -4,6 +4,8 @@
@@ -164,7 +158,7 @@ index a886747b00..c5687bd479 100644
  #include <utility>
  
  #include "base/check_deref.h"
-@@ -936,6 +938,13 @@ Response EmulationHandler::SetUserAgentOverride(
+@@ -942,6 +944,13 @@
  
    user_agent_metadata_ = std::nullopt;
    if (!ua_metadata_override) {
@@ -178,7 +172,7 @@ index a886747b00..c5687bd479 100644
      return Response::FallThrough();
    }
  
-@@ -948,6 +957,8 @@ Response EmulationHandler::SetUserAgentOverride(
+@@ -954,6 +963,8 @@
    blink::UserAgentMetadata new_ua_metadata;
    blink::UserAgentMetadata default_ua_metadata =
        GetContentClient()->browser()->GetUserAgentMetadata();
@@ -187,7 +181,7 @@ index a886747b00..c5687bd479 100644
  
    if (ua_metadata.HasBrands()) {
      for (const auto& bv : *ua_metadata.GetBrands(nullptr)) {
-@@ -990,6 +1001,15 @@ Response EmulationHandler::SetUserAgentOverride(
+@@ -996,6 +1007,15 @@
      if (!ValidateClientHintString(full_version))
        return Response::InvalidParams("Invalid full version string");
      new_ua_metadata.full_version = full_version;
@@ -203,8 +197,6 @@ index a886747b00..c5687bd479 100644
    } else {
      new_ua_metadata.full_version = std::move(default_ua_metadata.full_version);
    }
-diff --git a/third_party/blink/common/user_agent/user_agent_metadata.cc b/third_party/blink/common/user_agent/user_agent_metadata.cc
-index 7f7c741ca6..028d03e940 100644
 --- a/third_party/blink/common/user_agent/user_agent_metadata.cc
 +++ b/third_party/blink/common/user_agent/user_agent_metadata.cc
 @@ -3,14 +3,17 @@
@@ -225,7 +217,7 @@ index 7f7c741ca6..028d03e940 100644
  #include "base/strings/string_util.h"
  #include "components/ungoogled/fingerprint_data.h"
  #include "components/ungoogled/persona_profile.h"
-@@ -393,11 +396,11 @@ std::string GetPlatformVersion(const std::string& platform) {
+@@ -393,11 +396,11 @@
      return command_line->GetSwitchValueASCII(switches::kFingerprintPlatformVersion);
    }
  
@@ -242,7 +234,7 @@ index 7f7c741ca6..028d03e940 100644
  
    if (platform == "windows") {
      return kWindowsVersions[seed % std::size(kWindowsVersions)];
-@@ -415,6 +418,80 @@ std::string GetPlatformVersion(const std::string& platform) {
+@@ -415,6 +418,80 @@
    return "";
  }
  
@@ -323,7 +315,7 @@ index 7f7c741ca6..028d03e940 100644
  void UpdateUserAgentMetadataFingerprint(blink::UserAgentMetadata* metadata) {
    if (!metadata)
      return;
-@@ -443,17 +520,22 @@ void UpdateUserAgentMetadataFingerprint(blink::UserAgentMetadata* metadata) {
+@@ -443,17 +520,22 @@
        chrome_brand = kChromeDisplayName;
      } else if (brand_name == "edge") {
        // Low-entropy Sec-CH-UA uses the major; the full-version-list needs a full build.
@@ -353,7 +345,7 @@ index 7f7c741ca6..028d03e940 100644
      }
    }
  
-@@ -475,45 +557,7 @@ void UpdateUserAgentMetadataFingerprint(blink::UserAgentMetadata* metadata) {
+@@ -475,45 +557,7 @@
    const ungoogled::PersonaPlatform platform_value =
        ungoogled::GetPersonaPlatform();
    if (platform_value != ungoogled::PersonaPlatform::kUnset) {
@@ -400,7 +392,7 @@ index 7f7c741ca6..028d03e940 100644
    }
  }
  
-@@ -535,12 +579,15 @@ std::string GetUserAgentFingerprintBrandInfo() {
+@@ -535,12 +579,15 @@
    if (brand == "chrome") {
      return "";
    } else if (brand == "edge") {
@@ -419,7 +411,7 @@ index 7f7c741ca6..028d03e940 100644
    } else if (!brand.empty()) {
      return " " + brand + "/" + (version.empty() ? brand : version);
    }
-@@ -561,4 +608,151 @@ std::string GetFingerprintUserAgentVersion(bool reduced) {
+@@ -561,4 +608,151 @@
    return reduced ? (GetMajorVersion(version) + ".0.0.0") : version;
  }
  
@@ -571,11 +563,9 @@ index 7f7c741ca6..028d03e940 100644
 +}
 +
  }  // namespace blink
-diff --git a/third_party/blink/public/common/BUILD.gn b/third_party/blink/public/common/BUILD.gn
-index 4bfe6acbca..f7b32976a0 100644
 --- a/third_party/blink/public/common/BUILD.gn
 +++ b/third_party/blink/public/common/BUILD.gn
-@@ -298,6 +298,7 @@ source_set("headers") {
+@@ -298,6 +298,7 @@
      "use_counter/use_counter_feature_tracker.h",
      "use_counter/webdx_feature_maps.h",
      "user_agent/user_agent_brand_version_type.h",
@@ -583,9 +573,6 @@ index 4bfe6acbca..f7b32976a0 100644
      "user_agent/user_agent_metadata.h",
      "view_source/rendering_preferences.h",
      "web_cache/web_cache_resource_type_stats.h",
-diff --git a/third_party/blink/public/common/user_agent/user_agent_fingerprint.h b/third_party/blink/public/common/user_agent/user_agent_fingerprint.h
-new file mode 100644
-index 0000000000..15f12dfdc8
 --- /dev/null
 +++ b/third_party/blink/public/common/user_agent/user_agent_fingerprint.h
 @@ -0,0 +1,42 @@
@@ -631,11 +618,9 @@ index 0000000000..15f12dfdc8
 +}  // namespace blink
 +
 +#endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_USER_AGENT_USER_AGENT_FINGERPRINT_H_
-diff --git a/third_party/blink/renderer/core/frame/build.gni b/third_party/blink/renderer/core/frame/build.gni
-index 22a413e86a..ea4f2c04be 100644
 --- a/third_party/blink/renderer/core/frame/build.gni
 +++ b/third_party/blink/renderer/core/frame/build.gni
-@@ -134,6 +134,7 @@ blink_core_sources_frame = [
+@@ -136,6 +136,7 @@
    "navigator_on_line.h",
    "navigator_ua.cc",
    "navigator_ua.h",
@@ -643,8 +628,6 @@ index 22a413e86a..ea4f2c04be 100644
    "navigator_ua_data.cc",
    "navigator_ua_data.h",
    "navigator_user_activation.cc",
-diff --git a/third_party/blink/renderer/core/frame/navigator_ua.cc b/third_party/blink/renderer/core/frame/navigator_ua.cc
-index 5199f97753..16cad0fb5a 100644
 --- a/third_party/blink/renderer/core/frame/navigator_ua.cc
 +++ b/third_party/blink/renderer/core/frame/navigator_ua.cc
 @@ -6,11 +6,39 @@
@@ -687,7 +670,7 @@ index 5199f97753..16cad0fb5a 100644
  NavigatorUAData* NavigatorUA::userAgentData() {
    NavigatorUAData* ua_data =
        MakeGarbageCollected<NavigatorUAData>(GetUAExecutionContext());
-@@ -19,7 +47,10 @@ NavigatorUAData* NavigatorUA::userAgentData() {
+@@ -19,7 +47,10 @@
  
    UserAgentMetadata metadata = GetUserAgentMetadata();
  
@@ -699,9 +682,6 @@ index 5199f97753..16cad0fb5a 100644
  
    ua_data->SetBrandVersionList(metadata.brand_version_list);
    ua_data->SetMobile(metadata.mobile);
-diff --git a/third_party/blink/renderer/core/frame/user_agent_override.h b/third_party/blink/renderer/core/frame/user_agent_override.h
-new file mode 100644
-index 0000000000..178c561a88
 --- /dev/null
 +++ b/third_party/blink/renderer/core/frame/user_agent_override.h
 @@ -0,0 +1,20 @@
@@ -725,8 +705,6 @@ index 0000000000..178c561a88
 +}  // namespace blink
 +
 +#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_USER_AGENT_OVERRIDE_H_
-diff --git a/third_party/blink/renderer/core/inspector/inspector_emulation_agent.cc b/third_party/blink/renderer/core/inspector/inspector_emulation_agent.cc
-index fc5ceb18c1..3527819f20 100644
 --- a/third_party/blink/renderer/core/inspector/inspector_emulation_agent.cc
 +++ b/third_party/blink/renderer/core/inspector/inspector_emulation_agent.cc
 @@ -11,6 +11,7 @@
@@ -737,7 +715,7 @@ index fc5ceb18c1..3527819f20 100644
  #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
  #include "third_party/blink/public/platform/platform.h"
  #include "third_party/blink/public/platform/web_theme_engine.h"
-@@ -956,8 +957,11 @@ protocol::Response InspectorEmulationAgent::setUserAgentOverride(
+@@ -957,8 +958,11 @@
    }
  
    if (ua_metadata_override) {
@@ -749,7 +727,7 @@ index fc5ceb18c1..3527819f20 100644
  
      if (user_agent.empty()) {
        ua_metadata_override_ = std::nullopt;
-@@ -1005,6 +1009,15 @@ protocol::Response InspectorEmulationAgent::setUserAgentOverride(
+@@ -1006,6 +1010,15 @@
      if (ua_metadata.hasFullVersion()) {
        ua_metadata_override_->full_version =
            ua_metadata.getFullVersion("").Ascii();
@@ -765,7 +743,7 @@ index fc5ceb18c1..3527819f20 100644
      } else {
        ua_metadata_override_->full_version =
            std::move(default_ua_metadata.full_version);
-@@ -1035,6 +1048,13 @@ protocol::Response InspectorEmulationAgent::setUserAgentOverride(
+@@ -1036,6 +1049,13 @@
            std::move(default_ua_metadata.form_factors);
      }
  
@@ -779,11 +757,9 @@ index fc5ceb18c1..3527819f20 100644
    } else {
      ua_metadata_override_ = std::nullopt;
    }
-diff --git a/third_party/blink/renderer/core/loader/frame_fetch_context.cc b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
-index 92daba083b..10ae792482 100644
 --- a/third_party/blink/renderer/core/loader/frame_fetch_context.cc
 +++ b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
-@@ -106,6 +106,8 @@ BASE_FEATURE(kFastMemoryCacheWithDevTools, base::FEATURE_ENABLED_BY_DEFAULT);
+@@ -106,6 +106,8 @@
  #include "third_party/blink/renderer/core/loader/subresource_filter.h"
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/paint/timing/first_meaningful_paint_detector.h"
@@ -792,7 +768,7 @@ index 92daba083b..10ae792482 100644
  #include "third_party/blink/renderer/core/probe/core_probes.h"
  #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
  #include "third_party/blink/renderer/core/svg/graphics/svg_image_chrome_client.h"
-@@ -748,7 +750,11 @@ void FrameFetchContext::AddClientHintsIfNecessary(
+@@ -748,7 +750,11 @@
  
    // Only send User Agent hints if the info is available
    if (ua) {
@@ -805,8 +781,6 @@ index 92daba083b..10ae792482 100644
  
      bool ua_changed = !last_ua_ || *last_ua_ != *ua;
      if (ua_changed) {
-diff --git a/third_party/blink/renderer/core/workers/dedicated_worker.cc b/third_party/blink/renderer/core/workers/dedicated_worker.cc
-index 64be4c4900..bac1f84c1e 100644
 --- a/third_party/blink/renderer/core/workers/dedicated_worker.cc
 +++ b/third_party/blink/renderer/core/workers/dedicated_worker.cc
 @@ -4,6 +4,9 @@
@@ -819,7 +793,7 @@ index 64be4c4900..bac1f84c1e 100644
  #include <optional>
  #include <utility>
  
-@@ -541,9 +544,17 @@ DedicatedWorker::CreateGlobalScopeCreationParams(
+@@ -541,9 +544,17 @@
            ? mojom::blink::ScriptType::kClassic
            : mojom::blink::ScriptType::kModule;
  

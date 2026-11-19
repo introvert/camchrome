@@ -58,7 +58,7 @@ diff --git a/components/ungoogled/persona_profile.cc b/components/ungoogled/pers
 index e40ab6504f..466f9f9a8b 100644
 --- a/components/ungoogled/persona_profile.cc
 +++ b/components/ungoogled/persona_profile.cc
-@@ -1127,10 +1127,69 @@ PersonaProfile DerivePersona(uint64_t seed) {
+@@ -1127,10 +1127,69 @@
      p.webgl_max_combined_texture_image_units = 96;
      p.webgl_max_samples = 4;
      p.webgl_max_uniform_buffer_bindings = 24;
@@ -132,7 +132,7 @@ index e40ab6504f..466f9f9a8b 100644
      // enumerateDevices: phone-shaped roster.
      p.media_devices = AndroidMediaDevices(rng);
    }
-@@ -1515,8 +1574,8 @@ const LocaleVoiceRow* FindLocaleVoiceRow(const std::string& tag) {
+@@ -1515,8 +1574,8 @@
  std::vector<PersonaProfile::Voice> PersonaVoicesForAcceptLanguages(
      const std::string& accept_languages) {
    std::vector<PersonaProfile::Voice> out = CurrentPersona().voices;
@@ -143,8 +143,6 @@ index e40ab6504f..466f9f9a8b 100644
    if (out.empty())
      return out;
    // An imported profile's voices are a real capture -- authoritative as-is.
-diff --git a/content/browser/devtools/protocol/emulation_handler.cc b/content/browser/devtools/protocol/emulation_handler.cc
-index 5d471046c7..a886747b00 100644
 --- a/content/browser/devtools/protocol/emulation_handler.cc
 +++ b/content/browser/devtools/protocol/emulation_handler.cc
 @@ -18,6 +18,7 @@
@@ -155,7 +153,7 @@ index 5d471046c7..a886747b00 100644
  #include "content/browser/compute_pressure/web_contents_pressure_manager_proxy.h"
  #include "content/browser/device_posture/device_posture_provider_impl.h"
  #include "content/browser/devtools/devtools_agent_host_impl.h"
-@@ -1134,6 +1135,15 @@ void EmulationHandler::UpdateTouchEventEmulationState() {
+@@ -1140,6 +1141,15 @@
            input::TouchEmulator::Mode::kEmulatingTouchFromMouse,
            TouchEmulationConfigurationToType(touch_emulation_configuration_));
      }
@@ -171,11 +169,9 @@ index 5d471046c7..a886747b00 100644
    } else {
      if (auto* touch_emulator = host_->GetRenderWidgetHost()->GetTouchEmulator(
              /*create_if_necessary=*/true)) {
-diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
-index e773e2c0ca..79a0ba7a58 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
-@@ -760,7 +760,14 @@ class InputHandler::InputInjector
+@@ -770,7 +770,14 @@
      if (!weak_this) {
        return;
      }
@@ -191,11 +187,9 @@ index e773e2c0ca..79a0ba7a58 100644
        pending_mouse_callbacks_.back()->sendSuccess();
        pending_mouse_callbacks_.pop_back();
        MaybeSelfDestruct();
-diff --git a/content/browser/renderer_host/input/touch_emulator_impl.h b/content/browser/renderer_host/input/touch_emulator_impl.h
-index a295b34992..5ef518014b 100644
 --- a/content/browser/renderer_host/input/touch_emulator_impl.h
 +++ b/content/browser/renderer_host/input/touch_emulator_impl.h
-@@ -45,6 +45,10 @@ class CONTENT_EXPORT TouchEmulatorImpl : public input::TouchEmulator {
+@@ -45,6 +45,10 @@
    void SetDeviceScaleFactor(float device_scale_factor) override;
    void SetDoubleTapSupportForPageEnabled(bool enabled) override;
    bool IsEnabled() const override;
@@ -206,8 +200,6 @@ index a295b34992..5ef518014b 100644
    bool HandleTouchEvent(const blink::WebTouchEvent& event) override;
    void OnGestureEventAck(
        const blink::WebGestureEvent& event,
-diff --git a/content/browser/renderer_host/render_widget_host_impl.cc b/content/browser/renderer_host/render_widget_host_impl.cc
-index 4b2fbef868..b948701629 100644
 --- a/content/browser/renderer_host/render_widget_host_impl.cc
 +++ b/content/browser/renderer_host/render_widget_host_impl.cc
 @@ -55,6 +55,7 @@
@@ -231,7 +223,7 @@ index 4b2fbef868..b948701629 100644
  #include "ui/gfx/geometry/size_conversions.h"
  #include "ui/gfx/geometry/vector2d_conversions.h"
  #include "ui/gfx/geometry/vector2d_f.h"
-@@ -1719,6 +1723,7 @@ void RenderWidgetHostImpl::ForwardMouseEventWithLatencyInfo(
+@@ -1735,6 +1739,7 @@
      return;
    }
  
@@ -239,7 +231,7 @@ index 4b2fbef868..b948701629 100644
    auto* touch_emulator = GetTouchEmulator(/*create_if_necessary=*/false);
    if (touch_emulator &&
        touch_emulator->HandleMouseEvent(mouse_event, GetView())) {
-@@ -2993,6 +2998,35 @@ void RenderWidgetHostImpl::OnInvalidInputEventSource() {
+@@ -3014,6 +3019,35 @@
        GetProcess(), bad_message::INPUT_ROUTER_INVALID_EVENT_SOURCE);
  }
  
@@ -275,11 +267,9 @@ index 4b2fbef868..b948701629 100644
  std::string RenderWidgetHostImpl::GetMainFrameLastCommittedURLSpec() {
    if (!frame_tree() || !frame_tree()->GetMainFrame()) {
      return std::string();
-diff --git a/content/browser/renderer_host/render_widget_host_impl.h b/content/browser/renderer_host/render_widget_host_impl.h
-index 3be54d19c2..24185ab36a 100644
 --- a/content/browser/renderer_host/render_widget_host_impl.h
 +++ b/content/browser/renderer_host/render_widget_host_impl.h
-@@ -905,6 +905,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
+@@ -905,6 +905,8 @@
  
    // FrameTokenMessageQueue::Client:
    std::string GetMainFrameLastCommittedURLSpec() override;
@@ -288,11 +278,9 @@ index 3be54d19c2..24185ab36a 100644
  
    void ProgressFlingIfNeeded(base::TimeTicks current_time);
    void StopFling();
-diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
-index ed807d95bc..5ff486a840 100644
 --- a/third_party/blink/renderer/core/frame/local_dom_window.cc
 +++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
-@@ -1839,6 +1839,13 @@ int LocalDOMWindow::outerWidth() const {
+@@ -1840,6 +1840,13 @@
      return 0;
    }
  
@@ -306,11 +294,9 @@ index ed807d95bc..5ff486a840 100644
    ChromeClient& chrome_client = page->GetChromeClient();
    if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
      return static_cast<int>(
-diff --git a/third_party/blink/renderer/modules/device_orientation/BUILD.gn b/third_party/blink/renderer/modules/device_orientation/BUILD.gn
-index fd6f67a13d..ad9e00a13c 100644
 --- a/third_party/blink/renderer/modules/device_orientation/BUILD.gn
 +++ b/third_party/blink/renderer/modules/device_orientation/BUILD.gn
-@@ -36,8 +36,11 @@ blink_modules_sources("device_orientation") {
+@@ -36,8 +36,11 @@
      "device_sensor_event_pump.h",
      "dom_window_device_motion.h",
      "dom_window_device_orientation.h",
@@ -322,8 +308,6 @@ index fd6f67a13d..ad9e00a13c 100644
      "//services/device/public/cpp/generic_sensor",
      "//services/device/public/mojom:generic_sensor",
      "//third_party/blink/renderer/modules/permissions",
-diff --git a/third_party/blink/renderer/modules/device_orientation/device_motion_event_pump.cc b/third_party/blink/renderer/modules/device_orientation/device_motion_event_pump.cc
-index c2eb77a349..10ceae84e4 100644
 --- a/third_party/blink/renderer/modules/device_orientation/device_motion_event_pump.cc
 +++ b/third_party/blink/renderer/modules/device_orientation/device_motion_event_pump.cc
 @@ -18,6 +18,7 @@
@@ -334,7 +318,7 @@ index c2eb77a349..10ceae84e4 100644
  #include "third_party/blink/renderer/platform/wtf/functional.h"
  
  namespace {
-@@ -126,6 +127,23 @@ bool DeviceMotionEventPump::SensorsReadyOrErrored() const {
+@@ -126,6 +127,23 @@
  }
  
  DeviceMotionData* DeviceMotionEventPump::GetDataFromSharedMemory() {
@@ -358,8 +342,6 @@ index c2eb77a349..10ceae84e4 100644
    DeviceMotionEventAcceleration* acceleration = nullptr;
    DeviceMotionEventAcceleration* acceleration_including_gravity = nullptr;
    DeviceMotionEventRotationRate* rotation_rate = nullptr;
-diff --git a/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc b/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc
-index f963cd19c1..c3d26613a9 100644
 --- a/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc
 +++ b/third_party/blink/renderer/modules/device_orientation/device_orientation_event_pump.cc
 @@ -14,6 +14,7 @@
@@ -370,7 +352,7 @@ index f963cd19c1..c3d26613a9 100644
  #include "third_party/blink/renderer/platform/heap/persistent.h"
  #include "third_party/blink/renderer/platform/wtf/functional.h"
  
-@@ -204,6 +205,14 @@ DeviceOrientationData* DeviceOrientationEventPump::GetDataFromSharedMemory() {
+@@ -204,6 +205,14 @@
  
      if (!std::isnan(reading.orientation_euler.y.value()))
        gamma = reading.orientation_euler.y;
@@ -385,9 +367,6 @@ index f963cd19c1..c3d26613a9 100644
    }
  
    return DeviceOrientationData::Create(alpha, beta, gamma, absolute);
-diff --git a/third_party/blink/renderer/modules/device_orientation/held_device_sensor.cc b/third_party/blink/renderer/modules/device_orientation/held_device_sensor.cc
-new file mode 100644
-index 0000000000..e3dc90b98d
 --- /dev/null
 +++ b/third_party/blink/renderer/modules/device_orientation/held_device_sensor.cc
 @@ -0,0 +1,169 @@
@@ -560,9 +539,6 @@ index 0000000000..e3dc90b98d
 +}
 +
 +}  // namespace blink
-diff --git a/third_party/blink/renderer/modules/device_orientation/held_device_sensor.h b/third_party/blink/renderer/modules/device_orientation/held_device_sensor.h
-new file mode 100644
-index 0000000000..93019c6668
 --- /dev/null
 +++ b/third_party/blink/renderer/modules/device_orientation/held_device_sensor.h
 @@ -0,0 +1,53 @@
@@ -619,11 +595,9 @@ index 0000000000..93019c6668
 +}  // namespace blink
 +
 +#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_DEVICE_ORIENTATION_HELD_DEVICE_SENSOR_H_
-diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
-index 3ca9d09ee5..4fa345cfa2 100644
 --- a/third_party/blink/renderer/platform/fonts/font_cache.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
-@@ -370,6 +370,27 @@ static std::vector<std::string> GetPlatformFonts(const std::string& platform) {
+@@ -370,6 +370,27 @@
        "Noto Sans Adlam", "Noto Sans Vai", "Noto Sans Yi", "Noto Sans Coptic", "Noto Sans Cham",
        "Noto Sans Tifinagh"
      };
@@ -651,7 +625,7 @@ index 3ca9d09ee5..4fa345cfa2 100644
    }
    return {};
  }
-@@ -598,6 +619,20 @@ static std::string MetricCompatibleSubstitute(const std::string& family,
+@@ -598,6 +619,20 @@
        {"Sitka Text", "Noto Serif"}, {"Sitka Small", "Noto Serif"},
        {"Sitka Display", "Noto Serif"}, {"Sitka Subheading", "Noto Serif"},
        {"Sitka Heading", "Noto Serif"}, {"Sitka Banner", "Noto Serif"},
@@ -672,7 +646,7 @@ index 3ca9d09ee5..4fa345cfa2 100644
    };
    for (const Sub& sub : kSubs) {
      if (base::EqualsCaseInsensitiveASCII(sub.persona_font, family))
-@@ -608,6 +643,53 @@ static std::string MetricCompatibleSubstitute(const std::string& family,
+@@ -608,6 +643,53 @@
    return std::string("Arimo");
  }
  
@@ -726,7 +700,7 @@ index 3ca9d09ee5..4fa345cfa2 100644
  const FontPlatformData* FontCache::GetFontPlatformData(
      const FontDescription& font_description,
      const FontFaceCreationParams& creation_params,
-@@ -673,7 +755,11 @@ const FontPlatformData* FontCache::GetFontPlatformData(
+@@ -673,7 +755,11 @@
        // through a metric-compatible clone that IS installed here, so the family is present
        // with the persona OS's advance widths (closes the render-vs-string font tell).
        if (FontInListCaseInsensitive(platform_fonts, requested_family)) {
@@ -739,7 +713,7 @@ index 3ca9d09ee5..4fa345cfa2 100644
          if (!substitute.empty()) {
            FontFaceCreationParams substitute_params(AtomicString(substitute.c_str()));
            return font_platform_data_cache_.GetOrCreateFontPlatformData(
-@@ -684,7 +770,12 @@ const FontPlatformData* FontCache::GetFontPlatformData(
+@@ -684,7 +770,12 @@
        }
        // Basic cross-platform families (Arial/Times/Courier/CSS generics) exist on every OS
        // and resolve to the correct metric clone via fontconfig -- let them through.

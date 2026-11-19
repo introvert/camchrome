@@ -6,9 +6,13 @@ innerWidth - clientWidth = 15 on any scrolling page, and every overflow:scroll b
 desktop scrollbar under a phone UA. The renderer now enables overlay scrollbars (and turns Fluent
 scrollbars off) when the persona is Android, as DevTools' mobile emulation does.
 
-Checked by fingerprint_selftest's scrollbar-width-matches-persona-os with --platform android.
-A macOS host keeps its own scroller style; a desktop persona on a Mac with overlay scrollbars
-(0 px instead of Windows/Linux's 15 px) still needs a Mac-side change.
+The renderer-side switch alone did not hold: the browser sends use_overlay_scrollbar in the
+renderer preferences from the host's NativeTheme, and WebViewImpl applies it after start-up. The
+browser now derives that preference from the persona too (web_contents_impl.cc): Android gets
+overlay scrollbars, Windows and Linux personas classic ones (also on a Mac host with overlay
+scrollbars, which reported 0 px), and a macOS persona keeps the host style.
+
+Checked by fingerprint_selftest's scrollbar-width-matches-persona-os with --platform.
 
 --- a/content/child/runtime_features.cc
 +++ b/content/child/runtime_features.cc
@@ -20,7 +24,7 @@ A macOS host keeps its own scroller style; a desktop persona on a Mac with overl
  #include "components/ungoogled/ungoogled_switches.h"
  #include "ui/accessibility/accessibility_features.h"
  #include "ui/base/ui_base_features.h"
-@@ -448,6 +449,14 @@
+@@ -447,6 +448,14 @@
    WebRuntimeFeatures::EnableOverlayScrollbars(
        ui::NativeTheme::GetInstanceForWeb()->use_overlay_scrollbar());
    WebRuntimeFeatures::EnableFluentScrollbars(ui::IsFluentScrollbarEnabled());
@@ -35,3 +39,58 @@ A macOS host keeps its own scroller style; a desktop persona on a Mac with overl
  #if BUILDFLAG(IS_ANDROID)
    WebRuntimeFeatures::EnableAudioOutputDevices(
        base::FeatureList::IsEnabled(features::kAAudioPerStreamDeviceSelection) &&
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -57,6 +57,7 @@
+ #include "cc/input/browser_controls_offset_tag_modifications.h"
+ #include "components/download/public/common/download_stats.h"
+ #include "components/input/cursor_manager.h"
++#include "components/ungoogled/persona_profile.h"
+ #include "components/input/features.h"
+ #include "components/input/render_widget_host_input_event_router.h"
+ #include "components/input/switches.h"
+@@ -288,6 +289,25 @@
+ 
+ namespace {
+ 
++// camchrome (999): the scrollbar style follows the persona OS, not the host theme. Android
++// draws overlay scrollbars that take no layout width; Windows and Linux draw classic ones that
++// do. A macOS persona keeps the host style (a Mac shows either, depending on the pointing
++// device). Without this an Android persona on a Linux host reported a 15 px desktop scrollbar,
++// and a Windows persona on a Mac with overlay scrollbars reported none.
++bool PersonaUseOverlayScrollbar(bool host_value) {
++  if (!ungoogled::PersonaActive())
++    return host_value;
++  switch (ungoogled::GetPersonaPlatform()) {
++    case ungoogled::PersonaPlatform::kAndroid:
++      return true;
++    case ungoogled::PersonaPlatform::kWindows:
++    case ungoogled::PersonaPlatform::kLinux:
++      return false;
++    default:
++      return host_value;
++  }
++}
++
+ // These values are persisted to logs. Entries should not be renumbered and
+ // numeric values should never be reused.
+ //
+@@ -1464,7 +1484,7 @@
+ #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
+     BUILDFLAG(IS_WIN)
+   renderer_preferences_.use_overlay_scrollbar =
+-      native_theme->use_overlay_scrollbar();
++      PersonaUseOverlayScrollbar(native_theme->use_overlay_scrollbar());
+ #endif
+   if (GetContentClient()
+           ->browser()
+@@ -12921,7 +12941,8 @@
+   const auto caret_blink_interval = observed_theme->caret_blink_interval();
+ #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
+     BUILDFLAG(IS_WIN)
+-  const auto use_overlay_scrollbar = observed_theme->use_overlay_scrollbar();
++  const auto use_overlay_scrollbar =
++      PersonaUseOverlayScrollbar(observed_theme->use_overlay_scrollbar());
+ #endif
+   bool renderer_preference_changed = false;
+   if (renderer_preferences_.caret_blink_interval != caret_blink_interval) {

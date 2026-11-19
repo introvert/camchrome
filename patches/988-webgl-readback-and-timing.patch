@@ -26,7 +26,7 @@ index 9d86732cb5..ab5f03987a 100644
  
  #include "base/compiler_specific.h"
  #include "base/containers/heap_array.h"
-@@ -987,8 +988,27 @@ void WebGL2RenderingContextBase::readPixels(GLint x,
+@@ -987,8 +988,27 @@
      if (!binder.Succeeded()) {
        return;
      }
@@ -56,8 +56,6 @@ index 9d86732cb5..ab5f03987a 100644
    }
  }
  
-diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 9eb96c227e..48c7e86b42 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -33,6 +33,7 @@
@@ -68,7 +66,7 @@ index 9eb96c227e..48c7e86b42 100644
  #include "base/compiler_specific.h"
  #include "base/feature_list.h"
  #include "base/memory/scoped_refptr.h"
-@@ -4350,6 +4351,40 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
+@@ -4429,6 +4430,40 @@
                              webgl_angle_implementation);
  }
  
@@ -109,7 +107,7 @@ index 9eb96c227e..48c7e86b42 100644
  ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
                                                      GLenum pname) {
    if (isContextLost())
-@@ -4389,6 +4424,19 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4468,6 +4503,19 @@
          break;
      }
    }
@@ -129,7 +127,7 @@ index 9eb96c227e..48c7e86b42 100644
    switch (pname) {
      case GL_ACTIVE_TEXTURE:
        return GetUnsignedIntParameter(script_state, pname);
-@@ -6015,48 +6063,61 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -6096,48 +6144,61 @@
        }
      }
  
@@ -152,13 +150,13 @@ index 9eb96c227e..48c7e86b42 100644
 -        // For any other format, assume RGBA.
 -        color_type = kRGBA_8888_SkColorType;
 -      }
+-
+-      SkImageInfo image_info =
+-          SkImageInfo::Make(width, height, color_type, alpha_type, /*color_space=*/nullptr);
 +    ApplyPersonaReadPixelsNoise(data, width, height, format, type, x, y);
 +  }
 +}
  
--      SkImageInfo image_info =
--          SkImageInfo::Make(width, height, color_type, alpha_type, /*color_space=*/nullptr);
--
 -      // Apply the fingerprint noise to the pixels that were read back, keyed
 -      // by a per-eTLD+1 farbling seed so the noise is stable per site but
 -      // decorrelated across sites.
@@ -231,11 +229,9 @@ index 9eb96c227e..48c7e86b42 100644
  }
  
  void WebGLRenderingContextBase::RenderbufferStorageImpl(
-diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-index f3be20f1e2..7e672c02fc 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-@@ -1959,6 +1959,18 @@ class MODULES_EXPORT WebGLRenderingContextBase
+@@ -1952,6 +1952,18 @@
                          DOMArrayBufferView* pixels,
                          int64_t offset);
  
@@ -254,8 +250,6 @@ index f3be20f1e2..7e672c02fc 100644
    void RecordANGLEImplementation();
  
    viz::SharedImageFormat GetSharedImageFormat() const;
-diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
-index 2b43ed98a8..b81e3a9bb0 100644
 --- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
 +++ b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
 @@ -4,6 +4,7 @@
@@ -266,7 +260,7 @@ index 2b43ed98a8..b81e3a9bb0 100644
  #include <unordered_set>
  #include <vector>
  #include "base/rand_util.h"
-@@ -124,7 +125,7 @@ void StaticBitmapImage::DrawHelper(cc::PaintCanvas* canvas,
+@@ -124,7 +125,7 @@
  }
  
  // set the component to maximum-delta if it is >= maximum, or add to existing color component (color + delta)
@@ -275,7 +269,7 @@ index 2b43ed98a8..b81e3a9bb0 100644
    // clearcote: the buffer IS the region. `info` describes the pixels handed to us; srcX/srcY
    // say WHERE that region sits on the canvas. The previous `info.width() - srcX` conflated
    // size with origin, so at the getImageData exit -- where info is the sw x sh region and
-@@ -139,6 +140,19 @@ void StaticBitmapImage::ShuffleSubchannelColorData(const void *addr, const SkIma
+@@ -139,6 +140,19 @@
       return;
     }
   
@@ -295,7 +289,7 @@ index 2b43ed98a8..b81e3a9bb0 100644
    const auto colorType = info.colorType();
    const size_t fRowBytes = info.minRowBytes();  // stride
    size_t bpp;
-@@ -171,7 +185,7 @@ void StaticBitmapImage::ShuffleSubchannelColorData(const void *addr, const SkIma
+@@ -171,7 +185,7 @@
      for (int y = 0; y < h && cc_uniform; ++y) {
        const uint8_t* r0 = reinterpret_cast<const uint8_t*>(
            cc_base + static_cast<size_t>(y) * fRowBytes);
@@ -304,7 +298,7 @@ index 2b43ed98a8..b81e3a9bb0 100644
          const uint8_t* q = r0 + static_cast<size_t>(px) * bpp;
          for (size_t c = 0; c < bpp; ++c) {
            if (q[c] != cc_first[c]) { cc_uniform = false; break; }
-@@ -208,7 +222,7 @@ void StaticBitmapImage::ShuffleSubchannelColorData(const void *addr, const SkIma
+@@ -208,7 +222,7 @@
    char* const pbase = const_cast<char*>(reinterpret_cast<const char*>(addr));
    constexpr uint64_t kDensity = 171;
  
@@ -313,11 +307,9 @@ index 2b43ed98a8..b81e3a9bb0 100644
      // The WebGL readPixels exit hands back a BOTTOM-UP buffer while every other exit is top-down.
      // Without this the same physical pixel lands on two different absolute y values and the two
      // exits of one drawing buffer disagree.
-diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.h b/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
-index c08c75400b..a43eb17562 100644
 --- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
 +++ b/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
-@@ -46,7 +46,11 @@ class PLATFORM_EXPORT StaticBitmapImage : public Image {
+@@ -46,7 +46,11 @@
                                           int srcX,
                                           int srcY,
                                           uint64_t effective_seed,

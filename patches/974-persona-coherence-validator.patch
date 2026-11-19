@@ -12,8 +12,8 @@ index 2533647..4fcec58 100644
  #include "content/public/app/initialize_mojo_core.h"
  #include "content/public/common/content_client.h"
  #include "content/public/common/content_constants.h"
-@@ -1232,6 +1234,17 @@ std::optional<int> ChromeMainDelegate::BasicStartupComplete() {
-   // before any other files are opened, see https://crbug.com/40259890.
+@@ -1232,6 +1234,17 @@
+ #if !defined(BUILDING_CHROME_RENDERER)
    const bool is_browser = !command_line.HasSwitch(switches::kProcessType);
  
 +  // clearcote: --clearcote-validate-persona=<N|a,b,c|current> derives the persona this command
@@ -30,11 +30,9 @@ index 2533647..4fcec58 100644
    // clearcote: the in-browser AI agent (--agent-llm-url) drives Chrome's Actor framework, which
    // is gated behind features::kGlicActor -- left off at runtime by this build's variations config.
    // When the agent is configured, auto-enable the feature (merging into any existing
-diff --git a/components/ungoogled/BUILD.gn b/components/ungoogled/BUILD.gn
-index c7038f2..2ffc58b 100644
 --- a/components/ungoogled/BUILD.gn
 +++ b/components/ungoogled/BUILD.gn
-@@ -9,6 +9,8 @@ component("ungoogled_switches") {
+@@ -9,6 +9,8 @@
      "fingerprint_data.h",
      "persona_profile.cc",
      "persona_profile.h",
@@ -43,11 +41,9 @@ index c7038f2..2ffc58b 100644
      "portable_key_provider.cc",
      "portable_key_provider.h",
      "ungoogled_switches.h",
-diff --git a/components/ungoogled/persona_profile.cc b/components/ungoogled/persona_profile.cc
-index 091b1e1..05b31b8 100644
 --- a/components/ungoogled/persona_profile.cc
 +++ b/components/ungoogled/persona_profile.cc
-@@ -176,17 +176,7 @@ uint64_t SeedFromCommandLine() {
+@@ -176,17 +176,7 @@
    if (!cmd || !cmd->HasSwitch(switches::kFingerprint)) {
      return 0;
    }
@@ -66,7 +62,7 @@ index 091b1e1..05b31b8 100644
  }
  
  // clearcote: when --fingerprint-profile=<gzip+base64 JSON> is set (a captured real
-@@ -454,6 +444,19 @@ void ApplyProfileOverride(PersonaProfile* p) {
+@@ -454,6 +444,19 @@
  
  }  // namespace
  
@@ -86,11 +82,9 @@ index 091b1e1..05b31b8 100644
  // clearcote: single source of truth for --fingerprint-platform (see
  // persona_profile.h). Parsed once, lowercased once.
  PersonaPlatform GetPersonaPlatform() {
-diff --git a/components/ungoogled/persona_profile.h b/components/ungoogled/persona_profile.h
-index 66abfd9..830a545 100644
 --- a/components/ungoogled/persona_profile.h
 +++ b/components/ungoogled/persona_profile.h
-@@ -243,6 +243,12 @@ struct COMPONENT_EXPORT(UNGOOGLED) PersonaProfile {
+@@ -243,6 +243,12 @@
  // tier keeps (cores, RAM) to combinations that exist in the wild.
  COMPONENT_EXPORT(UNGOOGLED) PersonaProfile DerivePersona(uint64_t seed);
  
@@ -103,9 +97,6 @@ index 66abfd9..830a545 100644
  // Process-wide singleton persona for this session. The first call reads the
  // --fingerprint switch (numeric, or FNV-1a-hashed if non-numeric -- matching
  // the per-site seed parse so browser + renderers agree) and derives the
-diff --git a/components/ungoogled/persona_validator.cc b/components/ungoogled/persona_validator.cc
-new file mode 100644
-index 0000000..33791d2
 --- /dev/null
 +++ b/components/ungoogled/persona_validator.cc
 @@ -0,0 +1,710 @@
@@ -819,9 +810,6 @@ index 0000000..33791d2
 +}
 +
 +}  // namespace ungoogled
-diff --git a/components/ungoogled/persona_validator.h b/components/ungoogled/persona_validator.h
-new file mode 100644
-index 0000000..70b0805
 --- /dev/null
 +++ b/components/ungoogled/persona_validator.h
 @@ -0,0 +1,99 @@

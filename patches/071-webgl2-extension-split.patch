@@ -54,7 +54,7 @@
    std::string css_color_gamut = "srgb";
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -4959,12 +4959,21 @@
+@@ -5070,12 +5070,21 @@
    }
  
    // clearcote persona: present the imported GPU's extension list when available.

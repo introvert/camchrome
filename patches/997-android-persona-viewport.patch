@@ -20,7 +20,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
 index d6c459e549..665491471d 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -370,6 +370,7 @@
+@@ -374,6 +374,7 @@
  #include "content/public/browser/internal_webui_config.h"
  #include "content/public/browser/isolated_web_apps_policy.h"
  #include "content/public/browser/legacy_tech_cookie_issue_details.h"
@@ -28,7 +28,7 @@ index d6c459e549..665491471d 100644
  #include "content/public/browser/navigation_entry.h"
  #include "content/public/browser/navigation_handle.h"
  #include "content/public/browser/network_service_instance.h"
-@@ -4698,7 +4699,19 @@ void ChromeContentBrowserClient::OverrideWebPreferences(
+@@ -4731,7 +4732,19 @@
    if (ungoogled::CurrentPersona().mobile) {
      const ungoogled::PersonaProfile& cc_p = ungoogled::CurrentPersona();
      web_prefs->viewport_enabled = true;
@@ -49,8 +49,6 @@ index d6c459e549..665491471d 100644
      web_prefs->viewport_style = blink::mojom::ViewportStyle::kMobile;
      web_prefs->shrinks_viewport_contents_to_fit = true;
      web_prefs->main_frame_resizes_are_orientation_changes = true;
-diff --git a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
-index 7764d4a472..5d873297d0 100644
 --- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
 +++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
 @@ -4,6 +4,8 @@
@@ -62,7 +60,7 @@ index 7764d4a472..5d873297d0 100644
  #include <algorithm>
  #include <memory>
  #include <optional>
-@@ -793,10 +795,16 @@ gfx::Size BrowserViewTabbedLayoutImpl::GetMinimumSize(
+@@ -806,10 +808,16 @@
  
    // This assumes a horizontal tabstrip. There is also a hard minimum on the
    // width of the browser defined by `kMainBrowserContentsMinimumWidth`.

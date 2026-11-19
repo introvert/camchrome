@@ -41,7 +41,7 @@ rejects any connection value off the grid in every schema.
  constexpr std::array<WeightedEntry<WebGLGPU>, 3> kWebGLGPUs = {{
      {{"Google Inc. (Intel)",
        "ANGLE (Intel, Intel(R) UHD Graphics 770 (0xA780) Direct3D11 vs_5_0 "
-@@ -745,6 +767,13 @@
+@@ -735,6 +757,13 @@
      // fix-up below replaces device_memory_gb from its device table, and a capture may supply
      // its own limit. 0 marks "not yet sized".
      p.js_heap_size_limit = 0;

@@ -64,7 +64,7 @@ band for the heap. Both switches are forwarded to renderers.
  constexpr std::array<WeightedEntry<WebGLGPU>, 3> kWebGLGPUs = {{
      {{"Google Inc. (Intel)",
        "ANGLE (Intel, Intel(R) UHD Graphics 770 (0xA780) Direct3D11 vs_5_0 "
-@@ -486,6 +515,62 @@
+@@ -476,6 +505,62 @@
    return kActive;
  }
  
@@ -127,7 +127,7 @@ band for the heap. Both switches are forwarded to renderers.
  uint64_t PersonaSeedFromString(const std::string& raw) {
    uint64_t parsed = 0;
    if (base::StringToUint64(raw, &parsed)) {
-@@ -611,23 +696,56 @@
+@@ -601,23 +686,56 @@
    }
    std::discrete_distribution<size_t> tier_dist(tier_weights.begin(),
                                                 tier_weights.end());
@@ -198,7 +198,7 @@ band for the heap. Both switches are forwarded to renderers.
  
    // Default Windows voice set (closes the getVoices()=0 tell); a profile overrides.
    p.voices = {
-@@ -845,6 +963,11 @@
+@@ -835,6 +953,11 @@
      if (p.webgpu_vendor.empty()) p.webgpu_vendor = cc_v;
      if (p.webgpu_architecture.empty()) p.webgpu_architecture = cc_a;
    }
@@ -226,7 +226,7 @@ band for the heap. Both switches are forwarded to renderers.
  
    // ---- Identity ----
    unsigned chrome_major_version = 151;
-@@ -286,6 +293,26 @@
+@@ -278,6 +285,26 @@
  // --fingerprint: they need a seed, not a persona.
  COMPONENT_EXPORT(UNGOOGLED) bool PersonaActive();
  
@@ -392,7 +392,7 @@ band for the heap. Both switches are forwarded to renderers.
  #endif  // THIRD_PARTY_UNGOOGLED_FINGERPRINTING_SWITCHES_H_
 --- a/content/browser/renderer_host/render_process_host_impl.cc
 +++ b/content/browser/renderer_host/render_process_host_impl.cc
-@@ -3936,6 +3936,8 @@
+@@ -4012,6 +4012,8 @@
        switches::kCanvasBridgeAllow,
        switches::kCanvasBridgeDeny,
        switches::kCanvasBridgeFallback,

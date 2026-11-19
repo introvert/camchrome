@@ -2,7 +2,7 @@ diff --git a/components/ungoogled/BUILD.gn b/components/ungoogled/BUILD.gn
 index 2ffc58b..e950e8d 100644
 --- a/components/ungoogled/BUILD.gn
 +++ b/components/ungoogled/BUILD.gn
-@@ -21,6 +21,7 @@ component("ungoogled_switches") {
+@@ -21,6 +21,7 @@
  
    deps = [
      "//base",
@@ -10,8 +10,6 @@ index 2ffc58b..e950e8d 100644
      "//crypto",
      "//third_party/zlib/google:compression_utils",
    ]
-diff --git a/components/ungoogled/persona_profile.cc b/components/ungoogled/persona_profile.cc
-index f4ffc4b..e40ab65 100644
 --- a/components/ungoogled/persona_profile.cc
 +++ b/components/ungoogled/persona_profile.cc
 @@ -17,12 +17,24 @@
@@ -39,7 +37,7 @@ index f4ffc4b..e40ab65 100644
  namespace {
  
  template <typename T>
-@@ -82,6 +94,77 @@ constexpr std::array<WeightedEntry<ScreenSize>, 9> kScreens = {{
+@@ -82,6 +94,77 @@
      {{3840, 2160, 2120}, 0.10},
  }};
  
@@ -117,7 +115,7 @@ index f4ffc4b..e40ab65 100644
  // Hardware tiers: pick a tier first, then draw cores + RAM from that tier's
  // constrained pools so the (cores, RAM) pair is one a real desktop ships. Flat
  // independent sampling produces off-distribution combos (e.g. 20 cores + 16 GB,
-@@ -786,10 +869,22 @@ PersonaProfile DerivePersona(uint64_t seed) {
+@@ -786,10 +869,22 @@
    PersonaProfile p;
    p.persona_seed = mixed;
  
@@ -144,7 +142,7 @@ index f4ffc4b..e40ab65 100644
  
    // Hardware: tier first, then correlated cores + RAM.
    std::array<double, kHwTiers.size()> tier_weights;
-@@ -948,6 +1043,24 @@ PersonaProfile DerivePersona(uint64_t seed) {
+@@ -948,6 +1043,24 @@
  
    ApplyProfileOverride(&p);
  
@@ -169,7 +167,7 @@ index f4ffc4b..e40ab65 100644
    // clearcote: an explicit --fingerprint-gpu-vendor/-renderer overrides the seed-/profile-
    // derived GPU (precedence: switch > imported profile > seed); WebGL getParameter reads these.
    const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
-@@ -955,7 +1068,7 @@ PersonaProfile DerivePersona(uint64_t seed) {
+@@ -955,7 +1068,7 @@
    // SAPI voices, Realtek/WASAPI audio devices). On a Linux persona, swap each to its coherent
    // Linux form so no field contradicts platform=Linux. Only rewrite a still-Windows default (an
    // imported Linux/mac profile is left intact); an explicit --fingerprint-gpu-renderer wins below.
@@ -178,7 +176,7 @@ index f4ffc4b..e40ab65 100644
      if (p.webgl_renderer.find("Direct3D") != std::string::npos)
        p.webgl_renderer = LinuxWebGLRenderer(p.webgl_vendor);
      // A real Chrome-on-Linux with no speech-dispatcher reports getVoices()==[]; never Windows
-@@ -971,7 +1084,7 @@ PersonaProfile DerivePersona(uint64_t seed) {
+@@ -971,7 +1084,7 @@
    // devices and keeps the Windows screen/pointer/touch), android inverts the
    // desktop shape structurally, so it overwrites screen/DPR/mobile/touch/GPU +
    // the GLES limit table from one atomic device row.
@@ -187,7 +185,7 @@ index f4ffc4b..e40ab65 100644
      const AndroidDevice& dev = WeightedPick(rng, kAndroidDevices);
      // Portrait screen; Android reports availWidth/Height == the full screen.
      p.screen_width = dev.screen_w;
-@@ -1021,6 +1134,118 @@ PersonaProfile DerivePersona(uint64_t seed) {
+@@ -1021,6 +1134,118 @@
      // enumerateDevices: phone-shaped roster.
      p.media_devices = AndroidMediaDevices(rng);
    }
@@ -306,11 +304,9 @@ index f4ffc4b..e40ab65 100644
    if (cmd->HasSwitch(switches::kFingerprintGpuVendor))
      p.webgl_vendor = cmd->GetSwitchValueASCII(switches::kFingerprintGpuVendor);
    if (cmd->HasSwitch(switches::kFingerprintGpuRenderer))
-diff --git a/components/ungoogled/persona_profile.h b/components/ungoogled/persona_profile.h
-index 4570246..223f29a 100644
 --- a/components/ungoogled/persona_profile.h
 +++ b/components/ungoogled/persona_profile.h
-@@ -340,6 +340,12 @@ COMPONENT_EXPORT(UNGOOGLED) void PersonaHeapLimitBounds(const PersonaProfile& p,
+@@ -340,6 +340,12 @@
  // persona; later calls return the same one. Thread-safe (std::call_once).
  COMPONENT_EXPORT(UNGOOGLED) const PersonaProfile& CurrentPersona();
  
@@ -323,11 +319,9 @@ index 4570246..223f29a 100644
  // clearcote: the device pixel ratio this persona presents, or 0 when there is no
  // override and the caller should fall back to the real display value. Resolution
  // order is flag > persona > none, which is what window.devicePixelRatio returns.
-diff --git a/third_party/blink/common/user_agent/user_agent_metadata.cc b/third_party/blink/common/user_agent/user_agent_metadata.cc
-index 1e5267c..7f7c741 100644
 --- a/third_party/blink/common/user_agent/user_agent_metadata.cc
 +++ b/third_party/blink/common/user_agent/user_agent_metadata.cc
-@@ -330,7 +330,8 @@ std::string GetChromiumVersion() {
+@@ -330,7 +330,8 @@
      }
      // 2. Non-Chrome brand (Edge/Opera/Vivaldi) -> use latest Chromium version
      if (brand != "chrome" && !brand.empty()) {
@@ -337,7 +331,7 @@ index 1e5267c..7f7c741 100644
      }
    }
  
-@@ -344,8 +345,8 @@ std::string GetChromiumVersion() {
+@@ -344,8 +345,8 @@
        return v;
    }
  

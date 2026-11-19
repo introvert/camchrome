@@ -24,7 +24,7 @@ over-claiming is an incoherent larger one. Closing the remaining gap is separate
 
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -4089,8 +4089,38 @@
+@@ -4172,8 +4172,38 @@
    return false;
  }
  

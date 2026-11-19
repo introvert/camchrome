@@ -1,7 +1,8 @@
 # Pinned upstreams. Scripts read these KEY=VALUE lines; edit here to move versions.
 
-# ungoogled-chromium tag -> pins the Chromium source tarball (Linux + Windows)
-UG_TAG=157.0.8103.78-1
+# ungoogled-chromium tag or commit -> pins the Chromium source tarball (Linux + Windows).
+# 158: head of ungoogled-chromium PR #4050 "Update to Chromium 158.0.8127.36" (no tag yet).
+UG_TAG=76f39e0fead37326b9ba0440831336b198a17246
 # Platform overlays.
 UGW_TAG=157.0.8103.78-1.1
 UGM_TAG=157.0.8103.78-1.1
@@ -10,4 +11,4 @@ UGM_TAG=157.0.8103.78-1.1
 # (BSD-3-Clause). Written against Chromium 151.0.7922.108; rebased to 157.0.8103.78
 # here, with 987-989 added.
 CLEARCOTE_COMMIT=ac40bdcaeba73d71984c83656a899246a25cb5ba
-PATCHES_BASE=157.0.8103.78
+PATCHES_BASE=158.0.8127.36

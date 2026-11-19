@@ -1,6 +1,6 @@
 --- a/components/ungoogled/persona_profile.cc
 +++ b/components/ungoogled/persona_profile.cc
-@@ -745,6 +745,12 @@
+@@ -735,6 +735,12 @@
      p.webgl_max_viewport_dim = dev.gl_max_texture_size;
      p.webgl_max_vertex_uniform_vectors = 1024;
      p.webgl_max_fragment_uniform_vectors = 1024;

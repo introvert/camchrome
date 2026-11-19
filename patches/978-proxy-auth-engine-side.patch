@@ -14,7 +14,7 @@ the utility-process allowlist, next to socks5-credentials.
 
 --- a/content/browser/service_host/utility_process_host.cc
 +++ b/content/browser/service_host/utility_process_host.cc
-@@ -406,6 +406,11 @@
+@@ -414,6 +414,11 @@
        // (net/socket/socks5_client_socket.cc) and every authenticated proxy fails
        // with ERR_SOCKS_CONNECTION_FAILED.
        "socks5-credentials",
@@ -38,9 +38,9 @@ the utility-process allowlist, next to socks5-credentials.
  #include "base/functional/callback_helpers.h"
  #include "base/metrics/histogram_macros.h"
  #include "base/strings/string_util.h"
-@@ -33,6 +35,48 @@
- 
- namespace {
+@@ -46,6 +48,48 @@
+   return handler_cert->EqualsExcludingChain(challenge_cert);
+ }
  
 +// clearcote: --proxy-auth=user:pass, resolved once per process. Read HERE, in
 +// net, because this file runs inside the network service; the switch reaches
@@ -87,7 +87,7 @@ the utility-process allowlist, next to socks5-credentials.
  enum AuthTarget {
    AUTH_TARGET_PROXY = 0,
    AUTH_TARGET_SECURE_PROXY,
-@@ -467,6 +511,27 @@
+@@ -505,6 +549,27 @@
      return true;
    }
  
@@ -117,7 +117,7 @@ the utility-process allowlist, next to socks5-credentials.
    // infinite loop. We use default credentials after checking the auth cache so
 --- a/net/http/http_auth_controller.h
 +++ b/net/http/http_auth_controller.h
-@@ -237,6 +237,12 @@
+@@ -265,6 +265,12 @@
    // preventing an infinite auth restart loop.
    bool embedded_identity_used_ = false;
  
