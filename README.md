@@ -13,8 +13,8 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 |---|---|---|
 | ungoogled-chromium base (Linux, Windows) | Chromium `158.0.8127.36` | pinned in `UPSTREAM` to the head of ungoogled-chromium [PR #4050](https://github.com/ungoogled-software/ungoogled-chromium/pull/4050) ("Update to Chromium 158.0.8127.36"; not tagged yet). Move the pin to the `158.0.8127.36-1` tag when it is published |
 | ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | no 158 overlay yet; macOS stays on 157 until ungoogled-chromium-macos tags 158 |
-| Fingerprint patches (`patches/`) | 97 patches | Linux x64 and arm64 built on 158 (official ThinLTO+PGO; arm64 cross-compiled); on Linux x64 every local self-test passes for Linux, Windows, macOS and Android personas (fingerprint 60/65/59/65, UA 12, network 17) and the Clearcote audit was run (see below). macOS arm64 was built and audited on 157 |
-| Clearcote stealth audit | 365 checks | 158 Linux x64, no GPU (`tools/persona_display.py`, persona fonts installed), 10 seeds per persona OS: **Linux, Windows and Android 100/100 on every seed**. Android has no finding at all (206/206); Linux keeps one (empty platformVersion, which stock Chrome 158 gets on the same host); Windows keeps one (font-size stepping, which stock Chrome on Linux shares). 157 macOS arm64: 100/100 |
+| Fingerprint patches (`patches/`) | 99 patches | Linux x64 and arm64 built on 158 (official ThinLTO+PGO; arm64 cross-compiled); on Linux x64 every local self-test passes for Linux, Windows, macOS and Android personas (fingerprint 61/66/59/65, UA 12, network 17) and the Clearcote audit was run (see below). macOS arm64 was built and audited on 157 |
+| Clearcote stealth audit | 365 checks | 158 Linux x64, no GPU (`tools/persona_display.py`, persona fonts installed), 10 seeds per persona OS, three browsers at a time: **Windows 249/249 and Android 206/206 with no finding**; **Linux 100/100** with one finding (empty platformVersion), which stock Chrome 158 shows identically on the same host. 157 macOS arm64: 100/100 |
 
 The current release is Chromium `158.0.8127.36` for Linux x64 and arm64 (Google Chrome stable on
 Linux is 158; Windows and macOS stable moved to 159 on 2026-11-18). ungoogled-chromium has not
@@ -104,7 +104,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1001-android-persona-page-scale` | an Android persona takes Android's page-scale range (0.25 to 5), so a page without a viewport tag is zoomed out to fit (innerWidth 980, scale ~0.42) instead of scrolling sideways at scale 1; `-webkit-text-size-adjust` is honoured |
 | `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is the window's height: the same in every frame, unchanged by page zoom, within the screen |
 
-### What 1003–1020 add (found by the Clearcote audit on a Linux server)
+### What 1003–1022 add (found by the Clearcote audit on a Linux server)
 
 | Patch | Fix |
 |---|---|
@@ -124,6 +124,8 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1016-windows-persona-no-flag-ligatures` | regional-indicator pairs render as two letters under a Windows persona (Segoe UI Emoji has no flags); ZWJ and skin-tone sequences still form |
 | `1017-android-persona-raster-scale` | an Android persona rasterises at floor(width × dpr) / width: the viewport is exactly the phone's width and a 100 px box measures within one device pixel of 100 × dpr |
 | `1020-persona-local-fallback-latin-only` | the `local()` fallback only accepts a clone that renders Latin, so a face never loads by name while being invisible to layout |
+| `1021-windows-persona-fontations-float-advances` | a Windows persona's advances are read in design units and scaled in float, so stepping the font size by 0.01 px changes text width on nearly every step, as on Windows (Linux: ~64%, a 1/64 px size grid) |
+| `1022-persona-cpu-blocks-per-instance` | each browser pins itself to its own block of CPUs, so several personas on one server do not slow each other's single-thread baseline (which read as more parallelism than claimed) |
 
 ## Running on a Linux server without a GPU
 
@@ -169,9 +171,7 @@ How to look like a real browser on such a host:
    renders each of its OS's fonts through an open metric-compatible clone (Arimo for Arial,
    Carlito for Calibri, Selawik for Segoe UI, WenQuanYi and IPA for the CJK faces, ...); without
    the clones those families fall back to a generic and pages can measure it.
-6. **One Windows-persona tell remains on a Linux host**: stepping the font size by 0.01 px
-   changes text width on ~63% of steps (Windows: nearly all). Stock Chrome on Linux does the same
-   even with `text-rendering: geometricPrecision`, so it is not hinting; it needs a Windows host.
+6. **Run several personas side by side** freely: each browser takes its own block of CPUs (1022).
 7. **Known limits on SwiftShader**: WebGL `MAX_TEXTURE_SIZE` stays at SwiftShader's 8192, so
    textures the page allocates really fit (a desktop D3D11 GPU would report 16384); there is
    no WebGPU adapter (as on a real GPU-less Windows VM); WebGL draws are CPU-speed. For

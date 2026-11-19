@@ -1,0 +1,50 @@
+camchrome: each persona browser takes its own block of CPUs.
+
+1003 pinned every browser to the first N CPUs. Several personas on one server (the normal case on
+a many-core host) then shared CPUs 0..N-1, each one's single-worker baseline slowed, and the
+Clearcote audit's work(24 workers) / work(1 worker) read 1.5x the claimed core count (seen on 3 of
+30 parallel audits). A browser now takes N CPUs starting at a block chosen by its process id,
+so concurrent instances spread over the machine; the count is still the persona's.
+
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -6,6 +6,7 @@
+ 
+ #if BUILDFLAG(IS_LINUX)
+ #include <sched.h>
++#include <unistd.h>
+ #endif
+ #include <cmath>
+ #if BUILDFLAG(IS_LINUX)
+@@ -1225,15 +1226,24 @@
+     CPU_ZERO(&have);
+     if (want > 0 && sched_getaffinity(0, sizeof(have), &have) == 0 &&
+         static_cast<unsigned>(CPU_COUNT(&have)) > want) {
++      // camchrome (1022): each browser takes its own block of the available CPUs, offset by its
++      // process id, instead of every instance taking the first N: several personas on one
++      // server all pinned to CPUs 0..N-1 slowed each other's single-thread baseline, and a
++      // page measuring work(24 workers) / work(1 worker) then read more parallelism than the
++      // persona claims.
++      int avail[CPU_SETSIZE];
++      int count = 0;
++      for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
++        if (CPU_ISSET(cpu, &have))
++          avail[count++] = cpu;
++      }
++      const int blocks = count / static_cast<int>(want);
++      const int start =
++          blocks > 1 ? (static_cast<int>(getpid()) % blocks) * static_cast<int>(want) : 0;
+       cpu_set_t keep;
+       CPU_ZERO(&keep);
+-      unsigned n = 0;
+-      for (int cpu = 0; cpu < CPU_SETSIZE && n < want; ++cpu) {
+-        if (CPU_ISSET(cpu, &have)) {
+-          CPU_SET(cpu, &keep);
+-          ++n;
+-        }
+-      }
++      for (unsigned n = 0; n < want; ++n)
++        CPU_SET(avail[(start + static_cast<int>(n)) % count], &keep);
+       sched_setaffinity(0, sizeof(keep), &keep);
+     }
+   }

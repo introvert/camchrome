@@ -95,3 +95,5 @@
 1018-windows-persona-text-every-process.patch
 1019-windows-persona-fontations-coverage-and-local.patch
 1020-persona-local-fallback-latin-only.patch
+1021-windows-persona-fontations-float-advances.patch
+1022-persona-cpu-blocks-per-instance.patch
