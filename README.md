@@ -104,7 +104,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1001-android-persona-page-scale` | an Android persona takes Android's page-scale range (0.25 to 5), so a page without a viewport tag is zoomed out to fit (innerWidth 980, scale ~0.42) instead of scrolling sideways at scale 1; `-webkit-text-size-adjust` is honoured |
 | `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is the window's height: the same in every frame, unchanged by page zoom, within the screen |
 
-### What 1003–1010 add (found by the Clearcote audit on a Linux server)
+### What 1003–1011 add (found by the Clearcote audit on a Linux server)
 
 | Patch | Fix |
 |---|---|
@@ -116,6 +116,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1008-android-persona-platform-surface` | an Android persona has Chrome for Android's API surface (no EyeDropper, `navigator.keyboard`, `windowControlsOverlay`, Document PiP, Local Font Access, WebHID; BarcodeDetector present), rasterises at its devicePixelRatio (`--force-device-scale-factor`), and claims the Google Chrome brand by default |
 | `1009-persona-orientation-and-mesa-limits` | a desktop persona's `screen.orientation` follows its own screen, not the X screen's shape; Mesa uniform components and varyings match a Mesa renderer |
 | `1010-persona-fullscreen-outer-height` | a fullscreen window is as tall as the persona screen, not its work area |
+| `1011-windows-persona-drive-letter-urls` | under a Windows persona every URL parse (`new URL()`, `<a>.href`, `Request`) reads `C:/x` as `file:///C:/x`, as a Windows build does |
 
 ## Running on a Linux server without a GPU
 
@@ -158,8 +159,8 @@ How to look like a real browser on such a host:
    there too. Use a residential proxy (`--proxy-server=socks5://… --socks5-udp`).
 5. **A Windows persona on a Linux host has tells the engine cannot remove**: text is rasterised
    by FreeType (font-size stepping and anti-aliasing levels), Noto Color Emoji draws country
-   flags (Segoe UI Emoji has none), localized Windows CJK family names do not resolve, and
-   `C:/x` parses as a URL scheme. A Linux or Android persona has none of these on a Linux host;
+   flags (Segoe UI Emoji has none), and localized Windows CJK family names do not resolve.
+   A Linux or Android persona has none of these on a Linux host;
    use a Windows host for Windows personas.
 6. **Known limits on SwiftShader**: WebGL `MAX_TEXTURE_SIZE` stays at SwiftShader's 8192, so
    textures the page allocates really fit (a desktop D3D11 GPU would report 16384); there is

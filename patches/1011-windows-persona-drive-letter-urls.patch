@@ -1,0 +1,75 @@
+camchrome: under a Windows persona every URL parse reads "C:/x" as a file path.
+
+A Windows build's url/ layer turns "C:/x" (and "C:\\x") into file:///C:/x in every parse. 160 did
+this in new URL() only, so under a Windows persona new URL("C:/x") said file: while <a>.href and
+Request said c: (Clearcote audit: "C:/ parses the way the claimed OS's Chromium parses it"; one
+engine has one parser). The fixup now sits in KURL::Init, which every Blink URL parse goes
+through; 160's copy stays as a no-op for an already rewritten URL. Other personas are unchanged.
+
+--- a/third_party/blink/renderer/platform/weborigin/kurl.cc
++++ b/third_party/blink/renderer/platform/weborigin/kurl.cc
+@@ -47,6 +47,11 @@
+ #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
+ #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
+ #include "third_party/perfetto/include/perfetto/tracing/traced_value.h"
++#include "base/command_line.h"
++#include "base/strings/string_util.h"
++#include "build/build_config.h"
++#include "components/ungoogled/ungoogled_switches.h"
++#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+ #include "url/gurl.h"
+ #include "url/url_constants.h"
+ #include "url/url_features.h"
+@@ -58,6 +63,30 @@
+ namespace blink {
+ 
+ namespace {
++// camchrome (1011): the persona platform, resolved like 160's IsWindowsPersona() and
++// Navigator::platform(): --fingerprint-platform when it names a platform, else the host build.
++bool KurlWindowsPersona() {
++  static const bool kWindows = [] {
++    const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++    if (command_line && command_line->HasSwitch(switches::kFingerprintPlatform)) {
++      const std::string v = base::ToLowerASCII(
++          command_line->GetSwitchValueASCII(switches::kFingerprintPlatform));
++      if (v == "windows")
++        return true;
++      if (v == "linux" || v == "macos" || v == "android")
++        return false;
++    }
++#if BUILDFLAG(IS_WIN)
++    return true;
++#else
++    return false;
++#endif
++  }();
++  return kWindows;
++}
++}  // namespace
++
++namespace {
+ 
+ #if DCHECK_IS_ON()
+ void AssertProtocolIsGood(const StringView protocol) {
+@@ -893,6 +922,21 @@
+ void KURL::Init(const KURL& base,
+                 const StringView& relative,
+                 const TextEncoding* query_encoding) {
++  // camchrome (1011): a Windows build's URL layer reads "C:/x" (or "C:\\x") as the file
++  // path file:///C:/x in every parse, so new URL(), <a>.href and Request all agree. 160 applied
++  // the fixup in new URL() only, which made the three disagree under a Windows persona; doing
++  // it here covers every parse. A rewritten "file:///..." cannot match again.
++  if (!relative.IsNull() && relative.length() >= 3 && KurlWindowsPersona()) {
++    const UChar c0 = relative[0];
++    if (((c0 >= 'A' && c0 <= 'Z') || (c0 >= 'a' && c0 <= 'z')) && relative[1] == ':' &&
++        (relative[2] == '/' || relative[2] == '\\')) {
++      StringBuilder fixed;
++      fixed.Append("file:///");
++      fixed.Append(relative);
++      Init(base, fixed.ReleaseString(), query_encoding);
++      return;
++    }
++  }
+   // As a performance optimization, we do not use the charset converter
+   // if encoding is UTF-8 or other Unicode encodings. Note that this is
+   // per HTML5 2.5.3 (resolving URL). The URL canonicalizer will be more
