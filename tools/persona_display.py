@@ -38,20 +38,32 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 WMS = ["openbox", "fluxbox", "xfwm4", "icewm", "matchbox-window-manager", "metacity"]
 
+# Openbox without decorations: Chrome draws its own frame, and a border from the window manager
+# would make the content area narrower than the persona's window (a phone has none at all).
+# A phone persona's window is also maximized: a phone's browser fills the screen, and Chrome
+# drops its own window border only for a maximized window.
+OPENBOX_RC = """<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <applications><application class="*"><decor>no</decor>{maximized}</application></applications>
+</openbox_config>
+"""
 
-def persona_screen(binary: str, persona_flags: list[str]) -> tuple[int, int, float]:
+
+def persona_screen(binary: str, persona_flags: list[str]) -> tuple[int, int, float, bool]:
     out = subprocess.run([binary, "--clearcote-validate-persona=current", *persona_flags],
                          capture_output=True, text=True, timeout=60).stdout
     m = re.search(r"screen=(\d+)x(\d+).*?dpr=([\d.]+)", out)
     if not m:
         raise SystemExit(f"could not read the persona screen from {binary}:\n{out[:400]}")
-    return int(m.group(1)), int(m.group(2)), float(m.group(3))
+    mobile = re.search(r"\bmobile=1\b", out) is not None
+    return int(m.group(1)), int(m.group(2)), float(m.group(3)), mobile
 
 
 def free_display() -> int:
@@ -82,7 +94,7 @@ def main() -> int:
     if not any(f.startswith("--fingerprint") for f in persona):
         raise SystemExit("pass the persona switches (--fingerprint=..., --fingerprint-platform=...)")
 
-    w, h, dpr = persona_screen(args.binary, persona)
+    w, h, dpr, mobile = persona_screen(args.binary, persona)
     pw, ph = round(w * args.scale), round(h * args.scale)
     wm = args.wm or next((x for x in WMS if shutil.which(x)), None)
     if not wm:
@@ -102,6 +114,12 @@ def main() -> int:
                 break
             time.sleep(0.05)
         env = dict(os.environ, DISPLAY=display)
+        if "openbox" in wm:
+            rc = tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False)
+            rc.write(OPENBOX_RC.format(
+                maximized="<maximized>yes</maximized>" if mobile else ""))
+            rc.close()
+            wm = f"{wm} --config-file {rc.name}"
         procs.append(subprocess.Popen(wm, shell=True, env=env, stdout=subprocess.DEVNULL,
                                       stderr=subprocess.DEVNULL, start_new_session=True))
         time.sleep(1.0)
