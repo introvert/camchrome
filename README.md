@@ -113,7 +113,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1005-persona-webcodecs-hardware-coherence` | WebCodecs `prefer-hardware` answers from the same persona codec table as MediaCapabilities `powerEfficient` |
 | `1006-linux-persona-and-viewport-coherence` | a Linux persona sends the empty platformVersion Chromium on Linux sends, and Mesa's GL limits next to a Mesa renderer string; `MAX_VIEWPORT_DIMS` is the persona GPU's (D3D11: 32767) |
 | `1007-windows-persona-coherence` | D3D11 renderer strings carry the 8-digit device id ANGLE prints; `ActiveText` is the Windows hotlight colour; the UA stylesheet follows the persona OS; shaders translate to HLSL under a D3D11 renderer string (966 on by default); Web Bluetooth for Windows, macOS and Android personas |
-| `1008-android-persona-platform-surface` | an Android persona has Chrome for Android's API surface (no EyeDropper, `navigator.keyboard`, `windowControlsOverlay`, Document PiP, Local Font Access, WebHID; BarcodeDetector present), rasterises at its devicePixelRatio (`--force-device-scale-factor`), and claims the Google Chrome brand by default |
+| `1008-android-persona-platform-surface` | an Android persona has Chrome for Android's API surface (no EyeDropper, `navigator.keyboard`, `windowControlsOverlay`, Document PiP, Local Font Access, WebHID; BarcodeDetector present), has a window the size of its screen (content exactly the phone's width on any X screen), and claims the Google Chrome brand by default |
 | `1009-persona-orientation-and-mesa-limits` | a desktop persona's `screen.orientation` follows its own screen, not the X screen's shape; Mesa uniform components and varyings match a Mesa renderer |
 | `1010-persona-fullscreen-outer-height` | a fullscreen window is as tall as the persona screen, not its work area |
 | `1011-windows-persona-drive-letter-urls` | under a Windows persona every URL parse (`new URL()`, `<a>.href`, `Request`) reads `C:/x` as `file:///C:/x`, as a Windows build does |
@@ -162,7 +162,12 @@ How to look like a real browser on such a host:
    flags (Segoe UI Emoji has none), and localized Windows CJK family names do not resolve.
    A Linux or Android persona has none of these on a Linux host;
    use a Windows host for Windows personas.
-6. **Known limits on SwiftShader**: WebGL `MAX_TEXTURE_SIZE` stays at SwiftShader's 8192, so
+6. **A phone persona rasterises at the host's scale.** `devicePixelRatio`, screen and media
+   queries report the phone's (e.g. 2.625), but layout runs at 1x, which ResizeObserver's
+   `devicePixelContentBoxSize` and `srcset` selection can see. Forcing the scale instead
+   (`--force-device-scale-factor`) makes X11 round the window to whole pixels, and a 412 px phone
+   at 2.625 then lays out at 392 or 413 CSS px; the exact viewport matters to every page.
+7. **Known limits on SwiftShader**: WebGL `MAX_TEXTURE_SIZE` stays at SwiftShader's 8192, so
    textures the page allocates really fit (a desktop D3D11 GPU would report 16384); there is
    no WebGPU adapter (as on a real GPU-less Windows VM); WebGL draws are CPU-speed. For
    pixel-exact GPU output use the canvas bridge (`--canvas-bridge-url`, 065) to a host with a GPU.
