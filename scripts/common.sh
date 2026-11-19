@@ -38,6 +38,11 @@ clone_at() { # repo-name tag
   local dir="$WORK/$1"
   [ -d "$dir" ] || git clone --quiet "https://github.com/ungoogled-software/$1.git" "$dir"
   git -C "$dir" fetch --tags --quiet
+  # A pin can also be a commit that no tag names yet (e.g. the head of an upstream
+  # "Update to Chromium N" pull request); GitHub serves reachable commits by id.
+  if ! git -C "$dir" rev-parse --verify --quiet "$2^{commit}" >/dev/null; then
+    git -C "$dir" fetch --quiet origin "$2"
+  fi
   git -C "$dir" -c advice.detachedHead=false checkout --quiet "$2"
   git -C "$dir" submodule update --init --quiet
 }

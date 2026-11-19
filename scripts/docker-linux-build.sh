@@ -12,7 +12,7 @@
 set -euo pipefail
 CPU="${1:-x64}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-NAME="camchrome-linux-$CPU"
+NAME="${NAME:-camchrome-linux-$CPU}"   # container and volume name; set it to keep a second tree (e.g. a rebase)
 ARGS_FILE="${ARGS_FILE:-config/args.linux.lowmem.gn}"
 
 docker rm -f "$NAME" >/dev/null 2>&1 || true

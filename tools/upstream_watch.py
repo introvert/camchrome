@@ -7,7 +7,12 @@
 
 Reads UPSTREAM, then asks:
   * ungoogled-chromium and its Windows/macOS overlays: newest tag (git ls-remote)
+  * the next ungoogled major before it is tagged: open "Update to Chromium N" pull requests in
+    the base and both overlays (GitHub's public API; that is where a new major shows up first)
   * Google Chrome stable per platform: Chrome's public version history API
+  * whether the Chromium source tarball for the newest stable exists yet (one HEAD request)
+  * Chrome for Testing stable (the stock reference binary tools/render_compare.py compares with)
+  * Edge stable (patch 995 hard-codes the Edge build per Chromium major)
   * Clearcote: whether the public repo moved past CLEARCOTE_COMMIT, and whether patches/
     changed (shallow, blob-less clone of the patches directory's history)
   * the reference repos in docs/UPSTREAM-SOURCES.md: newest tag and last commit date
@@ -100,6 +105,54 @@ def chrome_stable(platform: str) -> str | None:
         return f"error: {e}"
 
 
+def get_json(url: str):
+    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
+                                               "User-Agent": "upstream-watch"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+
+def update_prs(repo: str) -> list[str]:
+    """Open PRs titled "Update to Chromium <version>": the next tag, before it exists."""
+    try:
+        prs = get_json(f"https://api.github.com/repos/{repo}/pulls?state=open&per_page=50")
+    except Exception as e:  # noqa: BLE001
+        return [f"error: {e}"]
+    return [f"#{p['number']} {p['title']} ({p['html_url']}, updated {p['updated_at'][:10]})"
+            for p in prs if re.search(r"(?i)update to chromium \d", p["title"])]
+
+
+def tarball_exists(version: str) -> bool | None:
+    url = ("https://commondatastorage.googleapis.com/chromium-browser-official/"
+           f"chromium-{version}-lite.tar.xz")
+    try:
+        req = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def cft_stable() -> str | None:
+    try:
+        d = get_json("https://googlechromelabs.github.io/chrome-for-testing/"
+                     "last-known-good-versions.json")
+        return d["channels"]["Stable"]["version"]
+    except Exception as e:  # noqa: BLE001
+        return f"error: {e}"
+
+
+def edge_stable() -> str | None:
+    try:
+        for prod in get_json("https://edgeupdates.microsoft.com/api/products"):
+            if prod.get("Product") == "Stable":
+                rel = [r for r in prod["Releases"] if r.get("Platform") == "Windows"]
+                return max((r["ProductVersion"] for r in rel), key=ver_key, default=None)
+    except Exception as e:  # noqa: BLE001
+        return f"error: {e}"
+    return None
+
+
 def clearcote(pinned: str) -> dict:
     with tempfile.TemporaryDirectory() as d:
         git("clone", "-q", "--filter=blob:none", "--no-checkout",
@@ -146,6 +199,14 @@ def main() -> int:
         print(f"  {key:8} {cur:24} latest {latest or '?':24} "
               f"{'REBASE DUE' if is_behind else 'ok'}")
 
+    print("\nNext major in progress (open update PRs)")
+    result["update_prs"] = {}
+    for key, repo in PINNED.items():
+        prs = update_prs(repo)
+        result["update_prs"][repo] = prs
+        for line in prs or ["none"]:
+            print(f"  {repo.split('/')[1]:30} {line}")
+
     print("\nGoogle Chrome stable")
     for p in PLATFORMS:
         v = chrome_stable(p)
@@ -156,6 +217,18 @@ def main() -> int:
     if base_major and majors and base_major not in majors:
         print(f"  engine major {base_major} is behind stable {sorted(majors)}; rebase when "
               "ungoogled-chromium tags it")
+
+    newest = max((v for v in result["chrome_stable"].values() if v and not str(v).startswith("error")),
+                 key=ver_key, default=None)
+    if newest:
+        ok = tarball_exists(newest)
+        result["tarball"] = {newest: ok}
+        print(f"  source tarball chromium-{newest}-lite.tar.xz: {'available' if ok else 'not yet'}")
+    result["cft_stable"] = cft_stable()
+    result["edge_stable"] = edge_stable()
+    print(f"  Chrome for Testing stable: {result['cft_stable']}")
+    print(f"  Edge stable (Windows): {result['edge_stable']}  (995 table must name the Edge "
+          "build for the engine's major)")
 
     print("\nClearcote (vendored patch source)")
     try:

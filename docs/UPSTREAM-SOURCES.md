@@ -4,6 +4,34 @@ As of 2026-11-18. `tools/upstream_watch.py` prints the live state of everything 
 and 3 (pins vs newest tags, Chrome stable, Clearcote movement, reference repos), and
 `.github/workflows/upstream-watch.yml` runs it every Monday and fails when a pin is behind.
 
+## 0. Update checklist (run this first)
+
+One command answers most of it:
+
+```bash
+tools/upstream_watch.py --no-reference     # pins, next-major PRs, Chrome/CfT/Edge stable, tarball, Clearcote
+```
+
+Then, by hand, in this order:
+
+| # | Question | Where to look | Command / URL |
+|---|---|---|---|
+| 1 | Is there a new ungoogled tag? | ungoogled-chromium tags | `gh api repos/ungoogled-software/ungoogled-chromium/tags --jq '.[0:3][].name'` |
+| 2 | Is the next major in progress, and is it buildable? | Open "Update to Chromium N" PRs and their comments (reviewers post build failures there) | `gh pr list -R ungoogled-software/ungoogled-chromium --search "Update to Chromium"`, then `gh pr view <n> -R ungoogled-software/ungoogled-chromium --comments` |
+| 3 | Do the overlays have the same version? | Windows overlay (applied on Linux too) and macOS overlay: tags and update PRs | `gh api repos/ungoogled-software/ungoogled-chromium-windows/tags --jq '.[0].name'` (same for `-macos`) |
+| 4 | What is Chrome stable per OS? | Version history API | `curl -s "https://versionhistory.googleapis.com/v1/chrome/platforms/win/channels/stable/versions?pageSize=1"` (`mac`, `linux`, `android`) |
+| 5 | Does the source exist? | Chromium official tarballs | `curl -sI https://commondatastorage.googleapis.com/chromium-browser-official/chromium-<ver>-lite.tar.xz` |
+| 6 | What security fixes are in it? | [Chrome Releases blog](https://chromereleases.googleblog.com/) | Read every stable post since the pinned version; note "exploit in the wild" CVEs |
+| 7 | Stock reference binary for the comparison tests | Chrome for Testing | `https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json`; download `.../chrome-for-testing-public/<ver>/linux64/chrome-linux64.zip` into `build/ref/<ver>/` |
+| 8 | Edge build for `--fingerprint-brand=edge` (995) | Edge updates API | `curl -s https://edgeupdates.microsoft.com/api/products` (Product `Stable`, Platform `Windows`) |
+| 9 | Did the vendored patch source move? | Clearcote `patches/` | `git log ac40bdc..HEAD -- patches` in a clone of clearcotelabs/clearcote-browser |
+| 10 | New detection vectors? | BotBrowser CHANGELOG, Clearcote audit check index, CreepJS commits | links in section 2 |
+| 11 | Faster rebases ahead of ungoogled | Helium (tracks stable on an ungoogled base; GPL, read only) | https://github.com/imputnet/helium/commits |
+
+After moving a version: edit `UPSTREAM`, run `scripts/01-apply-patches.sh --check`, rebuild, then
+`tools/fingerprint_selftest.py`, `tools/ua_selftest.py` and `tools/render_compare.py` against
+the matching Chrome for Testing binary.
+
 ## 1. Pinned upstreams (a change here means a rebase or a patch pull)
 
 | Source | Pinned | Newest on 2026-11-18 | Watch for | How |
