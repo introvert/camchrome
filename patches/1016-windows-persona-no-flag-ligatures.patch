@@ -1,0 +1,67 @@
+camchrome: a Windows persona shows regional-indicator pairs as letters, as Segoe UI Emoji does.
+
+Clearcote audit, Windows persona on a Linux host: "flag pair / two letters = 0.500 ... a
+regional-indicator pair ligated into one flag. Windows' Segoe UI Emoji has no flag glyphs, so this
+emoji font came from another OS." Noto Color Emoji forms flags through its ccmp feature, which
+also forms ZWJ and skin-tone sequences that Segoe UI Emoji supports. Under a Windows persona the
+shaper turns ccmp off at regional-indicator code points only (a range-limited HarfBuzz feature),
+so a pair renders as two letters while every other emoji sequence still shapes.
+
+--- a/third_party/blink/renderer/platform/fonts/shaping/harfbuzz_shaper.cc
++++ b/third_party/blink/renderer/platform/fonts/shaping/harfbuzz_shaper.cc
+@@ -35,6 +35,7 @@
+ #include <hb.h>
+ #include <unicode/uchar.h>
+ #include <unicode/uscript.h>
++#include <unicode/utf16.h>
+ 
+ #include <algorithm>
+ #include <hb-cplusplus.hh>
+@@ -54,6 +55,7 @@
+ #include "third_party/blink/renderer/platform/fonts/font_variant_emoji.h"
+ #include "third_party/blink/renderer/platform/fonts/opentype/open_type_caps_support.h"
+ #include "third_party/blink/renderer/platform/fonts/shaping/case_mapping_harfbuzz_buffer_filler.h"
++#include "components/ungoogled/persona_profile.h"
+ #include "third_party/blink/renderer/platform/fonts/shaping/font_features.h"
+ #include "third_party/blink/renderer/platform/fonts/shaping/han_kerning.h"
+ #include "third_party/blink/renderer/platform/fonts/shaping/harfbuzz_face.h"
+@@ -308,6 +310,14 @@
+   }
+ }
+ 
++// camchrome (1016): text shaped as on Windows (see the regional-indicator note in Shape()).
++bool PersonaShapesLikeWindows() {
++  static const bool kWindows =
++      ungoogled::PersonaActive() &&
++      ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kWindows;
++  return kWindows;
++}
++
+ inline bool ShapeRange(hb_buffer_t* buffer,
+                        const FontFeatureRanges& font_features,
+                        const SimpleFontData* current_font,
+@@ -1056,6 +1066,24 @@
+           font_features);
+     }
+ 
++    // camchrome (1016): Windows' Segoe UI Emoji has no flag glyphs, so a regional-indicator
++    // pair is two letters on Windows; Noto Color Emoji joins it into a flag through 'ccmp'
++    // (Clearcote audit: "emoji come from the claimed OS's emoji font"). Under a Windows persona
++    // 'ccmp' is off at regional-indicator positions only, so ZWJ and skin-tone sequences, which
++    // Segoe UI Emoji does form, still shape. The saver above restores the list per segment.
++    if (PersonaShapesLikeWindows() && !text_.Is8Bit()) {
++      const base::span<const UChar> chars = text_.Span16();
++      for (unsigned i = shape_start; i < shape_end;) {
++        const unsigned at = i;
++        UChar32 c;
++        U16_NEXT(chars.data(), i, shape_end, c);
++        if (c >= 0x1F1E6 && c <= 0x1F1FF) {
++          font_features.push_back(FontFeatureRange{
++              {FontFeatureTag('c', 'c', 'm', 'p'), 0}, at, i});
++        }
++      }
++    }
++
+     if (!ShapeRange(range_data->buffer.Get(), range_data->font_features,
+                     adjusted_font, current_font_data_for_range_set->Ranges(),
+                     segment.script, direction, language,

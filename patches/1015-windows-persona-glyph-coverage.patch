@@ -1,0 +1,88 @@
+camchrome: canvas text under a Windows persona carries DirectWrite's anti-aliasing ladder.
+
+Clearcote audit, Windows persona on a Linux host: "238 distinct anti-aliasing levels under a
+Windows claim. DirectWrite hands canvas text to Skia as a coarse ladder (about 15 levels);
+FreeType's ~240 means the text was rasterised on Linux." Skia's FreeType scaler gains an optional
+coverage quantization for 8-bit glyph masks (SkFreeTypeSetCoverageLevels, off by default); the
+renderer sets 16 levels under a Windows persona. Linux, macOS and Android personas are unchanged.
+
+--- a/third_party/skia/src/ports/SkFontHost_FreeType.cpp
++++ b/third_party/skia/src/ports/SkFontHost_FreeType.cpp
+@@ -46,6 +46,19 @@
+ 
+ #include <array>
+ #include <memory>
++#include <atomic>
++
++// camchrome (1015): glyph coverage levels for 8-bit masks (0 = FreeType's own).
++namespace {
++std::atomic<int> gSkFreeTypeCoverageLevels{0};
++int SkFreeTypeCoverageLevels() {
++    return gSkFreeTypeCoverageLevels.load(std::memory_order_relaxed);
++}
++}  // namespace
++
++SK_API void SkFreeTypeSetCoverageLevels(int levels) {
++    gSkFreeTypeCoverageLevels.store(levels, std::memory_order_relaxed);
++}
+ #include <optional>
+ #include <tuple>
+ 
+@@ -1461,6 +1474,22 @@
+     }
+ 
+     fUtils.generateGlyphImage(fFace, glyph, imageBuffer, *bitmapMatrix, fPreBlend);
++
++    // camchrome (1015): optional coverage quantization of 8-bit glyph masks. DirectWrite hands
++    // grayscale glyph coverage to Skia as a coarse ladder (about 15 levels); FreeType renders
++    // ~240. Off (0) unless the embedder sets a level count, which Chrome does for a Windows
++    // persona so canvas text carries Windows' anti-aliasing ladder.
++    const int levels = SkFreeTypeCoverageLevels();
++    if (levels >= 2 && levels < 256 && glyph.maskFormat() == SkMask::kA8_Format) {
++        const int step = 255 / (levels - 1);
++        uint8_t* row = static_cast<uint8_t*>(imageBuffer);
++        for (int y = 0; y < glyph.height(); ++y, row += glyph.rowBytes()) {
++            for (int x = 0; x < glyph.width(); ++x) {
++                const int q = ((row[x] + step / 2) / step) * step;
++                row[x] = static_cast<uint8_t>(q > 255 ? 255 : q);
++            }
++        }
++    }
+ }
+ 
+ sk_sp<SkDrawable> SkScalerContext_FreeType::generateDrawable(const SkGlyph& glyph) {
+--- a/content/child/runtime_features.cc
++++ b/content/child/runtime_features.cc
+@@ -44,6 +44,7 @@
+ #include "third_party/blink/public/common/switches.h"
+ #include "third_party/blink/public/platform/web_runtime_features.h"
+ #include "components/ungoogled/persona_profile.h"
++#include "third_party/skia/include/core/SkTypes.h"
+ #include "components/ungoogled/ungoogled_switches.h"
+ #include "ui/accessibility/accessibility_features.h"
+ #include "ui/base/ui_base_features.h"
+@@ -472,6 +473,14 @@
+         break;
+     }
+   }
++  // camchrome (1015): canvas and page text under a Windows persona carry DirectWrite's coarse
++  // anti-aliasing ladder (16 coverage levels) rather than FreeType's ~240, which a page counts
++  // in the distinct alpha values of drawn text (Clearcote audit: "canvas text is anti-aliased
++  // the way the claimed OS rasterises it"). Set before any glyph is rasterised in this process.
++  if (ungoogled::PersonaActive() &&
++      ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kWindows) {
++    SkFreeTypeSetCoverageLevels(16);
++  }
+   // camchrome (1008): the API surface of Chrome for Android. These desktop-only APIs are not
+   // in the Android build (EyeDropper, Document Picture-in-Picture, Local Font Access, WebHID,
+   // navigator.keyboard, windowControlsOverlay, navigator.managed), and BarcodeDetector is
+@@ -599,6 +608,9 @@
+ 
+ }  // namespace
+ 
++// camchrome (1015): defined in third_party/skia/src/ports/SkFontHost_FreeType.cpp.
++SK_API void SkFreeTypeSetCoverageLevels(int levels);
++
+ namespace content {
+ 
+ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(

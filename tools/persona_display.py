@@ -12,9 +12,9 @@ display are visible to pages and differ from a desktop unless they are set up:
 
 This tool asks the browser for the persona's screen (`--clearcote-validate-persona=current`,
 patch 974), starts Xvfb at exactly that size, starts a window manager, and runs the command with
-DISPLAY pointing at it. The browser renders at the X screen's scale (1 under Xvfb) and reports
-the persona's devicePixelRatio to scripts, so the X screen is the persona screen in CSS pixels;
-pass --scale=<dpr> only if you also run the browser with --force-device-scale-factor=<dpr>.
+DISPLAY pointing at it. A desktop persona renders at 1x, so the X screen is its screen in CSS
+pixels; a phone persona renders at floor(width x dpr) / width (patch 1017), so the X screen is the
+phone's screen at that scale. Pass --scale only if you force another scale factor yourself.
 
     tools/persona_display.py --binary build/src/out/Default/chrome \\
         --fingerprint=alice --fingerprint-platform=windows -- \\
@@ -85,8 +85,9 @@ def main() -> int:
     ap.add_argument("--wm", help="window manager command (default: the first of %s on PATH)"
                     % ", ".join(WMS))
     ap.add_argument("--depth", default="24")
-    ap.add_argument("--scale", type=float, default=1.0,
-                    help="X screen pixels per CSS pixel (match --force-device-scale-factor)")
+    ap.add_argument("--scale", type=float, default=None,
+                    help="X screen pixels per CSS pixel (default: 1 for a desktop persona; for a "
+                         "phone, the scale the browser forces, floor(width x dpr) / width, 1017)")
     args, persona = ap.parse_known_args(argv[:cut])
     command = argv[cut + 1:]
     if not command:
@@ -95,7 +96,11 @@ def main() -> int:
         raise SystemExit("pass the persona switches (--fingerprint=..., --fingerprint-platform=...)")
 
     w, h, dpr, mobile = persona_screen(args.binary, persona)
-    pw, ph = round(w * args.scale), round(h * args.scale)
+    import math
+    scale = args.scale
+    if scale is None:
+        scale = (math.floor(w * dpr) / w) if (mobile and dpr > 1) else 1.0
+    pw, ph = math.ceil(w * scale), math.ceil(h * scale)
     wm = args.wm or next((x for x in WMS if shutil.which(x)), None)
     if not wm:
         raise SystemExit("no window manager found; install openbox or pass --wm")

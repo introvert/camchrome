@@ -1,0 +1,47 @@
+camchrome: an Android persona rasterises at (nearly) its devicePixelRatio, with an exact viewport.
+
+1008 sized a phone persona's window but left the raster scale at 1x, so the Clearcote audit row
+"devicePixelRatio is the scale layout actually rasterises at" stayed (a 100 px box measured 100
+device pixels at a reported 2.625). Forcing 2.625 itself made X11 round the window to 1082 px and
+the viewport to 413 CSS px. The browser now forces floor(width x dpr) / width (412 at 2.625 ->
+1081/412): the window is exactly 1081 px, the content area exactly 412 CSS px, and a 100 px box
+measures 262.4 device pixels, within the one pixel of rounding a fractional-ratio display has. The
+reported devicePixelRatio stays the persona's; an explicit --force-device-scale-factor wins. The X
+screen must hold the phone at that scale: tools/persona_display.py sizes it so.
+
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -7,6 +7,9 @@
+ #if BUILDFLAG(IS_LINUX)
+ #include <sched.h>
+ #endif
++#include <cmath>
++#if BUILDFLAG(IS_LINUX)
++#endif
+ 
+ #include <stddef.h>
+ 
+@@ -1262,6 +1265,23 @@
+                                base::NumberToString(persona.screen_width) + "," +
+                                    base::NumberToString(persona.screen_height));
+       }
++      // camchrome (1017): and it rasterises at (nearly) its devicePixelRatio. A page measures
++      // the raster scale (ResizeObserver device-pixel-content-box, srcset), which stayed 1x.
++      // X11 windows are whole pixels, so the scale is chosen to make the phone's width a
++      // whole number of them: floor(width x dpr) / width (412 at 2.625 -> 1081/412 = 2.6238).
++      // The content area stays exactly the phone's width, a 100 px box measures within one
++      // device pixel of 100 x dpr (as a fractional-ratio display rounds), and the reported
++      // devicePixelRatio stays the persona's. Needs an X screen of the phone's size at that
++      // scale; tools/persona_display.py starts one. An explicit scale factor wins.
++      if (persona.mobile && persona.screen_width > 0 &&
++          persona.device_pixel_ratio > 1.0 &&
++          !cmd->HasSwitch(switches::kForceDeviceScaleFactor)) {
++        const double physical =
++            std::floor(persona.screen_width * persona.device_pixel_ratio);
++        const double scale = physical / persona.screen_width;
++        cmd->AppendSwitchASCII(switches::kForceDeviceScaleFactor,
++                               base::NumberToString(scale));
++      }
+       // Phones run Google Chrome: a "Chromium"-only brand list with no plugins is the
+       // Chrome for Testing / headless signature on Android. An explicit brand wins.
+       if (ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kAndroid &&
