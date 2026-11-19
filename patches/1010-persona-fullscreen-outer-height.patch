@@ -1,0 +1,27 @@
+camchrome: a fullscreen window is as tall as the persona screen, not its work area.
+
+140/972 cap a desktop persona's outerHeight at the persona's available height, so a window
+never claims to be taller than the work area. A fullscreen window covers the whole screen (the
+taskbar too), and the cap made it read 1680x1010 on a 1680x1050 screen (Clearcote audit:
+"an element that went fullscreen gets the screen"). When the real window reaches the persona
+screen's height, the cap is the screen height. Needs a window manager on X11 for the window to
+change size at all; tools/persona_display.py provides one on a display shaped like the persona.
+
+--- a/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
+@@ -1800,6 +1800,15 @@
+     // position. The clamp to the persona work area is kept, so the window still
+     // never claims to be taller than the screen it says it is on.
+     int ah = ungoogled::CurrentPersona().avail_screen_height;
++    // camchrome (1010): a window that really covers the screen (fullscreen) is as tall as the
++    // screen, not the work area: cap it at the screen height then. A normal window stays
++    // within the work area, as before.
++    if (Page* page = GetFrame()->GetPage()) {
++      const int real = page->GetChromeClient().RootWindowRect(*GetFrame()).height();
++      const int sh = static_cast<int>(ungoogled::CurrentPersona().screen_height);
++      if (sh > 0 && real >= sh)
++        ah = sh;
++    }
+     int oh = innerHeight() + RealFrameDeltaHeightFor(GetFrame(), innerHeight());
+     return oh < ah ? oh : ah;
+   }

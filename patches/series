@@ -83,3 +83,5 @@
 1006-linux-persona-and-viewport-coherence.patch
 1007-windows-persona-coherence.patch
 1008-android-persona-platform-surface.patch
+1009-persona-orientation-and-mesa-limits.patch
+1010-persona-fullscreen-outer-height.patch

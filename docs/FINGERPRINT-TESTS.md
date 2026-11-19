@@ -104,7 +104,16 @@ review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
 | 995 UA / client hints | UA, `Sec-CH-UA*`, `userAgentData` in every identity mode | ✓ `tools/ua_selftest.py` (12 modes; full-build; CI runs it with `--stock` as a harness check) | HTTP vs runtime, Navigator identity | — |
 | 996 WebGL no-farble | `--cc-no-farble` covers `readPixels` | ✓ `no-farble-switch` (network_selftest) | — | — |
 | 997 Android viewport | content width = phone width | ✓ `android-device-width-equals-screen`, `android-no-meta-layout-980` | Screen & display | — |
-| 999 scrollbar geometry | Android persona: overlay scrollbars (0 px) | ✓ `scrollbar-width-matches-persona-os` (with `--platform windows\|linux\|android`) | — | **Mac host not covered:** a Windows or Linux persona on a Mac with overlay scrollbars still reports 0 px; that needs a Mac-side patch (the browser's scroller-style update). |
+| 999 scrollbar geometry | scrollbar style follows the persona OS (renderer preferences) | ✓ `scrollbar-width-matches-persona-os` (with `--platform windows\|linux\|android`) | — | Mac host: handled by the same browser-side preference, not run on a Mac yet |
+| 1000 WebGL without GPU | persona opts into SwiftShader | ✓ `persona-has-webgl` | Render & GPU | — |
+| 1001 phone page scale | no-viewport page zoomed out to fit | ✓ `android-no-meta-zoomed-to-fit` | Screen & display | — |
+| 1002 phone outerHeight | window height in every frame and zoom | ✓ `window-fits-screen` (Android) | Native function integrity (frame outer size) | — |
+| 1003 CPU affinity | measured parallelism ≤ claimed cores | — | Identity coherence (parallelism) | **Gap locally**; audit covers it |
+| 1004 performance caveat | `failIfMajorPerformanceCaveat` context | — | Render & GPU | **Gap locally**; audit covers it |
+| 1005 WebCodecs hardware | prefer-hardware vs powerEfficient | — | Environment & locale | **Gap locally**; audit covers it |
+| 1006 Linux persona | empty platformVersion, Mesa limits, viewport dims | — | Navigator identity, Render & GPU | **Gap locally**; audit covers it |
+| 1007 Windows persona | device id, ActiveText, UA sheet, HLSL, Bluetooth | — | Render & GPU, Capability surfaces | **Gap locally**; audit covers it |
+| 1008 Android surface | API surface, raster DPR, brand | ✓ `render_compare.py` (cam-android vs stock phone) | Capability surfaces, Screen & display | — |
 
 ## Persona validator sweep (2026-11-18)
 

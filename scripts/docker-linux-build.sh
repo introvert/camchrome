@@ -14,6 +14,9 @@ CPU="${1:-x64}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 NAME="${NAME:-camchrome-linux-$CPU}"   # container and volume name; set it to keep a second tree (e.g. a rebase)
 ARGS_FILE="${ARGS_FILE:-config/args.linux.lowmem.gn}"
+# IMAGE: an ubuntu:24.04 derivative that already has the build packages (e.g. one saved with
+# `docker commit` from an earlier run) skips the apt step, which is slow on a slow mirror.
+IMAGE="${IMAGE:-ubuntu:24.04}"
 
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d --name "$NAME" --platform linux/amd64 \
@@ -21,12 +24,14 @@ docker run -d --name "$NAME" --platform linux/amd64 \
   -e TARGET=linux -e TARGET_CPU="$CPU" -e WORK="/work/$CPU" -e ARGS_FILE="/repo/$ARGS_FILE" \
   -e STAGE="${STAGE:-build}" -e NINJA_FLAGS="${NINJA_FLAGS:-}" \
   -e NINJA_TARGETS="${NINJA_TARGETS:-chrome chrome_sandbox chrome_crashpad_handler socks5_udp_relay_selftest components/ungoogled:persona_validator_cli}" \
-  ubuntu:24.04 bash -c '
+  "$IMAGE" bash -c '
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+if ! command -v ninja >/dev/null || ! command -v rsync >/dev/null || ! command -v gperf >/dev/null; then
 apt-get update -q
 apt-get install -y -q python3 python3-venv npm gperf curl git xz-utils ninja-build \
   pkg-config file lsb-release ca-certificates patch rsync >/dev/null
+fi
 # Dawn generate-sources needs Go >= 1.26 (its go.mod); Ubuntu 24.04 ships 1.22 and Go cannot
 # fetch the toolchain itself here. Pinned official release, checked by sha256.
 GO_TGZ=go1.26.11.linux-amd64.tar.gz

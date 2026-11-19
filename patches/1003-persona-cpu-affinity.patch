@@ -28,7 +28,7 @@ workers inherit the limit. A host with no more CPUs than the claim is left alone
  #include "content/public/app/initialize_mojo_core.h"
  #include "content/public/common/content_client.h"
  #include "content/public/common/content_constants.h"
-@@ -1197,6 +1202,33 @@
+@@ -1197,6 +1202,37 @@
  std::optional<int> ChromeMainDelegate::BasicStartupComplete() {
    crash_reporter::InitializeCrashKeys();
  
@@ -38,8 +38,12 @@ workers inherit the limit. A host with no more CPUs than the claim is left alone
 +  // a persona that claims 6. Before any thread pool or child process exists, the browser
 +  // restricts itself to as many CPUs as the persona claims; the zygote, renderers and their
 +  // workers inherit it across fork and exec. A host with fewer CPUs than the claim is left
-+  // alone.
-+  if (ungoogled::PersonaActive()) {
++  // alone. Browser process only: this runs in every process, and the zygote has no
++  // --fingerprint switch, so asking it here would cache "no persona" in the zygote, and every
++  // renderer forked from it would inherit that answer.
++  const bool persona_browser_process =
++      !base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kProcessType);
++  if (persona_browser_process && ungoogled::PersonaActive()) {
 +    const unsigned want = ungoogled::CurrentPersona().hardware_concurrency;
 +    cpu_set_t have;
 +    CPU_ZERO(&have);

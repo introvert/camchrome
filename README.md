@@ -11,16 +11,16 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 
 | Piece | Version | State |
 |---|---|---|
-| ungoogled-chromium base (Linux, Windows) | `157.0.8103.78-1` | pinned in `UPSTREAM` |
-| ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | pinned, built and audited on macOS arm64 |
-| Fingerprint patches (`patches/`) | 76 patches | verified against 157: built and audited on macOS arm64; built on Linux arm64 with the local self-tests passing; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
+| ungoogled-chromium base (Linux, Windows) | Chromium `158.0.8127.36` | pinned in `UPSTREAM` to the head of ungoogled-chromium [PR #4050](https://github.com/ungoogled-software/ungoogled-chromium/pull/4050) ("Update to Chromium 158.0.8127.36"; not tagged yet). Move the pin to the `158.0.8127.36-1` tag when it is published |
+| ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | no 158 overlay yet; macOS stays on 157 until ungoogled-chromium-macos tags 158 |
+| Fingerprint patches (`patches/`) | 85 patches | Linux x64 and arm64 built on 158 (official ThinLTO+PGO; arm64 cross-compiled); on Linux x64 every local self-test passes for Linux, Windows, macOS and Android personas (fingerprint 52/56/54/60, UA 12, network 17) and the Clearcote audit was run (see below). macOS arm64 was built and audited on 157 |
 | Clearcote stealth audit | 365 checks | **100/100 · 236/236 scored checks agree · 0 findings** |
 
-The shipped and audited binary is Chromium `157.0.8103.78` — the latest ungoogled-chromium
-tag and the latest macOS overlay. The 156 macOS build is preserved at tag
-`v156-audit100`. Linux uses the same 157 base: a Linux arm64 build (official ThinLTO+PGO) links
-and passes the local self-tests (fingerprint, UA, network), but the Clearcote audit has not been
-run on Linux yet. Windows is not ported.
+The current release is Chromium `158.0.8127.36` for Linux x64 and arm64 (Google Chrome stable on
+Linux is 158; Windows and macOS stable moved to 159 on 2026-11-18). ungoogled-chromium has not
+tagged 158 yet, so the base patches come from its open update PR (#4050), whose checks pass. The
+last macOS build is `v157.0.8103.78-camchrome.2`; the 156 macOS build is preserved at tag
+`v156-audit100`. Windows is not ported.
 
 The patches in `patches/` come from
 [Clearcote](https://github.com/clearcotelabs/clearcote-browser) at commit
@@ -121,7 +121,7 @@ camchrome runs headful under Xvfb on a machine with no graphics card. What a sit
 compared with stock Chrome on the same machine (`tools/render_compare.py`, 2026-11-19, 64-core
 Linux x64 server with only a BMC VGA adapter):
 
-| | stock Chrome 157 | camchrome persona |
+| | stock Chrome 157 / 158 | camchrome persona |
 |---|---|---|
 | WebGL | none (`getContext` returns null) | the persona GPU (e.g. Intel UHD 770 on D3D11 for Windows, Mali-G710 for Android) over SwiftShader (1000) |
 | deviceandbrowserinfo.com bot test | "You are a bot" | "You are human" |
@@ -156,11 +156,13 @@ How to look like a real browser on such a host:
    no WebGPU adapter (as on a real GPU-less Windows VM); WebGL draws are CPU-speed. For
    pixel-exact GPU output use the canvas bridge (`--canvas-bridge-url`, 065) to a host with a GPU.
 
-Every Chrome version claim comes from the engine (157.0.8103.78, the newest ungoogled-chromium
-release; Google Chrome stable is already 158) or from `--fingerprint-brand-version`.
-`--fingerprint-brand=edge` reports the Edge stable build for this Chromium major (157.0.4341.60).
+Every Chrome version claim comes from the engine (158.0.8127.36) or from
+`--fingerprint-brand-version`. `--fingerprint-brand=edge` reports the Edge stable build for the
+engine's Chromium major from 995's table; Edge has not shipped 158 yet (stable is 157.0.4341.60),
+so on 158 it reports `158.0.0.0` until a row is added (`tools/upstream_watch.py` shows Edge stable).
 Opera and Vivaldi have no reliable default, so `--fingerprint-brand=opera|vivaldi` needs
-`--fingerprint-brand-version=<their version>`; without it plain Chromium is claimed.
+`--fingerprint-brand-version=<their version>`; without it plain Chromium is claimed. An Android
+persona claims Google Chrome by default (1008).
 
 ## Automation: local API, MCP, recorder, synchronised windows
 

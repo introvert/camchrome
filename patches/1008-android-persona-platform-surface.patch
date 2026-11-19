@@ -27,15 +27,15 @@ Clearcote audit findings under an Android persona:
  #include "base/base_switches.h"  // clearcote: switches::kEnableFeatures (agent feature-merge) — was IS_WIN-only
  #include "content/public/common/main_function_params.h"
  #include "content/public/common/profiling.h"
-@@ -1240,6 +1243,27 @@
+@@ -1244,6 +1247,27 @@
      setenv("CLEARCOTE_SHADER_DIALECT", "hlsl", /*overwrite=*/0);
    }
  
 +  // camchrome (1008): browser-process defaults that make a persona true rather than reported.
 +  // Children copy both switches from the browser's command line.
-+  if (ungoogled::PersonaActive()) {
++  if (persona_browser_process && ungoogled::PersonaActive()) {
 +    base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
-+    if (!cmd->HasSwitch(switches::kProcessType)) {
++    {
 +      // The page must rasterise at the devicePixelRatio it reports: layout, srcset and
 +      // image-set read the real scale, so a reported 2.625 over a 1.0 raster is readable.
 +      const double dpr = ungoogled::CurrentPersona().device_pixel_ratio;
