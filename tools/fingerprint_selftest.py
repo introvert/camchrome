@@ -291,6 +291,48 @@ async function readbackRoundTrip() {
   return out;
 }
 
+// Text rendering the way detectors read it (1014-1017): font-size stepping, the anti-aliasing
+// ladder of canvas text, regional-indicator pairs, local() of a persona font, and the device
+// pixel size of a 100 px box.
+async function textProbe() {
+  const out = {};
+  const c = document.createElement('canvas').getContext('2d');
+  let prev = null, changed = 0;
+  for (let i = 0; i < 200; i++) {
+    c.font = `${(16 + i * 0.01).toFixed(2)}px Arial`;
+    const w = c.measureText('The quick brown fox jumps over the lazy dog').width;
+    if (prev !== null && w !== prev) changed++;
+    prev = w;
+  }
+  out.stepChanges = changed;
+  const t = document.createElement('canvas'); t.width = 300; t.height = 60;
+  const g = t.getContext('2d', {willReadFrequently: true});
+  g.fillStyle = '#000'; g.font = '28px Arial'; g.fillText('Hamburgefonstiv 0123', 4, 40);
+  const d = g.getImageData(0, 0, 300, 60).data, levels = new Set();
+  for (let i = 3; i < d.length; i += 4) if (d[i] > 0 && d[i] < 255) levels.add(d[i]);
+  out.aaLevels = levels.size;
+  const m = s => { c.font = '100px sans-serif'; return c.measureText(s).width; };
+  out.flagRatio = m('\u{1F1FA}\u{1F1F8}') / (m('\u{1F1FA}') + m('\u{1F1F8}'));
+  try {
+    const f = new FontFace('cc-local-probe', 'local("Calibri")');
+    await f.load(); out.localCalibri = true;
+  } catch (e) { out.localCalibri = false; }
+  await new Promise(r => {
+    const b = document.createElement('div');
+    b.style.cssText = 'width:100px;height:100px;position:absolute;top:0;left:0';
+    document.body.appendChild(b);
+    const ro = new ResizeObserver(es => {
+      const e = es[0];
+      out.devicePixelBox = e.devicePixelContentBoxSize ? e.devicePixelContentBoxSize[0].inlineSize : null;
+      ro.disconnect(); b.remove(); r();
+    });
+    ro.observe(b, {box: 'device-pixel-content-box'});
+    setTimeout(r, 1500);
+  });
+  out.dpr = devicePixelRatio;
+  return out;
+}
+
 async function collectMain(workerUrl) {
   const o = await collectCommon();
   o.screen = {width: screen.width, height: screen.height, availWidth: screen.availWidth,
@@ -333,6 +375,7 @@ async function collectMain(workerUrl) {
   o.alphaGrey = alphaGreyProbe();
   o.readPixels = readPixelsSentinel();
   try { o.roundTrip = await readbackRoundTrip(); } catch (e) { o.roundTripError = String(e); }
+  try { o.text = await textProbe(); } catch (e) { o.textError = String(e); }
   o.audio = await audioProbe();
   try {
     if (navigator.gpu) {
@@ -710,6 +753,20 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     rep.add("canvas-alpha-zero-reads-black", "986", m["alphaGrey"]["alphaZeroNotBlack"] == 0,
             m["alphaGrey"])
     rep.add("canvas-grey-stays-grey", "986", m["alphaGrey"]["greyTinted"] == 0, m["alphaGrey"])
+    tx = m.get("text") or {}
+    if args.platform == "windows" and not args.stock:
+        rep.add("windows-text-steps-like-directwrite", "1014",
+                (tx.get("stepChanges") or 0) >= 180, tx.get("stepChanges"))
+        rep.add("windows-canvas-text-aa-ladder", "1015",
+                0 < (tx.get("aaLevels") or 0) <= 20, tx.get("aaLevels"))
+        rep.add("windows-no-flag-ligature", "1016",
+                0.9 <= (tx.get("flagRatio") or 0) <= 1.1, tx.get("flagRatio"))
+        # Needs the clone fonts (scripts/install-persona-fonts.sh); skipped without Carlito.
+        rep.add("windows-local-font-loads", "1014", tx.get("localCalibri") is True,
+                tx.get("localCalibri"), skip=not args.persona_fonts)
+    if args.platform == "android" and not args.stock and tx.get("devicePixelBox"):
+        rep.add("android-raster-scale-is-dpr", "1017",
+                abs(tx["devicePixelBox"] - 100 * tx["dpr"]) <= 1, tx)
     rt = m.get("roundTrip") or {}
     rep.add("canvas-todataurl-roundtrip-equals-getimagedata", "1013",
             rt.get("canvasDiffs") == 0, rt, skip=not rt)
@@ -922,6 +979,9 @@ def main() -> int:
     ap.add_argument("--validator-count", type=int, default=16)
     ap.add_argument("--stock", action="store_true",
                     help="stock Chromium: no persona flags; persona-only failures are XFAIL")
+    ap.add_argument("--persona-fonts", action="store_true",
+                    help="the clone fonts are installed (scripts/install-persona-fonts.sh); "
+                         "run the checks that need them")
     ap.add_argument("--json", default=str(REPO / "build/fingerprint-selftest.json"))
     args = ap.parse_args()
 
