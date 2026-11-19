@@ -55,9 +55,9 @@ MouseEvent change costs nothing on the input path.
  
 --- a/third_party/blink/renderer/core/css/resolver/style_resolver_state.cc
 +++ b/third_party/blink/renderer/core/css/resolver/style_resolver_state.cc
-@@ -37,11 +37,26 @@
- #include "third_party/blink/renderer/core/dom/node.h"
+@@ -39,11 +39,26 @@
  #include "third_party/blink/renderer/core/dom/pseudo_element.h"
+ #include "third_party/blink/renderer/core/html/html_area_element.h"
  #include "third_party/blink/renderer/core/style/computed_style.h"
 +#include "components/ungoogled/persona_profile.h"
  
@@ -82,7 +82,7 @@ MouseEvent change costs nothing on the input path.
  bool MayReturnNullRenderingStyleForPseudoElement(
      PseudoId pseudo_id,
      const ComputedStyle* parent_style) {
-@@ -113,7 +128,7 @@
+@@ -116,7 +131,7 @@
        styled_element_(ComputeStyledElement(style_request, element)),
        element_style_resources_(
            GetStyledElement() ? *GetStyledElement() : GetElement(),
@@ -91,25 +91,28 @@ MouseEvent change costs nothing on the input path.
        pseudo_id_(style_request.pseudo_id),
        originating_element_style_(style_request.originating_element_style),
        is_for_highlight_(IsHighlightPseudoElement(style_request.pseudo_id)),
---- a/third_party/blink/renderer/core/frame/local_dom_window.h
-+++ b/third_party/blink/renderer/core/frame/local_dom_window.h
-@@ -295,6 +295,13 @@
-   int innerHeight() const;
-   int innerWidth() const;
-   int screenX() const;
-+
-+  // clearcote(#11-follow-up): (screenX,screenY) minus the REAL window origin,
-+  // or (0,0) when no override is in force. Pointer events carry real desktop
-+  // coordinates; window.screenX/Y is synthesised for the persona, so without
-+  // this shift a page can recover the true window origin from any mouse event
-+  // and see it disagree with window.screenX.
-+  gfx::Vector2d PersonaScreenOriginDelta() const;
-   int screenY() const;
-   int screenLeft() const { return screenX(); }
-   int screenTop() const { return screenY(); }
+--- a/third_party/blink/renderer/core/events/mouse_event.cc
++++ b/third_party/blink/renderer/core/events/mouse_event.cc
+@@ -158,6 +158,16 @@
+       menu_source_type_(menu_source_type) {
+   InitCoordinates(initializer->clientX(), initializer->clientY(),
+                   fallback_dom_window);
++  // clearcote(#11-follow-up): shift the screen coordinates by the same amount
++  // window.screenX/Y was shifted, so the two cannot be differenced to recover
++  // the real window origin. No-op unless an override is active.
++  if (LocalDOMWindow* w = DynamicTo<LocalDOMWindow>(view())) {
++    const gfx::Vector2d d = w->PersonaScreenOriginDelta();
++    if (!d.IsZero()) {
++      screen_x_ += d.x();
++      screen_y_ += d.y();
++    }
++  }
+   modifiers_ |= ButtonsToWebInputEventModifiers(buttons_);
+ }
+ 
 --- a/third_party/blink/renderer/core/frame/local_dom_window.cc
 +++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
-@@ -1847,6 +1847,25 @@
+@@ -1890,6 +1890,25 @@
                                            GetFrame()->LayoutZoomFactor());
  }
  
@@ -135,22 +138,19 @@ MouseEvent change costs nothing on the input path.
  int LocalDOMWindow::screenX() const {
    LocalFrame* frame = GetFrame();
    if (!frame) {
---- a/third_party/blink/renderer/core/events/mouse_event.cc
-+++ b/third_party/blink/renderer/core/events/mouse_event.cc
-@@ -158,6 +158,16 @@
-       menu_source_type_(menu_source_type) {
-   InitCoordinates(initializer->clientX(), initializer->clientY(),
-                   fallback_dom_window);
-+  // clearcote(#11-follow-up): shift the screen coordinates by the same amount
-+  // window.screenX/Y was shifted, so the two cannot be differenced to recover
-+  // the real window origin. No-op unless an override is active.
-+  if (LocalDOMWindow* w = DynamicTo<LocalDOMWindow>(view())) {
-+    const gfx::Vector2d d = w->PersonaScreenOriginDelta();
-+    if (!d.IsZero()) {
-+      screen_x_ += d.x();
-+      screen_y_ += d.y();
-+    }
-+  }
-   modifiers_ |= ButtonsToWebInputEventModifiers(buttons_);
- }
- 
+--- a/third_party/blink/renderer/core/frame/local_dom_window.h
++++ b/third_party/blink/renderer/core/frame/local_dom_window.h
+@@ -297,6 +297,13 @@
+   int innerHeight() const;
+   int innerWidth() const;
+   int screenX() const;
++
++  // clearcote(#11-follow-up): (screenX,screenY) minus the REAL window origin,
++  // or (0,0) when no override is in force. Pointer events carry real desktop
++  // coordinates; window.screenX/Y is synthesised for the persona, so without
++  // this shift a page can recover the true window origin from any mouse event
++  // and see it disagree with window.screenX.
++  gfx::Vector2d PersonaScreenOriginDelta() const;
+   int screenY() const;
+   int screenLeft() const { return screenX(); }
+   int screenTop() const { return screenY(); }

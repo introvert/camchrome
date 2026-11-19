@@ -23,7 +23,7 @@ RelaxedPrecision and keeps its honest answer, a Windows host is already correct,
 
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -5023,6 +5023,39 @@
+@@ -5086,6 +5086,39 @@
      return MakeGarbageCollected<WebGLShaderPrecisionFormat>(r0, r1, p);
    }
  

@@ -19,16 +19,16 @@ a Linux persona keeps the stock pref-driven value.
 
 --- a/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc
 +++ b/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc
-@@ -31,6 +31,8 @@
- #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
- #include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
+@@ -33,6 +33,8 @@
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+ #include "third_party/blink/renderer/platform/text/character.h"
  #include "ui/gfx/font_fallback_linux.h"
 +#include "build/build_config.h"
 +#include "components/ungoogled/persona_profile.h"
  
  namespace blink {
  
-@@ -41,6 +43,22 @@
+@@ -43,6 +45,22 @@
  
  // static
  const AtomicString& FontCache::SystemFontFamily() {

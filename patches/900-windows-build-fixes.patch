@@ -9,7 +9,7 @@ against a baseline that lacks the windows patch set.
 
 --- a/build/config/clang/BUILD.gn
 +++ b/build/config/clang/BUILD.gn
-@@ -243,7 +243,9 @@
+@@ -265,7 +265,9 @@
  
  # Adds a dependency on the Clang runtime library clang_rt.builtins.
  clang_lib("compiler_builtins") {

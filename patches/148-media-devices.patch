@@ -10,7 +10,7 @@ index da86c44a2a..23b0bff239 100644
  #include "media/audio/audio_device_description.h"
  #include "media/audio/audio_system.h"
  #include "media/base/device_enumeration_outcome.h"
-@@ -1525,10 +1526,34 @@ void MediaDevicesManager::DevicesEnumerated(
+@@ -1525,10 +1526,34 @@
      const blink::WebMediaDeviceInfoArray& snapshot) {
    CHECK_CURRENTLY_ON(BrowserThread::IO, base::NotFatalUntil::M155);
    CHECK(blink::IsValidMediaDeviceType(type), base::NotFatalUntil::M155);

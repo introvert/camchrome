@@ -1,0 +1,30 @@
+camchrome: an Android persona zooms a page out to fit, as a phone does.
+
+The Android persona already turned on the mobile viewport (002, 997) but kept the desktop
+page-scale range (1.0 to 4.0). A page with no viewport tag then laid out at 980 px, as on a
+phone, but could not zoom out to fit: innerWidth stayed at the screen width, visualViewport.scale
+at 1 and the page scrolled sideways. Chrome on Android (and DevTools phone emulation) shows it at
+scale ~0.42 with innerWidth 980. The persona now takes the rest of Android's viewport defaults:
+page scale 0.25 to 5, -webkit-text-size-adjust honoured, focused inputs zoomed to a legible
+scale, smooth scrolling for find-in-page.
+
+Found by tools/render_compare.py (reddit and bot.sannysoft.com have no viewport tag).
+
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -4749,6 +4749,15 @@
+     web_prefs->shrinks_viewport_contents_to_fit = true;
+     web_prefs->main_frame_resizes_are_orientation_changes = true;
+     web_prefs->double_tap_to_zoom_enabled = true;
++    // camchrome (1001): the rest of Android's viewport defaults (web_preferences.h, IS_ANDROID).
++    // Without Android's page-scale range a page with no viewport tag laid out at 980 px but
++    // could not zoom out below 1.0, so innerWidth stayed at the phone width and the page
++    // scrolled sideways; a phone shows it zoomed out to fit (innerWidth 980, scale ~0.42).
++    web_prefs->default_minimum_page_scale_factor = 0.25f;
++    web_prefs->default_maximum_page_scale_factor = 5.f;
++    web_prefs->text_size_adjust_enabled = true;
++    web_prefs->auto_zoom_focused_editable_to_legible_scale = true;
++    web_prefs->smooth_scroll_for_find_enabled = true;
+     web_prefs->touch_event_feature_detection_enabled = true;
+     web_prefs->pointer_events_max_touch_points = cc_p.max_touch_points;
+     web_prefs->primary_pointer_type =

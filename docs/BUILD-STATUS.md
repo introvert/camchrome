@@ -1,14 +1,18 @@
 # Build status per platform
 
-As of 2026-11-17, Chromium `157.0.8103.78`, ungoogled `157.0.8103.78-1`.
+As of 2026-11-19, Chromium `158.0.8127.36` (ungoogled-chromium PR #4050 head `76f39e0`, Windows
+overlay `157.0.8103.78-1.1`), 88 patches.
 
-| Target | Patches apply | `gn gen` | Patched files compile | Full build links | Audit | Where verified |
+| Target | Patches apply | `gn gen` | Full build links | Local tests | Clearcote audit | Where verified |
 |---|---|---|---|---|---|---|
-| mac-arm64 | ✅ 64/64 (900/905 skipped) | ✅ | ✅ | ✅ `Chromium.app` | ✅ 100/100 | macOS 26.1, 10-core M-series, 24 GB (NOTES.md) |
-| linux-x64 | ✅ 66/66 | ✅ 36,541 targets | ✅ 95/95 | not attempted | not run | Ubuntu 24.04 container, 4 cores, 15 GB RAM (this review) |
-| linux-arm64 | same source as x64 | CI | CI | CI (`mode=full`) | — | `.github/workflows/build.yml`, cross-compiled from x64 |
-| mac-x64 | same source as arm64 | CI | CI | CI (`mode=full`) | — | `.github/workflows/build.yml`, cross-compiled from arm64 |
+| linux-x64 | ✅ 88/88 | ✅ | ✅ official ThinLTO+PGO | fingerprint 52/57/59/56/61 (host, Linux, Windows, macOS, Android persona), UA 12/12, network 17/17, validator 2,500 personas 0 errors 0 warnings | Linux 100/100 (the one finding stock Chrome 158 also gets), Android 100/100 (207/208: the raster-scale probe, a documented trade-off for an exact viewport), Windows 98/100 (Linux-host text rendering only) | Ubuntu 24.04 container on a 64-core x64 server, no GPU, Xvfb + openbox via `tools/persona_display.py` |
+| linux-arm64 | ✅ 88/88 | ✅ | ✅ official ThinLTO (no PGO), cross-compiled from x64 | not run (same source as x64; x64 results apply) | not run | same server |
+| mac-arm64 | 157 only | — | 157 ✅ | — | 157: 100/100 | no 158 macOS overlay yet |
+| mac-x64 | 157 only | — | — | — | — | — |
 | windows-x64 | not ported | — | — | — | — | needs Clearcote's xwin setup |
+
+The 157 tree (`v157.0.8103.78-camchrome.2`) and its Linux x64 build were used to develop
+1000-1011; the same patches regenerated against 158 apply with no fuzz to a fresh 158 tree.
 
 "CI" means the workflow does it but it had not run yet when this was written: the branch
 was pushed with this review, so the first run is on the pull request.
@@ -61,6 +65,9 @@ before turning that on:
 | `net/socket/socks5_client_socket.cc:310` | exit-time destructor | 984 |
 | `net/socket/socks5_udp_smoke.cc:90` | unused function `PumpUntil` | 973 |
 | `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc:6054` | `cb_substituted` set but not used | 070 (canvas bridge) |
+| `content/browser/devtools/protocol/browser_handler.cc:780` | unused function `EaseInOut` (2026-11-18) | 130 |
+| `third_party/blink/renderer/platform/fonts/font_cache.cc:400` | exit-time destructor for a static `std::set` (2026-11-18) | 040 |
+| `third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc:1742` | `size_t` to `uint32_t` narrowing of a `std::hash` (2026-11-18) | 060 |
 | `v8/src/inspector/v8-runtime-agent-impl.cc:1083` | unreachable code | 110 |
 
 ## macOS runners

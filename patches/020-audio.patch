@@ -10,7 +10,7 @@ index 1b7598b..ccc9bd8 100644
  #include "third_party/blink/renderer/core/probe/core_probes.h"
  #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
  #include "third_party/blink/renderer/core/timing/window_performance.h"
-@@ -457,7 +458,11 @@ AudioContext* AudioContext::Create(ExecutionContext* context,
+@@ -457,7 +458,11 @@
        WebAudioLatencyHint::AudioContextLatencyCategory::kLastValue);
  
    // This value can be `nullopt` when there's no user-provided options.
@@ -23,7 +23,7 @@ index 1b7598b..ccc9bd8 100644
    if (context_options->hasSampleRate()) {
      sample_rate = context_options->sampleRate();
    }
-@@ -1307,17 +1312,23 @@ double AudioContext::baseLatency() const {
+@@ -1307,17 +1312,23 @@
    DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
    DCHECK(destinationNode());
  
@@ -51,11 +51,9 @@ index 1b7598b..ccc9bd8 100644
  }
  
  AudioPlaybackStats* AudioContext::playbackStats() {
-diff --git a/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc b/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
-index 7ae88d3..a93d5ac 100644
 --- a/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
 +++ b/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
-@@ -197,6 +197,10 @@ OfflineAudioContext::OfflineAudioContext(
+@@ -197,6 +197,10 @@
                         ContextType::kOfflineContext,
                         render_quantum_frames),
        total_render_frames_(number_of_frames) {

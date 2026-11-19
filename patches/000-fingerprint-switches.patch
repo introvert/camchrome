@@ -1,6 +1,6 @@
 diff -u --recursive a/components/ungoogled/ungoogled_switches.cc b/components/ungoogled/ungoogled_switches.cc
---- a/components/ungoogled/ungoogled_switches.cc	2026-07-21 09:13:09.549740692 +0000
-+++ b/components/ungoogled/ungoogled_switches.cc	2026-07-21 09:13:09.553740702 +0000
+--- a/components/ungoogled/ungoogled_switches.cc
++++ b/components/ungoogled/ungoogled_switches.cc
 @@ -15,4 +15,90 @@
  // Enable fingerprinting deception for Canvas image data
  const char kFingerprintingCanvasImageDataNoise[] = "fingerprinting-canvas-image-data-noise";
@@ -92,9 +92,8 @@ diff -u --recursive a/components/ungoogled/ungoogled_switches.cc b/components/un
 +const char kCanvasBridgeFallback[] = "canvas-bridge-fallback";
 +
  }  // namespace switches
-diff -u --recursive a/components/ungoogled/ungoogled_switches.h b/components/ungoogled/ungoogled_switches.h
---- a/components/ungoogled/ungoogled_switches.h	2026-07-21 09:13:09.549740692 +0000
-+++ b/components/ungoogled/ungoogled_switches.h	2026-07-21 09:13:09.553740702 +0000
+--- a/components/ungoogled/ungoogled_switches.h
++++ b/components/ungoogled/ungoogled_switches.h
 @@ -15,6 +15,37 @@
  COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintingCanvasMeasureTextNoise[];
  COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintingCanvasImageDataNoise[];
@@ -133,10 +132,9 @@ diff -u --recursive a/components/ungoogled/ungoogled_switches.h b/components/ung
  }
  
  #endif  // THIRD_PARTY_UNGOOGLED_FINGERPRINTING_SWITCHES_H_
-diff -u --recursive a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
---- a/content/browser/renderer_host/render_process_host_impl.cc	2026-07-21 09:13:09.549740692 +0000
-+++ b/content/browser/renderer_host/render_process_host_impl.cc	2026-07-21 09:13:09.561740719 +0000
-@@ -3870,6 +3870,42 @@
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3973,6 +3973,42 @@
        switches::kFingerprintingClientRectsNoise,
        switches::kFingerprintingCanvasMeasureTextNoise,
        switches::kFingerprintingCanvasImageDataNoise,

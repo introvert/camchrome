@@ -11,15 +11,16 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 
 | Piece | Version | State |
 |---|---|---|
-| ungoogled-chromium base (Linux, Windows) | `157.0.8103.78-1` | pinned in `UPSTREAM` |
-| ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | pinned, built and audited on macOS arm64 |
-| Fingerprint patches (`patches/`) | 71 patches | verified against 157: built on macOS; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
-| Clearcote stealth audit | 365 checks | **100/100 · 236/236 scored checks agree · 0 findings** |
+| ungoogled-chromium base (Linux, Windows) | Chromium `158.0.8127.36` | pinned in `UPSTREAM` to the head of ungoogled-chromium [PR #4050](https://github.com/ungoogled-software/ungoogled-chromium/pull/4050) ("Update to Chromium 158.0.8127.36"; not tagged yet). Move the pin to the `158.0.8127.36-1` tag when it is published |
+| ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | no 158 overlay yet; macOS stays on 157 until ungoogled-chromium-macos tags 158 |
+| Fingerprint patches (`patches/`) | 88 patches | Linux x64 and arm64 built on 158 (official ThinLTO+PGO; arm64 cross-compiled); on Linux x64 every local self-test passes for Linux, Windows, macOS and Android personas (fingerprint 52/56/54/60, UA 12, network 17) and the Clearcote audit was run (see below). macOS arm64 was built and audited on 157 |
+| Clearcote stealth audit | 365 checks | 158 Linux x64, no GPU (`tools/persona_display.py`): **Linux persona 100/100** (one finding, the same one stock Chrome 158 gets on that host), **Android persona 100/100** (207/208; the one finding is the raster-scale probe, see "A phone persona rasterises at the host's scale"), Windows persona 98/100 (four Linux-host text-rendering tells). 157 macOS arm64: 100/100 |
 
-The shipped and audited binary is Chromium `157.0.8103.78` — the latest ungoogled-chromium
-tag and the latest macOS overlay. The 156 macOS build is preserved at tag
-`v156-audit100`. Linux uses the same 157 base: the series applies and compiles there, but no
-Linux binary has been linked or audited yet. Windows is not ported.
+The current release is Chromium `158.0.8127.36` for Linux x64 and arm64 (Google Chrome stable on
+Linux is 158; Windows and macOS stable moved to 159 on 2026-11-18). ungoogled-chromium has not
+tagged 158 yet, so the base patches come from its open update PR (#4050), whose checks pass. The
+last macOS build is `v157.0.8103.78-camchrome.2`; the 156 macOS build is preserved at tag
+`v156-audit100`. Windows is not ported.
 
 The patches in `patches/` come from
 [Clearcote](https://github.com/clearcotelabs/clearcote-browser) at commit
@@ -88,11 +89,96 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `996-webgl-readback-no-farble` | `--cc-no-farble` also turns off the WebGL `readPixels` perturbation |
 | `997-android-persona-viewport` | an Android persona's content area is the phone's width (no 500 px desktop minimum), and viewport meta tags stay off under a desktop-site override, as on Android |
 
-Every Chrome version claim comes from the engine (157.0.8103.78, the newest ungoogled-chromium
-release; Google Chrome stable is already 158) or from `--fingerprint-brand-version`.
-`--fingerprint-brand=edge` reports the Edge stable build for this Chromium major (157.0.4341.60).
+### What 998–999 add (persona coherence)
+
+| Patch | Fix |
+|---|---|
+| `998-persona-heap-and-webgpu-texture-coherence` | schema-1 personas below 8 GB report a JS heap V8 could give that RAM (the fixed 4.4 GB limit was impossible on 4 GB), and WebGPU's 1D/2D texture limits never exceed the persona's WebGL `MAX_TEXTURE_SIZE` (Android GPUs). The validator's 5,000-persona sweep now has 0 warnings |
+| `999-android-persona-overlay-scrollbars` | the scrollbar style follows the persona OS, not the host theme: overlay (0 px) for Android, classic for Windows and Linux (also on a Mac host with overlay scrollbars). Set in the browser's renderer preferences, which is what Blink actually applies |
+
+### What 1000–1002 add (no-GPU hosts, phone viewport)
+
+| Patch | Fix |
+|---|---|
+| `1000-persona-webgl-without-gpu` | a persona always has WebGL. Since Chrome 137 a host without a usable GPU (server, VM, Xvfb) gets `getContext("webgl") === null`, which no real visitor shows; a persona now opts into SwiftShader, under the persona's GPU strings, limits and extensions. With a GPU nothing changes |
+| `1001-android-persona-page-scale` | an Android persona takes Android's page-scale range (0.25 to 5), so a page without a viewport tag is zoomed out to fit (innerWidth 980, scale ~0.42) instead of scrolling sideways at scale 1; `-webkit-text-size-adjust` is honoured |
+| `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is the window's height: the same in every frame, unchanged by page zoom, within the screen |
+
+### What 1003–1011 add (found by the Clearcote audit on a Linux server)
+
+| Patch | Fix |
+|---|---|
+| `1003-persona-cpu-affinity` | the persona's core count is true: on Linux the browser pins itself to as many CPUs as the persona claims before any thread pool or child process starts, so a 64-core server no longer runs 16 workers in parallel under a 6-core claim |
+| `1004-persona-webgl-no-performance-caveat` | a persona GPU does not refuse `failIfMajorPerformanceCaveat` (over SwiftShader that refusal exposed software rendering) |
+| `1005-persona-webcodecs-hardware-coherence` | WebCodecs `prefer-hardware` answers from the same persona codec table as MediaCapabilities `powerEfficient` |
+| `1006-linux-persona-and-viewport-coherence` | a Linux persona sends the empty platformVersion Chromium on Linux sends, and Mesa's GL limits next to a Mesa renderer string; `MAX_VIEWPORT_DIMS` is the persona GPU's (D3D11: 32767) |
+| `1007-windows-persona-coherence` | D3D11 renderer strings carry the 8-digit device id ANGLE prints; `ActiveText` is the Windows hotlight colour; the UA stylesheet follows the persona OS; shaders translate to HLSL under a D3D11 renderer string (966 on by default); Web Bluetooth for Windows, macOS and Android personas |
+| `1008-android-persona-platform-surface` | an Android persona has Chrome for Android's API surface (no EyeDropper, `navigator.keyboard`, `windowControlsOverlay`, Document PiP, Local Font Access, WebHID; BarcodeDetector present), has a window the size of its screen (content exactly the phone's width on any X screen), and claims the Google Chrome brand by default |
+| `1009-persona-orientation-and-mesa-limits` | a desktop persona's `screen.orientation` follows its own screen, not the X screen's shape; Mesa uniform components and varyings match a Mesa renderer |
+| `1010-persona-fullscreen-outer-height` | a fullscreen window is as tall as the persona screen, not its work area |
+| `1011-windows-persona-drive-letter-urls` | under a Windows persona every URL parse (`new URL()`, `<a>.href`, `Request`) reads `C:/x` as `file:///C:/x`, as a Windows build does |
+
+## Running on a Linux server without a GPU
+
+camchrome runs headful under Xvfb on a machine with no graphics card. What a site sees there,
+compared with stock Chrome on the same machine (`tools/render_compare.py`, 2026-11-19, 64-core
+Linux x64 server with only a BMC VGA adapter):
+
+| | stock Chrome 157 / 158 | camchrome persona |
+|---|---|---|
+| WebGL | none (`getContext` returns null) | the persona GPU (e.g. Intel UHD 770 on D3D11 for Windows, Mali-G710 for Android) over SwiftShader (1000) |
+| deviceandbrowserinfo.com bot test | "You are a bot" | "You are human" |
+| CreepJS "like headless" | 50% | 31–38% |
+| Mobile detection (whatismybrowser, browserleaks client hints, deviceandbrowserinfo) | — | Android persona: "Chrome on Android", `Sec-CH-UA-Mobile ?1`, phone model, `is mobile: true` |
+| Real sites (Google, YouTube, Wikipedia, GitHub, BBC, Amazon, Reddit, DuckDuckGo) | desktop layout | desktop personas: the same layout as stock; Android persona: the same mobile pages as Chrome's own phone emulation (m.youtube.com, 412 px layouts, zoom-to-fit for pages without a viewport tag) |
+
+How to look like a real browser on such a host:
+
+1. **Run headful on a display shaped like the persona, with a window manager.**
+   `tools/persona_display.py` asks the browser for the persona's screen and devicePixelRatio,
+   starts Xvfb at exactly that size, starts a window manager (openbox, fluxbox, xfwm4, icewm…)
+   and runs the browser (or a test harness) on it:
+   ```bash
+   sudo apt-get install xvfb openbox
+   tools/persona_display.py --binary ./chrome --fingerprint=alice --fingerprint-platform=windows -- \
+     ./chrome --fingerprint=alice --fingerprint-platform=windows
+   ```
+   Never `--headless`. Without a window manager X11 windows never change state, so a page's
+   `requestFullscreen()` leaves the window at its size (stock Chrome too); with an X screen of
+   another size than the persona's, a fullscreen window does not match the screen the page sees.
+2. **Use a persona** (`--fingerprint=<seed>`). It brings WebGL (1000); without one the browser
+   has no WebGL, like stock Chrome there.
+3. **Pick the persona OS for the traffic you want to blend into.** Every persona answers font
+   probes with its own OS's set, whatever the host has installed (040, 971, 992): a Windows
+   persona shows Segoe UI, Calibri, Consolas and no DejaVu/Liberation; an Android persona shows
+   Roboto and Android's `fonts.xml` aliases; a macOS persona Helvetica Neue, Menlo and Hiragino.
+   A Windows persona joins the largest crowd; a Linux persona matches the host exactly.
+4. **Match timezone, language and location to the proxy exit**: `--timezone`, `--lang`,
+   `--accept-lang`, `--fingerprint-location`. A server's own IP is a datacenter IP and its
+   clock is usually UTC: pixelscan reports "Timezone spoofed, Proxy detected" for stock Chrome
+   there too. Use a residential proxy (`--proxy-server=socks5://… --socks5-udp`).
+5. **A Windows persona on a Linux host has tells the engine cannot remove**: text is rasterised
+   by FreeType (font-size stepping and anti-aliasing levels), Noto Color Emoji draws country
+   flags (Segoe UI Emoji has none), and localized Windows CJK family names do not resolve.
+   A Linux or Android persona has none of these on a Linux host;
+   use a Windows host for Windows personas.
+6. **A phone persona rasterises at the host's scale.** `devicePixelRatio`, screen and media
+   queries report the phone's (e.g. 2.625), but layout runs at 1x, which ResizeObserver's
+   `devicePixelContentBoxSize` and `srcset` selection can see. Forcing the scale instead
+   (`--force-device-scale-factor`) makes X11 round the window to whole pixels, and a 412 px phone
+   at 2.625 then lays out at 392 or 413 CSS px; the exact viewport matters to every page.
+7. **Known limits on SwiftShader**: WebGL `MAX_TEXTURE_SIZE` stays at SwiftShader's 8192, so
+   textures the page allocates really fit (a desktop D3D11 GPU would report 16384); there is
+   no WebGPU adapter (as on a real GPU-less Windows VM); WebGL draws are CPU-speed. For
+   pixel-exact GPU output use the canvas bridge (`--canvas-bridge-url`, 065) to a host with a GPU.
+
+Every Chrome version claim comes from the engine (158.0.8127.36) or from
+`--fingerprint-brand-version`. `--fingerprint-brand=edge` reports the Edge stable build for the
+engine's Chromium major from 995's table; Edge has not shipped 158 yet (stable is 157.0.4341.60),
+so on 158 it reports `158.0.0.0` until a row is added (`tools/upstream_watch.py` shows Edge stable).
 Opera and Vivaldi have no reliable default, so `--fingerprint-brand=opera|vivaldi` needs
-`--fingerprint-brand-version=<their version>`; without it plain Chromium is claimed.
+`--fingerprint-brand-version=<their version>`; without it plain Chromium is claimed. An Android
+persona claims Google Chrome by default (1008).
 
 ## Automation: local API, MCP, recorder, synchronised windows
 
@@ -226,8 +312,10 @@ Results are written to `build/stealth-audit.txt` / `.json` (audit) and
 | `tools/fingerprint_selftest.py` | one local check per patched surface, named after its patch | no |
 | `tools/network_selftest.py` | proxies, QUIC and WebRTC over the SOCKS5 relay, humanized input, no-farble, portable profile | no (needs `aioquic`) |
 | `tools/ua_selftest.py` | UA string, client hints and `userAgentData` agree in every identity mode (995) | no |
+| `tools/render_compare.py` | detection sites and real sites in stock Chrome (desktop, and DevTools phone emulation) next to camchrome (desktop, Windows and Android personas): every probe where camchrome differs from stock, plus screenshots side by side | yes |
 | `tools/stealth_audit.py` | the Clearcote audit (acceptance test) | yes |
 | `tools/site_checks.py` | browserleaks QUIC, Twilio WebRTC, fingerprint.com, pixelscan, browserscan, reCAPTCHA… | yes, plus a SOCKS5 proxy with UDP |
+| `tools/upstream_watch.py` | pinned upstreams vs their newest tags, Chrome stable, Clearcote patch changes, reference repos (`docs/UPSTREAM-SOURCES.md`); run weekly by `upstream-watch.yml` | yes |
 
 ```bash
 tools/fingerprint_selftest.py --platform macos          # against the build
@@ -239,9 +327,12 @@ tools/fingerprint_selftest.py --stock --binary "$(command -v google-chrome)"   #
 
 ## CI
 
-`.github/workflows/build.yml` runs the repository checks and the self-test harness on every
-push, then fetches, patches, runs `gn gen` and compiles the patched files for linux-x64,
-linux-arm64, mac-arm64 and mac-x64. Dispatch it with `mode=full` (or push a `v*` tag) to build
+`.github/workflows/build.yml` runs the repository checks and the self-test harnesses on every
+push, then fetches, patches, runs `gn gen` and compiles the patched files for linux-x64. The
+other targets (linux-arm64, mac-arm64, mac-x64) are compile-checked when the workflow is
+dispatched or a `v*` tag is pushed: hosted macOS minutes cost 10x, and two ~2 h macOS jobs on
+every push are most of a month's free minutes. `upstream-watch.yml` checks the pins weekly.
+Dispatch it with `mode=full` (or push a `v*` tag) to build
 and upload the browser. A full build does not fit GitHub's standard runners (disk and the 6 h
 limit): set `linux_runner` / `mac_runner`, or the repository variables
 `CAMCHROME_LINUX_RUNNER` / `CAMCHROME_MAC_RUNNER`, to larger or self-hosted runners.
@@ -262,6 +353,9 @@ limit): set `linux_runner` / `mac_runner`, or the repository variables
 
 `docs/SHARDBROWSER-COMPARISON.md` compares the patch set with ShardBrowser's advertised
 capabilities (QUIC/WebRTC over SOCKS5, mobile personas, input, automation) and lists the gaps.
+
+`docs/UPSTREAM-SOURCES.md` lists the upstreams to watch for releases and security fixes, and the
+repositories worth mining for more fingerprint work.
 
 `COVERAGE.md` maps the 365 checks of the [Clearcote fingerprint audit](https://www.clearcotelabs.com/audit/checks)
 to the patches that cover them, lists the gaps, and names other repos to take patches from.

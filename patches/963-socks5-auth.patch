@@ -18,23 +18,23 @@ proxy, and the negative control without credentials is still refused, which is w
 credentials did the work. WebRTC re-checked with the proxy live: no UDP escapes, no real address in
 any candidate, ICE shape unchanged.
 
---- a/net/socket/socks5_client_socket.h
-+++ b/net/socket/socks5_client_socket.h
-@@ -122,6 +122,11 @@
-   int DoGreetReadComplete(int result);
-   int DoGreetWrite();
-   int DoGreetWriteComplete(int result);
-+  // clearcote: RFC 1929.
-+  int DoAuthWrite();
-+  int DoAuthWriteComplete(int result);
-+  int DoAuthRead();
-+  int DoAuthReadComplete(int result);
- 
-   // Creates a DrainableIOBuffer containing the SOCKS handshake.
-   scoped_refptr<DrainableIOBuffer> BuildHandshakeWriteBuffer() const;
+--- a/content/browser/service_host/utility_process_host.cc
++++ b/content/browser/service_host/utility_process_host.cc
+@@ -409,6 +409,11 @@
+       // the network fingerprint silently stays stock.
+       switches::kFingerprint,
+       switches::kFingerprintTlsProfile,
++      // clearcote: RFC 1929 SOCKS5 credentials. The SOCKS5 handshake runs in the
++      // network service, so without this the switch is invisible where it is read
++      // (net/socket/socks5_client_socket.cc) and every authenticated proxy fails
++      // with ERR_SOCKS_CONNECTION_FAILED.
++      "socks5-credentials",
+       network::switches::kAdditionalTrustTokenKeyCommitments,
+       network::switches::kForceEffectiveConnectionType,
+       network::switches::kHostResolverRules,
 --- a/net/socket/socks5_client_socket.cc
 +++ b/net/socket/socks5_client_socket.cc
-@@ -225,6 +225,27 @@
+@@ -224,6 +224,27 @@
          net_log_.EndEventWithNetErrorCode(NetLogEventType::SOCKS5_GREET_READ,
                                            rv);
          break;
@@ -62,17 +62,17 @@ any candidate, ICE shape unchanged.
        case STATE_HANDSHAKE_WRITE:
          DCHECK_EQ(OK, rv);
          net_log_.BeginEvent(NetLogEventType::SOCKS5_HANDSHAKE_WRITE);
---- a/content/browser/service_host/utility_process_host.cc
-+++ b/content/browser/service_host/utility_process_host.cc
-@@ -401,6 +401,11 @@
-       // the network fingerprint silently stays stock.
-       switches::kFingerprint,
-       switches::kFingerprintTlsProfile,
-+      // clearcote: RFC 1929 SOCKS5 credentials. The SOCKS5 handshake runs in the
-+      // network service, so without this the switch is invisible where it is read
-+      // (net/socket/socks5_client_socket.cc) and every authenticated proxy fails
-+      // with ERR_SOCKS_CONNECTION_FAILED.
-+      "socks5-credentials",
-       network::switches::kAdditionalTrustTokenKeyCommitments,
-       network::switches::kForceEffectiveConnectionType,
-       network::switches::kHostResolverRules,
+--- a/net/socket/socks5_client_socket.h
++++ b/net/socket/socks5_client_socket.h
+@@ -116,6 +116,11 @@
+   int DoGreetReadComplete(int result);
+   int DoGreetWrite();
+   int DoGreetWriteComplete(int result);
++  // clearcote: RFC 1929.
++  int DoAuthWrite();
++  int DoAuthWriteComplete(int result);
++  int DoAuthRead();
++  int DoAuthReadComplete(int result);
+ 
+   // Creates a DrainableIOBuffer containing the SOCKS handshake.
+   scoped_refptr<DrainableIOBuffer> BuildHandshakeWriteBuffer() const;

@@ -1,0 +1,68 @@
+camchrome: a Linux persona looks like Chromium on Linux; D3D11 viewport dims.
+
+- platformVersion: Chromium on Linux always sends an empty Sec-CH-UA-Platform-Version.
+  --fingerprint-platform=linux sent a kernel version (6.8.0), which only an override produces.
+  An explicit --fingerprint-platform-version still wins.
+- A Linux persona that swaps the D3D11 renderer for Mesa (ANGLE over OpenGL) also takes the
+  limits that backend reports: 1024 vertex uniform vectors (D3D11: 4096) and 32 varyings
+  (D3D11: 30), viewport 16384.
+- MAX_VIEWPORT_DIMS reports the persona value instead of clamping to the host (SwiftShader 8192):
+  a viewport is not allocated, GL clamps a larger one, and [8192, 8192] under a Direct3D 11
+  renderer is a pair no D3D11 GPU reports.
+
+Found by the Clearcote audit on a GPU-less Linux x64 host.
+
+--- a/third_party/blink/common/user_agent/user_agent_metadata.cc
++++ b/third_party/blink/common/user_agent/user_agent_metadata.cc
+@@ -405,7 +405,9 @@
+   if (platform == "windows") {
+     return kWindowsVersions[seed % std::size(kWindowsVersions)];
+   } else if (platform == "linux") {
+-    return kLinuxVersions[seed % std::size(kLinuxVersions)];
++    // camchrome (1006): Chromium on Linux always sends an empty platformVersion
++    // (embedder_support::GetPlatformVersion); a kernel-like number is an override's tell.
++    return std::string();
+   } else if (platform == "macos") {
+     return kMacOSVersions[seed % std::size(kMacOSVersions)];
+   } else if (platform == "android") {
+--- a/components/ungoogled/persona_profile.cc
++++ b/components/ungoogled/persona_profile.cc
+@@ -1069,8 +1069,16 @@
+   // Linux form so no field contradicts platform=Linux. Only rewrite a still-Windows default (an
+   // imported Linux/mac profile is left intact); an explicit --fingerprint-gpu-renderer wins below.
+   if (platform == PersonaPlatform::kLinux) {
+-    if (p.webgl_renderer.find("Direct3D") != std::string::npos)
++    if (p.webgl_renderer.find("Direct3D") != std::string::npos) {
+       p.webgl_renderer = LinuxWebGLRenderer(p.webgl_vendor);
++      // camchrome (1006): and the limits ANGLE's OpenGL backend reports over Mesa, not the
++      // D3D11 table: vertex uniform vectors are capped at 1024 and the driver's 32 varyings
++      // pass through (D3D11 reports 4096 and 30). Viewport dims are Mesa's 16384.
++      p.webgl_max_vertex_uniform_vectors = 1024;
++      p.webgl_max_fragment_uniform_vectors = 1024;
++      p.webgl_max_varying_vectors = 32;
++      p.webgl_max_viewport_dim = 16384;
++    }
+     // A real Chrome-on-Linux with no speech-dispatcher reports getVoices()==[]; never Windows
+     // SAPI names. Empty is a common, coherent Linux state; drop only the Windows default.
+     if (!p.voices.empty() && p.voices.front().name.rfind("Microsoft", 0) == 0)
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -342,11 +342,15 @@
+ // it needs its own reader (passing a single GLint* would smash the stack).
+ GLint ClampPersonaViewportDim(gpu::gles2::GLES2Interface* gl,
+                               int persona_value) {
++  // camchrome (1006): report the persona GPU's value, not SwiftShader's 8192. Unlike a
++  // texture limit nothing is allocated at this size: GL clamps a larger viewport to the real
++  // maximum, so no page breaks, while a D3D11 renderer string next to [8192, 8192] is a pair
++  // no Direct3D 11 GPU reports (ANGLE fixes 32767 for every D3D11 device).
++  // Still ask the GPU: Chrome answers this query with a GPU round trip, and a spoofed value
++  // returned without one is measurably faster than its neighbours.
+   GLint real[2] = {0, 0};
+   gl->GetIntegerv(GL_MAX_VIEWPORT_DIMS, real);
+-  const GLint cap = real[0] < real[1] ? real[0] : real[1];
+-  GLint v = static_cast<GLint>(persona_value);
+-  return (cap > 0 && v > cap) ? cap : v;
++  return static_cast<GLint>(persona_value);
+ }
+ 
+ // clearcote (algebraic coherence): MAX_VARYING_VECTORS is the ONE independent

@@ -5,23 +5,6 @@ from the persona only while the page has not written stencil state -- after that
 getParameter reports the real values and set-then-read cannot disagree. Present in the
 shipped r19 binary but carried by no patch.
 
---- a/components/ungoogled/persona_profile.h
-+++ b/components/ungoogled/persona_profile.h
-@@ -191,6 +191,14 @@
-   int webgl_alpha_bits = 8;
-   int webgl_depth_bits = 24;
-   int webgl_stencil_bits = 8;
-+
-+  // clearcote(#15): the four stencil masks as the capture recorded them. 0 means "no captured
-+  // value" and the real one is used. These are MUTABLE GL state, not capability limits -- they are
-+  // served only until the context writes stencil state, so set-then-read still agrees.
-+  int64_t webgl_stencil_value_mask = 0;
-+  int64_t webgl_stencil_writemask = 0;
-+  int64_t webgl_stencil_back_value_mask = 0;
-+  int64_t webgl_stencil_back_writemask = 0;
-   int webgl_subpixel_bits = 4;
-   int webgl_sample_buffers = 1;
-   int webgl_samples = 4;
 --- a/components/ungoogled/persona_profile.cc
 +++ b/components/ungoogled/persona_profile.cc
 @@ -405,6 +405,16 @@
@@ -41,28 +24,23 @@ shipped r19 binary but carried by no patch.
        gi("SUBPIXEL_BITS", &p->webgl_subpixel_bits);
        gi("SAMPLE_BUFFERS", &p->webgl_sample_buffers);
        gi("SAMPLES", &p->webgl_samples);
---- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-+++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-@@ -338,6 +338,11 @@
-   void hint(GLenum target, GLenum mode);
-   bool isBuffer(WebGLBuffer*);
-   bool isContextLost() const override;
+--- a/components/ungoogled/persona_profile.h
++++ b/components/ungoogled/persona_profile.h
+@@ -191,6 +191,14 @@
+   int webgl_alpha_bits = 8;
+   int webgl_depth_bits = 24;
+   int webgl_stencil_bits = 8;
 +
-+  // clearcote(#15): set once the page writes stencil state, after which the captured masks stop
-+  // being served and getParameter reports the real values, so set-then-read cannot disagree.
-+  void ClearcoteMarkStencilStateTouched() { clearcote_stencil_touched_ = true; }
-+  bool ClearcoteStencilStateTouched() const { return clearcote_stencil_touched_; }
-   bool isEnabled(GLenum cap);
-   bool isFramebuffer(WebGLFramebuffer*);
-   bool isProgram(WebGLProgram*);
-@@ -930,6 +935,7 @@
-   GLint pack_alignment_ = 4;
-   GLint unpack_alignment_ = 4;
-   bool unpack_flip_y_ = false;
-+  bool clearcote_stencil_touched_ = false;  // clearcote(#15)
-   bool unpack_premultiply_alpha_ = false;
-   GLenum unpack_colorspace_conversion_ = GC3D_BROWSER_DEFAULT_WEBGL;
-   // The following three unpack params belong to WebGL2 only.
++  // clearcote(#15): the four stencil masks as the capture recorded them. 0 means "no captured
++  // value" and the real one is used. These are MUTABLE GL state, not capability limits -- they are
++  // served only until the context writes stencil state, so set-then-read still agrees.
++  int64_t webgl_stencil_value_mask = 0;
++  int64_t webgl_stencil_writemask = 0;
++  int64_t webgl_stencil_back_value_mask = 0;
++  int64_t webgl_stencil_back_writemask = 0;
+   int webgl_subpixel_bits = 4;
+   int webgl_sample_buffers = 1;
+   int webgl_samples = 4;
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -283,6 +283,27 @@
@@ -93,7 +71,7 @@ shipped r19 binary but carried by no patch.
  GLint ClampPersonaLimit(gpu::gles2::GLES2Interface* gl,
                          GLenum pname,
                          int persona_value) {
-@@ -4565,10 +4586,20 @@
+@@ -4669,10 +4690,20 @@
        return GetUnsignedIntParameter(script_state, pname);
      case GL_STENCIL_BACK_REF:
        return GetIntParameter(script_state, pname);
@@ -116,7 +94,7 @@ shipped r19 binary but carried by no patch.
      case GL_STENCIL_BITS:
        if (!framebuffer_binding_ && !CreationAttributes().stencil)
          return WebGLAny(script_state, kIntZero);
-@@ -4588,10 +4619,20 @@
+@@ -4692,10 +4723,20 @@
        return GetIntParameter(script_state, pname);
      case GL_STENCIL_TEST:
        return WebGLAny(script_state, stencil_enabled_);
@@ -139,7 +117,7 @@ shipped r19 binary but carried by no patch.
      case GL_SUBPIXEL_BITS:
        return WebGLAny(script_state,
                        static_cast<GLint>(ungoogled::CurrentPersona().webgl_subpixel_bits));
-@@ -6115,6 +6156,7 @@
+@@ -6221,6 +6262,7 @@
  void WebGLRenderingContextBase::stencilFunc(GLenum func,
                                              GLint ref,
                                              GLuint mask) {
@@ -147,7 +125,7 @@ shipped r19 binary but carried by no patch.
    if (isContextLost())
      return;
    if (!ValidateStencilOrDepthFunc("stencilFunc", func))
-@@ -6130,6 +6172,7 @@
+@@ -6236,6 +6278,7 @@
                                                      GLenum func,
                                                      GLint ref,
                                                      GLuint mask) {
@@ -155,7 +133,7 @@ shipped r19 binary but carried by no patch.
    if (isContextLost())
      return;
    if (!ValidateStencilOrDepthFunc("stencilFuncSeparate", func))
-@@ -6157,6 +6200,7 @@
+@@ -6263,6 +6306,7 @@
  }
  
  void WebGLRenderingContextBase::stencilMask(GLuint mask) {
@@ -163,7 +141,7 @@ shipped r19 binary but carried by no patch.
    if (isContextLost())
      return;
    stencil_mask_ = mask;
-@@ -6165,6 +6209,7 @@
+@@ -6271,6 +6315,7 @@
  }
  
  void WebGLRenderingContextBase::stencilMaskSeparate(GLenum face, GLuint mask) {
@@ -171,3 +149,25 @@ shipped r19 binary but carried by no patch.
    if (isContextLost())
      return;
    switch (face) {
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
+@@ -342,6 +342,11 @@
+   void hint(GLenum target, GLenum mode);
+   bool isBuffer(WebGLBuffer*);
+   bool isContextLost() const override;
++
++  // clearcote(#15): set once the page writes stencil state, after which the captured masks stop
++  // being served and getParameter reports the real values, so set-then-read cannot disagree.
++  void ClearcoteMarkStencilStateTouched() { clearcote_stencil_touched_ = true; }
++  bool ClearcoteStencilStateTouched() const { return clearcote_stencil_touched_; }
+   bool isEnabled(GLenum cap);
+   bool isFramebuffer(WebGLFramebuffer*);
+   bool isProgram(WebGLProgram*);
+@@ -942,6 +947,7 @@
+   GLint pack_alignment_ = 4;
+   GLint unpack_alignment_ = 4;
+   bool unpack_flip_y_ = false;
++  bool clearcote_stencil_touched_ = false;  // clearcote(#15)
+   bool unpack_premultiply_alpha_ = false;
+   GLenum unpack_colorspace_conversion_ = GC3D_BROWSER_DEFAULT_WEBGL;
+   // The following three unpack params belong to WebGL2 only.

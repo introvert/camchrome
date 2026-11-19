@@ -55,7 +55,7 @@ REPO = Path(__file__).resolve().parents[1]
 ACCEPT_CH = ", ".join([
     "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-Platform-Version", "Sec-CH-UA-Arch",
     "Sec-CH-UA-Bitness", "Sec-CH-UA-Model", "Sec-CH-UA-WoW64", "Sec-CH-DPR", "DPR",
-    "Sec-CH-Viewport-Width", "RTT", "Downlink", "ECT",
+    "Sec-CH-Viewport-Width", "RTT", "Downlink", "ECT", "Sec-CH-Prefers-Color-Scheme",
 ])
 
 # Collected in every realm that can run it (window, iframe, dedicated worker).
@@ -177,6 +177,39 @@ async function webrtcProbe() {
   return {candidates: cands, sdpCandidates: sdp.split('\n').filter(l => l.startsWith('a=candidate'))};
 }
 
+// Families that only one desktop OS ships. A persona must not show another OS's families,
+// whatever the host has installed (040's per-OS allowlists).
+const FOREIGN_FONTS = ['Segoe UI', 'Calibri', 'Helvetica Neue', 'Hiragino Sans', 'DejaVu Sans',
+                       'Liberation Sans', 'Cantarell', 'Ubuntu'];
+function fontFamilies(list) {
+  const c = document.createElement('canvas').getContext('2d');
+  const w = f => { c.font = `72px ${f}`; return c.measureText('mmmmmmmmmmlli10OOwW').width; };
+  const out = {};
+  for (const f of list)
+    out[f] = ['monospace', 'serif', 'sans-serif'].some(b => w(`"${f}", ${b}`) !== w(b));
+  return out;
+}
+
+// Two APIs answer "can this codec play": MediaSource.isTypeSupported and
+// MediaCapabilities.decodingInfo (147). They must agree.
+async function mediaCapsProbe() {
+  const types = ['video/mp4; codecs="avc1.42E01E"', 'video/webm; codecs="vp09.00.10.08"',
+                 'video/mp4; codecs="av01.0.05M.08"', 'video/mp4; codecs="hev1.1.6.L93.B0"',
+                 'audio/mp4; codecs="mp4a.40.2"', 'audio/webm; codecs="opus"'];
+  const out = [];
+  for (const t of types) {
+    const audio = t.startsWith('audio');
+    const cfg = {type: 'media-source'};
+    if (audio) cfg.audio = {contentType: t, channels: '2', bitrate: 128000, samplerate: 48000};
+    else cfg.video = {contentType: t, width: 1280, height: 720, bitrate: 2000000, framerate: 30};
+    let info = null;
+    try { info = await navigator.mediaCapabilities.decodingInfo(cfg); } catch (e) {}
+    out.push({type: t, mse: self.MediaSource ? MediaSource.isTypeSupported(t) : null,
+              caps: info && info.supported});
+  }
+  return out;
+}
+
 async function waitVoices() {
   if (!self.speechSynthesis) return [];
   return await new Promise(r => {
@@ -224,6 +257,22 @@ async function collectMain(workerUrl) {
     hover: mq('(hover: hover)'), anyPointerFine: mq('(any-pointer: fine)'),
     colorDepth: mq(`(color: ${screen.colorDepth / 3})`),
   };
+  o.colorSchemeDark = mq('(prefers-color-scheme: dark)');
+  o.scrollbar = (() => {
+    const d = document.createElement('div');
+    d.style.cssText = 'width:100px;height:100px;overflow:scroll;position:absolute;top:-999px';
+    document.body.appendChild(d);
+    const w = d.offsetWidth - d.clientWidth; d.remove(); return w;
+  })();
+  o.mediaCaps = await mediaCapsProbe();
+  o.fontFamilies = fontFamilies(FOREIGN_FONTS);
+  o.apis = {eyeDropper: 'EyeDropper' in window, barcode: 'BarcodeDetector' in window,
+            bluetooth: 'bluetooth' in navigator, wco: 'windowControlsOverlay' in navigator,
+            managed: 'managed' in navigator, docPip: 'documentPictureInPicture' in window,
+            hid: 'hid' in navigator,
+            activeText: (() => { const d = document.createElement('i'); d.style.color = 'ActiveText';
+              document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; })(),
+            orientation: screen.orientation && screen.orientation.type};
   o.maxTouchPoints = navigator.maxTouchPoints;
   o.cpuPerformance = navigator.cpuPerformance;
   o.jsHeapSizeLimit = performance.memory && performance.memory.jsHeapSizeLimit;
@@ -281,7 +330,8 @@ WORKER_JS = COMMON_JS + "collectCommon().then(o => postMessage(o));"
 VIEWPORT_HTML = ('<!doctype html><meta name="viewport" content="width=device-width, '
                  'initial-scale=1"><title>vp</title><body>')
 VIEWPORT_JS = """({inner: innerWidth, client: document.documentElement.clientWidth,
-                   screen: screen.width, outer: outerWidth})"""
+                   screen: screen.width, outer: outerWidth,
+                   scale: visualViewport && visualViewport.scale})"""
 
 MOBILE_JS = r"""
 (async () => {
@@ -344,7 +394,8 @@ class Server:
                 self.send_response(200)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Accept-CH", ACCEPT_CH)
-                self.send_header("Critical-CH", "Sec-CH-UA-Full-Version-List, Sec-CH-DPR, RTT")
+                self.send_header("Critical-CH", "Sec-CH-UA-Full-Version-List, Sec-CH-DPR, RTT, "
+                                               "Sec-CH-Prefers-Color-Scheme")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
@@ -571,6 +622,19 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     rep.add("mq-device-size-equals-screen", "141", mq["deviceWidth"] and mq["deviceHeight"], mq)
     rep.add("mq-resolution-equals-dpr", "962", mq["resolution"], s["dpr"])
     rep.add("color-depth-24-or-30", "140", s["colorDepth"] in (24, 30), s["colorDepth"])
+    # Sec-CH-Prefers-Color-Scheme must say what matchMedia says.
+    pcs = (hdr.get("sec-ch-prefers-color-scheme") or "").strip('"')
+    rep.add("color-scheme-header-equals-media", "141",
+            pcs == ("dark" if m.get("colorSchemeDark") else "light"),
+            f"{pcs or 'not sent'} vs dark={m.get('colorSchemeDark')}", skip=not pcs)
+    # Classic scrollbars take layout width on Windows and Linux; Android uses overlay
+    # scrollbars (0). A cross-OS persona that keeps the host's scrollbar shows it here
+    # (e.g. a Windows persona on a Mac host with overlay scrollbars reports 0).
+    sb = m.get("scrollbar")
+    if args.platform in ("windows", "linux", "android") and not args.stock:
+        want_sb = (lambda w: w == 0) if args.platform == "android" else (lambda w: (w or 0) > 0)
+        rep.add("scrollbar-width-matches-persona-os", "999",
+                sb is not None and want_sb(sb), f"{sb}px for a {args.platform} persona")
     touch = m.get("maxTouchPoints", 0)
     if touch == 0:
         rep.add("no-touch-means-fine-pointer", "141 142",
@@ -598,6 +662,11 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     rep.add("readpixels-sentinel-untouched", "988", rp is not None and rp["sentinelTouched"] == 0,
             rp, skip=rp is None)
     wg, gpu = m.get("webgl") or {}, m.get("webgpu")
+    # Every real visitor has WebGL. Since Chrome 137 a host without a usable GPU has none unless
+    # SwiftShader is opted into; a persona opts in (1000).
+    if not args.stock:
+        rep.add("persona-has-webgl", "1000", bool(wg.get("renderer")),
+                wg or m.get("webglError") or "getContext('webgl') returned null")
     if gpu and wg:
         ren = (wg.get("renderer") or "").lower()
         vend = (gpu.get("vendor") or "").lower()
@@ -617,6 +686,24 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     rep.add("audio-sample-rate-plausible", "020 981", au.get("sampleRate") in (44100, 48000),
             au.get("sampleRate"), skip="error" in au)
 
+    caps = m.get("mediaCaps") or []
+    disagree = [c["type"] for c in caps if c.get("mse") is not None and c.get("caps") is not None
+                and c["mse"] != c["caps"]]
+    rep.add("media-capabilities-agree-with-mse", "147", caps and not disagree,
+            disagree or caps, skip=not caps)
+
+    # --- fonts (040) ----------------------------------------------------------------
+    foreign = {"windows": ["Helvetica Neue", "Hiragino Sans", "DejaVu Sans", "Liberation Sans",
+                           "Cantarell", "Ubuntu"],
+               # Not Calibri: Linux's metric aliases map it to Carlito, so a real Linux shows it.
+               "linux": ["Segoe UI", "Helvetica Neue", "Hiragino Sans"],
+               "macos": ["Segoe UI", "DejaVu Sans", "Liberation Sans", "Cantarell", "Ubuntu"]}
+    if args.platform in foreign and not args.stock:
+        fams = m.get("fontFamilies") or {}
+        shown = [f for f in foreign[args.platform] if fams.get(f)]
+        rep.add("fonts-no-foreign-os-families", "040", not shown,
+                f"{args.platform} persona shows {shown}" if shown else "")
+
     # --- devices ------------------------------------------------------------------
     # A Linux persona reports getVoices() == [] by design (Chrome on Linux without
     # speech-dispatcher; persona_profile.cc, and persona_validator.cc only requires voices for
@@ -635,7 +722,32 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     rep.add("battery-plausible", "150 979", 0 <= bat.get("level", -1) <= 1, bat,
             skip="batteryError" in m)
     kb = m.get("keyboard") or {}
-    rep.add("keyboard-layout-map", "150", kb.get("size", 0) > 0, kb, skip="keyboardError" in m)
+    apis = m.get("apis") or {}
+    if args.platform == "android" and not args.stock:
+        desktop_only = [k for k in ("eyeDropper", "wco", "managed", "docPip", "hid") if apis.get(k)]
+        rep.add("android-api-surface", "1008",
+                not desktop_only and apis.get("barcode") and apis.get("bluetooth"),
+                desktop_only or apis)
+    if args.platform in ("windows", "macos") and not args.stock:
+        rep.add("web-bluetooth-present", "1007", apis.get("bluetooth") is True, apis.get("bluetooth"))
+    if args.platform == "linux" and not args.stock:
+        rep.add("web-bluetooth-absent-on-linux", "1007", apis.get("bluetooth") is False,
+                apis.get("bluetooth"))
+    if args.platform == "windows" and not args.stock:
+        rep.add("activetext-is-windows-hotlight", "1007",
+                apis.get("activeText") == "rgb(0, 102, 204)", apis.get("activeText"))
+    if args.platform in ("windows", "linux", "macos") and not args.stock:
+        rep.add("desktop-orientation-from-persona-screen", "1009",
+                apis.get("orientation") == ("landscape-primary" if s["width"] >= s["height"]
+                                            else "portrait-primary"),
+                (apis.get("orientation"), s["width"], s["height"]))
+    if args.platform == "android" and not args.stock:
+        # Chrome for Android has no navigator.keyboard (1008).
+        rep.add("android-no-keyboard-api", "1008", "keyboardError" in m,
+                m.get("keyboardError") or kb)
+    else:
+        rep.add("keyboard-layout-map", "150", kb.get("size", 0) > 0, kb,
+                skip="keyboardError" in m)
     conn = m.get("connection") or {}
     rtt_hdr = hdr.get("rtt")
     rep.add("rtt-header-equals-connection", "989",
@@ -693,6 +805,10 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
                 vp.get("inner") == vp.get("screen") == vp.get("client"), vp)
         nvp = m.get("no_meta_viewport") or {}
         rep.add("android-no-meta-layout-980", "002 997", nvp.get("client") == 980, nvp)
+        # A phone shows a page without a viewport tag zoomed out to fit: the visual viewport
+        # covers the 980 px layout (innerWidth 980, scale = screen / 980), not one screen's worth.
+        rep.add("android-no-meta-zoomed-to-fit", "1001",
+                nvp.get("inner") == 980 and (nvp.get("scale") or 1) < 1, nvp)
         f = mob.get("fonts") or {}
         rep.add("android-handset-fonts", "040 992",
                 f.get("sans-serif-condensed") and not f.get("Segoe UI")

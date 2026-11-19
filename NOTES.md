@@ -21,21 +21,20 @@ parts instead.
 
 Vendored from Clearcote commit `ac40bdcaeba73d71984c83656a899246a25cb5ba`. `patches/` started as
 a byte-for-byte copy of its `patches/` directory; every patch has since been rebased to 157 and
-three were added (987–989), so 66 patches are in `patches/series` now.
+patches were added (987–999), so 76 patches are in `patches/series` now.
 
-## Upstream versions (checked 2026-11-17)
+## Upstream versions (checked 2026-11-19)
 
-- ungoogled-chromium: `157.0.8103.78-1`, Chromium `157.0.8103.78`
-- ungoogled-chromium-windows: `157.0.8103.78-1.1`
-- ungoogled-chromium-macos: `157.0.8103.78-1.1`
-- Source tarball: `chromium-157.0.8103.78-lite.tar.xz`, 1.98 GB, from
-  `commondatastorage.googleapis.com/chromium-browser-official`
-- The previous macOS build (156.0.8078.79) is preserved in `build-156/` and tag
-  `v156-audit100`.
-- Checked again 2026-11-18: ungoogled-chromium's newest release is still 157.0.8103.78, while
-  Google Chrome stable is 158.0.8127.x on every platform. Rebase when ungoogled-chromium tags 158
-  (porting its ~100 base patches ahead of it is not worth the drift). A UA one major behind
-  stable is common and not a tell by itself; every surface reports the same 157 (995).
+- Google Chrome stable: 158.0.8127.36 (Linux), 159.0.8154.13 (Windows, macOS), 159.0.8154.18
+  (Android).
+- ungoogled-chromium: newest tag `157.0.8103.78-1`; 158 is in PR #4050 (head `76f39e0`, checks
+  green), which `UPSTREAM` pins. Move to the `158.0.8127.36-1` tag when it appears and check the
+  diff against `76f39e0` (reviewers mentioned the link-drag patch needing an update after #4040).
+- ungoogled-chromium-windows / -macos: `157.0.8103.78-1.1`, no 158 work yet. Linux uses the
+  Windows overlay only for 900/905's source changes, and the 157 overlay applies to 158.
+- Edge stable: 157.0.4341.60; add the Edge 158 build to 995's table when it ships.
+- `tools/upstream_watch.py --no-reference` prints all of this (docs/UPSTREAM-SOURCES.md
+  section 0).
 
 ## How the pieces fit
 
@@ -110,8 +109,10 @@ The series applied almost entirely. The changes needed:
 
 ## Open work, in order
 
-1. Linux: link a full build (CI `mode=full` on a large runner) and run the audit and
-   `tools/fingerprint_selftest.py` on it. Windows: not started.
+1. macOS: rebuild on 158 when ungoogled-chromium-macos tags 158; Windows: not started. A
+   Windows persona on a Linux host keeps four text-rendering tells (FreeType scaler and
+   anti-aliasing, Noto emoji flags, localized Windows CJK names); fixing them needs Windows
+   fonts on the host or a Windows host.
 2. Cross-OS personas: `cpu-arch-nan-*` cannot be patched (the persona's CPU arch must match
    the host's). Text-scaler/hyphenation/rare-font checks follow the host font stack. A
    Windows persona on a Mac needs Clearcote's font bundles, not vendored here.

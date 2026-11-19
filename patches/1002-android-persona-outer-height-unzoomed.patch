@@ -1,0 +1,31 @@
+camchrome: an Android persona's outerHeight is the window's height, in every frame and at every zoom.
+
+140 made a phone's outerHeight equal innerHeight. innerHeight is per frame and in CSS pixels at
+the current page scale, so an iframe reported its own height (Clearcote audit: "a frame reports the
+browser window's outer size, not its own") and a page zoomed out to fit (1001) reported a window
+~2.5x taller than its screen (fingerprint_selftest window-fits-screen). outerHeight is now the
+window's height (ChromeClient::RootWindowRect, as stock Chrome reports it, the same for every
+frame), capped at the persona screen height like 992's outerWidth.
+
+--- a/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
+@@ -1772,8 +1772,17 @@
+   if (PersonaWindowActive()) {
+     // clearcote: a phone browser has no desktop window chrome, so outerHeight
+     // equals innerHeight (no tab/url delta).
+-    if (ungoogled::CurrentPersona().mobile)
+-      return innerHeight();
++    if (ungoogled::CurrentPersona().mobile) {
++      // camchrome (1002): the window's height in screen units, the same in every frame and
++      // at every page zoom, as on a phone. innerHeight is per frame (an iframe reported its
++      // own 150 px) and in CSS pixels at the page scale (a page zoomed out to fit, 1001,
++      // reported ~2.5x the screen). Capped at the screen, like 992's outerWidth.
++      Page* page = GetFrame()->GetPage();
++      int oh = page ? page->GetChromeClient().RootWindowRect(*GetFrame()).height()
++                    : innerHeight();
++      const int sh = static_cast<int>(ungoogled::CurrentPersona().screen_height);
++      return sh > 0 && oh > sh ? sh : oh;
++    }
+     // clearcote(#12): the frame delta must be the REAL one, not a constant.
+     //
+     // A pointer event's screenY is derived from the true viewport origin, and is

@@ -2,7 +2,7 @@ diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
 index 901df80d0d..e60b5f8b53 100644
 --- a/content/browser/BUILD.gn
 +++ b/content/browser/BUILD.gn
-@@ -836,6 +836,7 @@ source_set("browser") {
+@@ -856,6 +856,7 @@
      "devtools/protocol/background_service_handler.h",
      "devtools/protocol/browser_handler.cc",
      "devtools/protocol/browser_handler.h",
@@ -10,7 +10,7 @@ index 901df80d0d..e60b5f8b53 100644
      "devtools/protocol/debugger_handler.cc",
      "devtools/protocol/debugger_handler.h",
      "devtools/protocol/device_access_handler.cc",
-@@ -1110,6 +1111,7 @@ source_set("browser") {
+@@ -1119,6 +1120,7 @@
      "host_zoom_level_context.h",
      "host_zoom_map_impl.cc",
      "host_zoom_map_impl.h",
@@ -18,7 +18,7 @@ index 901df80d0d..e60b5f8b53 100644
      "idle/idle_manager_impl.cc",
      "idle/idle_manager_impl.h",
      "image_capture/image_capture_impl.cc",
-@@ -2681,6 +2683,8 @@ source_set("browser") {
+@@ -2711,6 +2713,8 @@
          [ "file_system_access/file_path_watcher/file_path_watcher_stub.cc" ]
  
      sources += [
@@ -27,11 +27,9 @@ index 901df80d0d..e60b5f8b53 100644
        "../app_shim_remote_cocoa/ns_view_bridge_factory_impl.mm",
        "../app_shim_remote_cocoa/popup_window_mac.h",
        "../app_shim_remote_cocoa/popup_window_mac.mm",
-diff --git a/content/browser/devtools/protocol/browser_handler.cc b/content/browser/devtools/protocol/browser_handler.cc
-index e4b87a6ee3..8c67d38631 100644
 --- a/content/browser/devtools/protocol/browser_handler.cc
 +++ b/content/browser/devtools/protocol/browser_handler.cc
-@@ -34,6 +34,25 @@
+@@ -35,6 +35,25 @@
  #include "content/browser/devtools/devtools_manager.h"
  #include "content/browser/devtools/devtools_session.h"
  #include "content/browser/devtools/protocol/devtools_download_manager_delegate.h"
@@ -57,7 +55,7 @@ index e4b87a6ee3..8c67d38631 100644
  #include "content/browser/global_privacy_control_util.h"
  #include "content/browser/gpu/gpu_process_host.h"
  #include "content/browser/permissions/permission_controller_impl.h"
-@@ -740,6 +759,516 @@ Response BrowserHandler::GetGlobalPrivacyControl(bool* out_gpc) {
+@@ -744,6 +763,516 @@
    return Response::Success();
  }
  
@@ -574,11 +572,9 @@ index e4b87a6ee3..8c67d38631 100644
  Response BrowserHandler::SetGlobalPrivacyControl(bool in_gpc, bool* out_gpc) {
    if (!blink::IsGlobalPrivacyControlFeatureEnabled()) {
      return Response::ServerError("Global Privacy Control is disabled.");
-diff --git a/content/browser/devtools/protocol/browser_handler.h b/content/browser/devtools/protocol/browser_handler.h
-index 9e1ba76dba..d5bb257f30 100644
 --- a/content/browser/devtools/protocol/browser_handler.h
 +++ b/content/browser/devtools/protocol/browser_handler.h
-@@ -106,6 +106,29 @@ class BrowserHandler : public DevToolsDomainHandler,
+@@ -106,6 +106,29 @@
    Response Crash() override;
    Response CrashGpuProcess() override;
  
@@ -608,9 +604,6 @@ index 9e1ba76dba..d5bb257f30 100644
    Response GetGlobalPrivacyControl(bool* out_gpc) override;
    Response SetGlobalPrivacyControl(bool in_gpc, bool* out_gpc) override;
  
-diff --git a/content/browser/devtools/protocol/humanized_cursor_overlay_mac.h b/content/browser/devtools/protocol/humanized_cursor_overlay_mac.h
-new file mode 100644
-index 0000000000..edde69ca4e
 --- /dev/null
 +++ b/content/browser/devtools/protocol/humanized_cursor_overlay_mac.h
 @@ -0,0 +1,37 @@
@@ -651,9 +644,6 @@ index 0000000000..edde69ca4e
 +}  // namespace content
 +
 +#endif  // CONTENT_BROWSER_DEVTOOLS_PROTOCOL_HUMANIZED_CURSOR_OVERLAY_MAC_H_
-diff --git a/content/browser/devtools/protocol/humanized_cursor_overlay_mac.mm b/content/browser/devtools/protocol/humanized_cursor_overlay_mac.mm
-new file mode 100644
-index 0000000000..99ef9592c9
 --- /dev/null
 +++ b/content/browser/devtools/protocol/humanized_cursor_overlay_mac.mm
 @@ -0,0 +1,149 @@
@@ -806,11 +796,9 @@ index 0000000000..99ef9592c9
 +
 +}  // namespace devtools
 +}  // namespace content
-diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
-index 8468f4d256..e773e2c0ca 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
-@@ -49,6 +49,8 @@
+@@ -51,6 +51,8 @@
  #include "ui/base/clipboard/clipboard_constants.h"
  #include "ui/base/dragdrop/mojom/drag_drop_types.mojom-shared.h"
  #include "ui/events/base_event_utils.h"
@@ -819,7 +807,7 @@ index 8468f4d256..e773e2c0ca 100644
  #include "ui/events/blink/web_input_event_traits.h"
  #include "ui/events/event_constants.h"
  #include "ui/events/gesture_detection/gesture_provider_config_helper.h"
-@@ -1358,6 +1360,37 @@ void InputHandler::ImeSetComposition(
+@@ -1368,6 +1370,37 @@
        /*target_dom_node_id=*/blink::DOMNodeIdType(), std::move(closure));
  }
  
@@ -857,7 +845,7 @@ index 8468f4d256..e773e2c0ca 100644
  void InputHandler::DispatchMouseEvent(
      const std::string& event_type,
      double x,
-@@ -1376,6 +1409,64 @@ void InputHandler::DispatchMouseEvent(
+@@ -1386,6 +1419,64 @@
      std::optional<double> delta_y,
      std::optional<std::string> pointer_type,
      std::unique_ptr<DispatchMouseEventCallback> callback) {
@@ -922,8 +910,6 @@ index 8468f4d256..e773e2c0ca 100644
    base::expected<std::unique_ptr<blink::WebMouseEvent>, protocol::Response>
        maybe_event = CreateWebMouseEvent(
            event_type, x, y, ScaleFactor(), std::move(modifiers),
-diff --git a/content/browser/devtools/protocol/input_handler.h b/content/browser/devtools/protocol/input_handler.h
-index 4c25a8c1c2..2e4fb7298b 100644
 --- a/content/browser/devtools/protocol/input_handler.h
 +++ b/content/browser/devtools/protocol/input_handler.h
 @@ -16,6 +16,7 @@
@@ -934,7 +920,7 @@ index 4c25a8c1c2..2e4fb7298b 100644
  #include "content/browser/devtools/protocol/devtools_domain_handler.h"
  #include "content/browser/devtools/protocol/input.h"
  #include "content/browser/renderer_host/render_widget_host_view_base.h"
-@@ -356,6 +357,9 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
+@@ -356,6 +357,9 @@
        injectors_;
    int last_id_ = 0;
    bool ignore_input_events_ = false;
@@ -944,11 +930,9 @@ index 4c25a8c1c2..2e4fb7298b 100644
    std::optional<content::WebContents::ScopedIgnoreInputEvents>
        scoped_ignore_input_events_;
    bool intercept_drags_ = false;
-diff --git a/content/browser/devtools/protocol/network_handler.cc b/content/browser/devtools/protocol/network_handler.cc
-index 7a9d60a1e3..a30df80705 100644
 --- a/content/browser/devtools/protocol/network_handler.cc
 +++ b/content/browser/devtools/protocol/network_handler.cc
-@@ -221,14 +221,14 @@ std::unique_ptr<Network::CookiePartitionKey> BuildCookiePartitionKey(
+@@ -222,14 +222,14 @@
  
  std::unique_ptr<Network::Cookie> BuildCookie(
      const net::CanonicalCookie& cookie) {
@@ -964,9 +948,7 @@ index 7a9d60a1e3..a30df80705 100644
 +                       cookie.ExpiryDate().is_inf())
                            ? -1
                            : cookie.ExpiryDate().InSecondsFSinceUnixEpoch())
-           .SetSize(cookie.Name().length() + cookie.Value().length())
-diff --git a/content/browser/devtools/protocol_config.json b/content/browser/devtools/protocol_config.json
-index d5ffdcfd66..13a048b759 100644
+           .SetSize(net::cookie_util::NameValueSizeBytes(cookie))
 --- a/content/browser/devtools/protocol_config.json
 +++ b/content/browser/devtools/protocol_config.json
 @@ -19,8 +19,8 @@
@@ -980,11 +962,9 @@ index d5ffdcfd66..13a048b759 100644
              },
              {
                  "domain": "DOM",
-diff --git a/third_party/blink/public/devtools_protocol/domains/Browser.pdl b/third_party/blink/public/devtools_protocol/domains/Browser.pdl
-index 142bd94887..4b9d86564a 100644
 --- a/third_party/blink/public/devtools_protocol/domains/Browser.pdl
 +++ b/third_party/blink/public/devtools_protocol/domains/Browser.pdl
-@@ -356,3 +356,72 @@ domain Browser
+@@ -357,3 +357,72 @@
        boolean gpc
      returns
        boolean gpc

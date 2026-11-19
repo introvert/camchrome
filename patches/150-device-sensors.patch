@@ -1,6 +1,6 @@
 diff -u --recursive a/third_party/blink/renderer/core/events/navigator_events.cc b/third_party/blink/renderer/core/events/navigator_events.cc
---- a/third_party/blink/renderer/core/events/navigator_events.cc	2026-07-20 14:58:26.862031504 +0000
-+++ b/third_party/blink/renderer/core/events/navigator_events.cc	2026-07-20 14:58:26.914031728 +0000
+--- a/third_party/blink/renderer/core/events/navigator_events.cc
++++ b/third_party/blink/renderer/core/events/navigator_events.cc
 @@ -30,6 +30,11 @@
  
  #include "third_party/blink/renderer/core/events/navigator_events.h"
@@ -81,9 +81,8 @@ diff -u --recursive a/third_party/blink/renderer/core/events/navigator_events.cc
  }
  
  }  // namespace blink
-diff -u --recursive a/third_party/blink/renderer/modules/battery/battery_manager.cc b/third_party/blink/renderer/modules/battery/battery_manager.cc
---- a/third_party/blink/renderer/modules/battery/battery_manager.cc	2026-07-20 14:58:26.878031573 +0000
-+++ b/third_party/blink/renderer/modules/battery/battery_manager.cc	2026-07-20 14:58:26.914031728 +0000
+--- a/third_party/blink/renderer/modules/battery/battery_manager.cc
++++ b/third_party/blink/renderer/modules/battery/battery_manager.cc
 @@ -4,6 +4,10 @@
  
  #include "third_party/blink/renderer/modules/battery/battery_manager.h"
@@ -141,9 +140,8 @@ diff -u --recursive a/third_party/blink/renderer/modules/battery/battery_manager
  }
  
  void BatteryManager::DidUpdateData() {
-diff -u --recursive a/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc b/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc
---- a/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc	2026-07-20 14:58:26.890031625 +0000
-+++ b/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc	2026-07-20 14:58:26.942031849 +0000
+--- a/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc
++++ b/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc
 @@ -24,17 +24,10 @@
  constexpr char kKeyboardMapFrameDetachedErrorMsg[] =
      "Current frame is detached.";
@@ -274,9 +272,8 @@ diff -u --recursive a/third_party/blink/renderer/modules/keyboard/keyboard_layou
    ExecutionContextClient::Trace(visitor);
  }
  
-diff -u --recursive a/third_party/blink/renderer/modules/keyboard/keyboard_layout.h b/third_party/blink/renderer/modules/keyboard/keyboard_layout.h
---- a/third_party/blink/renderer/modules/keyboard/keyboard_layout.h	2026-07-20 14:58:26.894031642 +0000
-+++ b/third_party/blink/renderer/modules/keyboard/keyboard_layout.h	2026-07-20 14:58:26.918031746 +0000
+--- a/third_party/blink/renderer/modules/keyboard/keyboard_layout.h
++++ b/third_party/blink/renderer/modules/keyboard/keyboard_layout.h
 @@ -37,18 +37,8 @@
    // Returns true if the local frame is attached to the renderer.
    bool IsLocalFrameAttached();
@@ -296,9 +293,8 @@ diff -u --recursive a/third_party/blink/renderer/modules/keyboard/keyboard_layou
  };
  
  }  // namespace blink
-diff -u --recursive a/third_party/blink/renderer/modules/netinfo/network_information.cc b/third_party/blink/renderer/modules/netinfo/network_information.cc
---- a/third_party/blink/renderer/modules/netinfo/network_information.cc	2026-07-20 14:58:26.910031711 +0000
-+++ b/third_party/blink/renderer/modules/netinfo/network_information.cc	2026-07-20 14:58:26.918031746 +0000
+--- a/third_party/blink/renderer/modules/netinfo/network_information.cc
++++ b/third_party/blink/renderer/modules/netinfo/network_information.cc
 @@ -6,6 +6,8 @@
  
  #include <algorithm>

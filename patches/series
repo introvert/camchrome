@@ -72,3 +72,17 @@
 995-ua-client-hints-coherence.patch
 996-webgl-readback-no-farble.patch
 997-android-persona-viewport.patch
+998-persona-heap-and-webgpu-texture-coherence.patch
+999-android-persona-overlay-scrollbars.patch
+1000-persona-webgl-without-gpu.patch
+1001-android-persona-page-scale.patch
+1002-android-persona-outer-height-unzoomed.patch
+1003-persona-cpu-affinity.patch
+1004-persona-webgl-no-performance-caveat.patch
+1005-persona-webcodecs-hardware-coherence.patch
+1006-linux-persona-and-viewport-coherence.patch
+1007-windows-persona-coherence.patch
+1008-android-persona-platform-surface.patch
+1009-persona-orientation-and-mesa-limits.patch
+1010-persona-fullscreen-outer-height.patch
+1011-windows-persona-drive-letter-urls.patch

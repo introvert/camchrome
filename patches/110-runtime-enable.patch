@@ -1,8 +1,8 @@
 --- a/v8/src/inspector/v8-runtime-agent-impl.cc
 +++ b/v8/src/inspector/v8-runtime-agent-impl.cc
-@@ -1072,6 +1072,9 @@
- 
- void V8RuntimeAgentImpl::addBindings(InspectedContext* context) {
+@@ -1085,6 +1085,9 @@
+   int contextGroupId = context->contextGroupId();
+   int contextId = context->contextId();
    const String16 contextName = context->humanReadableName();
 +  // adryfish fingerprint: disable Runtime.enable binding registration to
 +  // hide the CDP/automation detection vector. Original body left unreachable.
@@ -10,7 +10,7 @@
    if (!m_enabled) return;
  
    protocol::DictionaryValue* globalBindings =
-@@ -1225,7 +1228,7 @@
+@@ -1242,7 +1245,7 @@
  }
  
  void V8RuntimeAgentImpl::messageAdded(V8ConsoleMessage* message) {

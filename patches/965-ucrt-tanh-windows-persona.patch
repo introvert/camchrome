@@ -52,7 +52,7 @@ persona still returns glibc on the 3 inputs that differ, and every other Math.* 
  
  #include "src/base/build_config.h"
  #include "src/base/macros.h"
-@@ -370,7 +377,198 @@
+@@ -358,7 +365,198 @@
  #undef SET_HIGH_WORD
  #undef SET_LOW_WORD
  
@@ -250,5 +250,5 @@ persona still returns glibc on the 3 inputs that differ, and every other Math.* 
 +  return std::tanh(x);
 +}
  
- #if defined(V8_USE_LIBM_TRIG_FUNCTIONS) && defined(BUILDING_V8_BASE_SHARED)
- double libm_sin(double x) { return glibc_sin(x); }
+ }  // namespace ieee754
+ }  // namespace base

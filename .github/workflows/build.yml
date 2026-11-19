@@ -2,7 +2,7 @@ name: build
 
 # Three tiers, cheapest first:
 #   checks   every push / PR: repository checks + the self-test harness on stock Chrome.
-#   compile  every push / PR touching patches, scripts or config, and on demand: fetch the
+#   compile  every push / PR (linux-x64 only; see TARGETS below), and on demand: fetch the
 #            pinned source, apply the series, gn gen, then compile every patched source
 #            file for the target. This proves the series builds without a full link.
 #   full     on demand (workflow_dispatch, mode=full) or a v* tag: the whole browser.
@@ -73,6 +73,9 @@ jobs:
             --json selftest-stock.json
       - name: Automation self-test on stock Chrome
         run: tools/camauto_selftest.py --binary "$(command -v google-chrome || command -v chromium)"
+      - name: UA self-test harness on stock Chrome
+        # 995's override modes fail on stock Chrome by design (XFAIL); the no-flags case must pass.
+        run: tools/ua_selftest.py --stock --headless --binary "$(command -v google-chrome || command -v chromium)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -88,7 +91,10 @@ jobs:
       - id: m
         env:
           MODE: ${{ inputs.mode || (startsWith(github.ref, 'refs/tags/v') && 'full') || 'compile' }}
-          TARGETS: ${{ inputs.targets || 'linux-x64,linux-arm64,mac-arm64,mac-x64' }}
+          # Pushes and PRs compile-check Linux x64 only: each macOS compile job takes ~2 h on a
+          # hosted macOS runner, billed at 10x Linux minutes, two per push. Dispatch the
+          # workflow, or push a v* tag, for the other targets.
+          TARGETS: ${{ inputs.targets || (startsWith(github.ref, 'refs/tags/v') && 'linux-x64,linux-arm64,mac-arm64,mac-x64') || 'linux-x64' }}
           LINUX_RUNNER: ${{ inputs.linux_runner || vars.CAMCHROME_LINUX_RUNNER || 'ubuntu-24.04' }}
           MAC_RUNNER: ${{ inputs.mac_runner || vars.CAMCHROME_MAC_RUNNER || 'macos-26' }}
         run: |

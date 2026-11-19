@@ -10,7 +10,7 @@ index 1be5471d94..cea3544f5c 100644
  #include "components/services/storage/public/mojom/storage_service.mojom.h"
  #include "components/vrp_flags/buildflags.h"
  #include "content/browser/browser_child_process_host_impl.h"
-@@ -403,6 +404,11 @@ bool UtilityProcessHost::StartProcess() {
+@@ -403,6 +404,11 @@
  
    // Browser command-line switches to propagate to the utility process.
    static const char* const kSwitchNames[] = {
@@ -22,11 +22,9 @@ index 1be5471d94..cea3544f5c 100644
        network::switches::kAdditionalTrustTokenKeyCommitments,
        network::switches::kForceEffectiveConnectionType,
        network::switches::kHostResolverRules,
-diff --git a/net/BUILD.gn b/net/BUILD.gn
-index 25521d2e09..c5c01028d8 100644
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -1162,6 +1162,8 @@ component("net") {
+@@ -1176,6 +1176,8 @@
      "ssl/crypto_private_key.cc",
      "ssl/crypto_private_key.h",
      "ssl/ech_mode_getter.h",
@@ -35,16 +33,14 @@ index 25521d2e09..c5c01028d8 100644
      "ssl/openssl_private_key.cc",
      "ssl/openssl_private_key.h",
      "ssl/openssl_ssl_util.cc",
-@@ -1258,6 +1260,7 @@ component("net") {
-   deps = [
+@@ -1273,6 +1275,7 @@
      ":cronet_buildflags",
+     ":http_chunked_decoder_rust",
      ":net_deps",
 +    "//base/version_info",
      "//components/network_time/time_tracker",
      "//components/unexportable_keys",
      "//net/http:transport_security_state_generated_files",
-diff --git a/net/socket/ssl_client_socket_impl.cc b/net/socket/ssl_client_socket_impl.cc
-index 1c2610a4bf..2d40786a0d 100644
 --- a/net/socket/ssl_client_socket_impl.cc
 +++ b/net/socket/ssl_client_socket_impl.cc
 @@ -39,6 +39,7 @@
@@ -55,7 +51,7 @@ index 1c2610a4bf..2d40786a0d 100644
  #include "net/base/ip_address.h"
  #include "net/base/ip_endpoint.h"
  #include "net/base/net_errors.h"
-@@ -703,14 +704,41 @@ int SSLClientSocketImpl::Init() {
+@@ -700,14 +701,41 @@
      return ERR_UNEXPECTED;
    }
  
@@ -100,7 +96,7 @@ index 1c2610a4bf..2d40786a0d 100644
    if (!key_shares.empty() &&
        !SSL_set1_client_key_shares(ssl_.get(), key_shares.data(),
                                    key_shares.size())) {
-@@ -816,7 +844,9 @@ int SSLClientSocketImpl::Init() {
+@@ -813,7 +841,9 @@
  
    SSL_set_alps_use_new_codepoint(
        ssl_.get(),
@@ -111,7 +107,7 @@ index 1c2610a4bf..2d40786a0d 100644
  
    if (!ssl_config_.alpn_protos.empty()) {
      std::vector<uint8_t> wire_protos =
-@@ -1835,7 +1865,13 @@ int SSLClientSocketImpl::ConfigureEch() {
+@@ -1832,7 +1862,13 @@
        [[fallthrough]];
      case EchMode::kOpportunistic:
        // TODO(crbug.com/41482204): Enable this unconditionally.
@@ -126,9 +122,6 @@ index 1c2610a4bf..2d40786a0d 100644
        if (!ssl_config_.ech_config_list.empty()) {
          net_log_.AddEvent(NetLogEventType::SSL_ECH_CONFIG_LIST, [&] {
            return base::DictValue().Set(
-diff --git a/net/ssl/network_persona.cc b/net/ssl/network_persona.cc
-new file mode 100644
-index 0000000000..981e7f46ac
 --- /dev/null
 +++ b/net/ssl/network_persona.cc
 @@ -0,0 +1,115 @@
@@ -247,9 +240,6 @@ index 0000000000..981e7f46ac
 +}
 +
 +}  // namespace net
-diff --git a/net/ssl/network_persona.h b/net/ssl/network_persona.h
-new file mode 100644
-index 0000000000..5d87d301f4
 --- /dev/null
 +++ b/net/ssl/network_persona.h
 @@ -0,0 +1,69 @@

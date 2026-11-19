@@ -62,7 +62,7 @@ index a833d82ff6..675dfdbd05 100644
  #include <functional>
  #include <sstream>
  
-@@ -567,11 +568,123 @@ int Shader::getTranslatedSourceLength(const Context *context)
+@@ -567,11 +568,123 @@
      return static_cast<int>(mState.mCompiledState->translatedSource->length()) + 1;
  }
  
@@ -187,7 +187,7 @@ index a833d82ff6..675dfdbd05 100644
      if (debugInfo.empty())
      {
          return 0;
-@@ -611,7 +724,7 @@ void Shader::getTranslatedSourceWithDebugInfo(const Context *context,
+@@ -611,7 +724,7 @@
                                                char *buffer)
  {
      resolveCompile(context);
@@ -195,11 +195,11 @@ index a833d82ff6..675dfdbd05 100644
 +    const std::string &debugInfo = clearcoteDebugInfo(context);
      GetSourceImpl(debugInfo, bufSize, length, buffer);
  }
-
-diff --git a/third_party/angle/src/libANGLE/Shader.h b/third_party/angle/src/libANGLE/Shader.h
+ 
 --- a/third_party/angle/src/libANGLE/Shader.h
 +++ b/third_party/angle/src/libANGLE/Shader.h
-@@ -211,6 +211,12 @@ class Shader final : angle::NonCopyable, public LabeledObject
+@@ -211,6 +211,12 @@
+                       const ShShaderOutput &outputType,
                        const ShBuiltInResources &resources);
  
 +    // clearcote: debug info to report for the translated-source query, and the cached HLSL

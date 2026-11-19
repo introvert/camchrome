@@ -20,7 +20,7 @@ only warns: dual-GPU laptops legitimately disagree). REPRO gains wgpuarch=.
  #include <string>
  
  #include "base/base64.h"
-@@ -440,12 +441,19 @@
+@@ -430,12 +431,19 @@
        }
      }
    }
@@ -46,7 +46,7 @@ only warns: dual-GPU laptops legitimately disagree). REPRO gains wgpuarch=.
    // clearcote: a capture's webgpu.features list is the real adapter's set -- authoritative.
    if (const base::ListValue* wf = d.FindListByDottedPath("webgpu.features")) {
      if (!wf->empty()) {
-@@ -565,6 +573,50 @@
+@@ -555,6 +563,50 @@
    return kActive;
  }
  
@@ -97,7 +97,7 @@ only warns: dual-GPU laptops legitimately disagree). REPRO gains wgpuarch=.
  unsigned PersonaSchema() {
    static const unsigned kSchema = [] {
      const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
-@@ -998,13 +1050,17 @@
+@@ -988,13 +1040,17 @@
    // FINAL WebGL GPU (after the gpu-vendor switch/profile) so navigator.gpu always
    // matches the WebGL UNMASKED vendor: lowercase WebGPU vendor + canonical arch.
    if (p.webgpu_vendor.empty() || p.webgpu_architecture.empty()) {
@@ -117,7 +117,7 @@ only warns: dual-GPU laptops legitimately disagree). REPRO gains wgpuarch=.
      } else if (p.webgl_vendor.find("ARM") != std::string::npos ||
                 p.webgl_vendor.find("Mali") != std::string::npos) {
        // clearcote: Android Mali persona -> ARM Valhall (Mali-G710/G68), so
-@@ -1015,7 +1071,7 @@
+@@ -1005,7 +1061,7 @@
                 p.webgl_vendor.find("Adreno") != std::string::npos) {
        cc_v = "qualcomm"; cc_a = "adreno";
      } else {
@@ -128,7 +128,7 @@ only warns: dual-GPU laptops legitimately disagree). REPRO gains wgpuarch=.
      if (p.webgpu_architecture.empty()) p.webgpu_architecture = cc_a;
 --- a/components/ungoogled/persona_profile.h
 +++ b/components/ungoogled/persona_profile.h
-@@ -236,6 +236,9 @@
+@@ -228,6 +228,9 @@
    // real adapter's set is served). gpu_adapter.cc serves the INTERSECTION of this list with the
    // real adapter's features -- subtractive only, never a feature the host cannot back.
    std::vector<std::string> webgpu_features;
@@ -138,7 +138,7 @@ only warns: dual-GPU laptops legitimately disagree). REPRO gains wgpuarch=.
  
    // ---- MediaCapabilities.decodingInfo() per codec family. Key is the codec
    // family ("h264","vp8","vp9","av1","hevc"); the triple overrides the host's
-@@ -320,6 +323,11 @@
+@@ -312,6 +315,11 @@
  // little under the nominal size. Computed from the FINAL device_memory_gb (after the platform
  // fix-ups); a capture's own jsHeapSizeLimit wins over it.
  COMPONENT_EXPORT(UNGOOGLED) uint64_t PersonaHeapLimitBytes(const PersonaProfile& p);

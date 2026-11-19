@@ -36,7 +36,7 @@ diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
 index 8b6957bec6..8a604eb8f9 100644
 --- a/content/browser/BUILD.gn
 +++ b/content/browser/BUILD.gn
-@@ -839,6 +839,8 @@ source_set("browser") {
+@@ -856,6 +856,8 @@
      "devtools/protocol/background_service_handler.h",
      "devtools/protocol/browser_handler.cc",
      "devtools/protocol/browser_handler.h",
@@ -45,11 +45,9 @@ index 8b6957bec6..8a604eb8f9 100644
      "devtools/protocol/humanized_cursor_overlay_mac.h",
      "devtools/protocol/debugger_handler.cc",
      "devtools/protocol/debugger_handler.h",
-diff --git a/content/browser/devtools/protocol/browser_handler.cc b/content/browser/devtools/protocol/browser_handler.cc
-index 1bfb3a3ffd..5e102952e0 100644
 --- a/content/browser/devtools/protocol/browser_handler.cc
 +++ b/content/browser/devtools/protocol/browser_handler.cc
-@@ -34,6 +34,7 @@
+@@ -35,6 +35,7 @@
  #include "content/browser/devtools/devtools_manager.h"
  #include "content/browser/devtools/devtools_session.h"
  #include "content/browser/devtools/protocol/devtools_download_manager_delegate.h"
@@ -57,7 +55,7 @@ index 1bfb3a3ffd..5e102952e0 100644
  #include <map>
  
  #include "base/no_destructor.h"
-@@ -1230,6 +1231,129 @@ void BrowserHandler::HumanizedClickSelector(
+@@ -1234,6 +1235,129 @@
        10);
  }
  
@@ -187,11 +185,9 @@ index 1bfb3a3ffd..5e102952e0 100644
  void BrowserHandler::AgentRunTask(
      const std::string& in_target_id,
      const std::string& in_goal,
-diff --git a/content/browser/devtools/protocol/browser_handler.h b/content/browser/devtools/protocol/browser_handler.h
-index d5bb257f30..24e13b1db4 100644
 --- a/content/browser/devtools/protocol/browser_handler.h
 +++ b/content/browser/devtools/protocol/browser_handler.h
-@@ -121,6 +121,26 @@ class BrowserHandler : public DevToolsDomainHandler,
+@@ -121,6 +121,26 @@
        std::optional<bool> in_no_click,
        std::optional<bool> in_visualize,
        std::unique_ptr<HumanizedClickSelectorCallback> callback) override;
@@ -218,9 +214,6 @@ index d5bb257f30..24e13b1db4 100644
    // clearcote: native in-browser AI agent task (see Browser.agentRunTask).
    void AgentRunTask(const std::string& in_target_id,
                      const std::string& in_goal,
-diff --git a/content/browser/devtools/protocol/humanized_input.cc b/content/browser/devtools/protocol/humanized_input.cc
-new file mode 100644
-index 0000000000..12fde2f670
 --- /dev/null
 +++ b/content/browser/devtools/protocol/humanized_input.cc
 @@ -0,0 +1,767 @@
@@ -991,9 +984,6 @@ index 0000000000..12fde2f670
 +}
 +
 +}  // namespace content::protocol
-diff --git a/content/browser/devtools/protocol/humanized_input.h b/content/browser/devtools/protocol/humanized_input.h
-new file mode 100644
-index 0000000000..ae32e75a30
 --- /dev/null
 +++ b/content/browser/devtools/protocol/humanized_input.h
 @@ -0,0 +1,76 @@
@@ -1073,8 +1063,6 @@ index 0000000000..ae32e75a30
 +}  // namespace content
 +
 +#endif  // CONTENT_BROWSER_DEVTOOLS_PROTOCOL_HUMANIZED_INPUT_H_
-diff --git a/content/browser/devtools/protocol_config.json b/content/browser/devtools/protocol_config.json
-index 13a048b759..c2e40b698e 100644
 --- a/content/browser/devtools/protocol_config.json
 +++ b/content/browser/devtools/protocol_config.json
 @@ -19,8 +19,8 @@
@@ -1088,11 +1076,9 @@ index 13a048b759..c2e40b698e 100644
              },
              {
                  "domain": "DOM",
-diff --git a/third_party/blink/public/devtools_protocol/domains/Browser.pdl b/third_party/blink/public/devtools_protocol/domains/Browser.pdl
-index 4b9d86564a..2133af251f 100644
 --- a/third_party/blink/public/devtools_protocol/domains/Browser.pdl
 +++ b/third_party/blink/public/devtools_protocol/domains/Browser.pdl
-@@ -401,6 +401,48 @@ domain Browser
+@@ -402,6 +402,48 @@
        number x
        number y
  

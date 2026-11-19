@@ -21,7 +21,7 @@ diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content
 index 31225b1386..ca5793e7d3 100644
 --- a/content/browser/renderer_host/render_process_host_impl.cc
 +++ b/content/browser/renderer_host/render_process_host_impl.cc
-@@ -3973,6 +3973,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+@@ -3974,6 +3974,9 @@
        switches::kFingerprintingCanvasMeasureTextNoise,
        switches::kFingerprintingCanvasImageDataNoise,
        switches::kFingerprint,
@@ -31,8 +31,6 @@ index 31225b1386..ca5793e7d3 100644
        switches::kFingerprintBrand,
        switches::kFingerprintBrandVersion,
        switches::kFingerprintGpuVendor,
-diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
-index 8f31f4d47a..c489964e60 100644
 --- a/third_party/blink/renderer/core/dom/document.cc
 +++ b/third_party/blink/renderer/core/dom/document.cc
 @@ -36,6 +36,8 @@
@@ -53,8 +51,6 @@ index 8f31f4d47a..c489964e60 100644
  #include "mojo/public/cpp/bindings/lib/wtf_hash_util.h"
  #include "mojo/public/cpp/bindings/pending_remote.h"
  #include "mojo/public/cpp/bindings/remote.h"
-diff --git a/third_party/blink/renderer/core/dom/element.cc b/third_party/blink/renderer/core/dom/element.cc
-index d8a6bd61d0..a7084cf717 100644
 --- a/third_party/blink/renderer/core/dom/element.cc
 +++ b/third_party/blink/renderer/core/dom/element.cc
 @@ -35,6 +35,7 @@
@@ -65,8 +61,6 @@ index d8a6bd61d0..a7084cf717 100644
  #include "components/viz/common/surfaces/tracked_element_rects.h"
  #include "third_party/blink/public/common/features.h"
  #include "third_party/blink/public/mojom/scroll/scroll_enums.mojom-blink.h"
-diff --git a/third_party/blink/renderer/core/dom/range.cc b/third_party/blink/renderer/core/dom/range.cc
-index ffa5d9312e..1c01fb7442 100644
 --- a/third_party/blink/renderer/core/dom/range.cc
 +++ b/third_party/blink/renderer/core/dom/range.cc
 @@ -23,6 +23,8 @@
@@ -77,12 +71,10 @@ index ffa5d9312e..1c01fb7442 100644
 +#include "components/ungoogled/ungoogled_switches.h"
  #include "third_party/blink/renderer/core/dom/range.h"
  
- #include "third_party/blink/renderer/core/display_lock/display_lock_document_state.h"
-diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-index 04f250e46b..46e27a3db9 100644
+ #include "base/check.h"
 --- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 +++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-@@ -1473,7 +1473,7 @@ String HTMLCanvasElement::ToDataURLInternal(
+@@ -1476,7 +1476,7 @@
      // creating the ImageDataBuffer when the fingerprint switch is enabled.
      const base::CommandLine* command_line =
          base::CommandLine::ForCurrentProcess();
@@ -91,11 +83,9 @@ index 04f250e46b..46e27a3db9 100644
          // clearcote: this snapshot path is rendering-context agnostic -- a WebGL canvas's
          // toDataURL() lands here too. Only the 2D case follows the canvas-noise toggle;
          // everything else stays on the process-wide gate.
-diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 803a7a01f6..d23633fc37 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-@@ -980,7 +980,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -1042,7 +1042,7 @@
        DCHECK(!bounds.intersect(SkIRect::MakeXYWH(sx, sy, sw, sh)));
      }
      const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
@@ -104,7 +94,7 @@ index 803a7a01f6..d23633fc37 100644
          ungoogled::CanvasNoiseEnabled()) {
        // Per-site farbling: derive the seed from this context's eTLD+1.
        const SecurityOrigin* origin =
-@@ -1730,7 +1730,7 @@ TextMetrics* BaseRenderingContext2D::measureText(const String& text) {
+@@ -1786,7 +1786,7 @@
  
    // Scale text metrics if enabled
    const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
@@ -113,11 +103,9 @@ index 803a7a01f6..d23633fc37 100644
      // Per-site farbling: derive the seed from this context's eTLD+1 instead
      // of the raw global switch value. Downstream hashing is unchanged.
      const SecurityOrigin* origin =
-diff --git a/third_party/blink/renderer/modules/webgl/gpu_fingerprint.cc b/third_party/blink/renderer/modules/webgl/gpu_fingerprint.cc
-index 0bfcbe18e9..475283e30f 100644
 --- a/third_party/blink/renderer/modules/webgl/gpu_fingerprint.cc
 +++ b/third_party/blink/renderer/modules/webgl/gpu_fingerprint.cc
-@@ -68,7 +68,7 @@ std::string GetGLVendorStringForFingerprint() {
+@@ -68,7 +68,7 @@
    }
  
    // 优先级2: 如果指定了 fingerprint，根据平台生成
@@ -126,7 +114,7 @@ index 0bfcbe18e9..475283e30f 100644
      std::string platform = "windows";  // Default platform
      if (command_line->HasSwitch(switches::kFingerprintPlatform)) {
        platform = base::ToLowerASCII(
-@@ -98,7 +98,7 @@ std::string GetGLRendererStringForFingerprint(uint64_t effective_seed) {
+@@ -98,7 +98,7 @@
    // 优先级2: 如果指定了 fingerprint，根据平台和 per-site 种子生成。
    // 种子由调用方按 eTLD+1 计算（ungoogled::GetFarbleSeed64），使得 GPU 型号
    // 选择按站点稳定但跨站点解相关。
@@ -135,11 +123,9 @@ index 0bfcbe18e9..475283e30f 100644
      std::string platform = "windows";  // Default platform
  
      if (command_line->HasSwitch(switches::kFingerprintPlatform)) {
-diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
-index 112416d1d2..9d015a103f 100644
 --- a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
 +++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
-@@ -146,7 +146,7 @@ bool ImageDataBuffer::EncodeImage(const ImageEncodingMimeType mime_type,
+@@ -146,7 +146,7 @@
                                    Vector<unsigned char>* encoded_image,
                                    uint64_t effective_seed) const {
    const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();

@@ -226,7 +226,7 @@
      Document& document)
 --- a/third_party/blink/renderer/core/css/media_values_cached.h
 +++ b/third_party/blink/renderer/core/css/media_values_cached.h
-@@ -44,17 +44,21 @@
+@@ -43,17 +43,21 @@
      int color_bits_per_component = 24;
      int monochrome_bits_per_component = 0;
      bool inverted_colors = false;

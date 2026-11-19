@@ -10,7 +10,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
 index 12f236ba25..f44cfcad9c 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -6083,7 +6083,10 @@ void WebGLRenderingContextBase::ApplyPersonaReadPixelsNoise(
+@@ -6160,7 +6160,10 @@
      return;
    const base::CommandLine* command_line =
        base::CommandLine::ForCurrentProcess();

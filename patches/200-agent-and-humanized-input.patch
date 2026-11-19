@@ -10,9 +10,9 @@ index c6dfce70e6..82d1a8da39 100644
  #include "content/public/common/main_function_params.h"
  #include "content/public/common/profiling.h"
  #include "content/public/common/url_constants.h"
-@@ -1213,6 +1214,28 @@ std::optional<int> ChromeMainDelegate::BasicStartupComplete() {
-   // The DevTools remote debugging pipe file descriptors need to be checked
-   // before any other files are opened, see https://crbug.com/40259890.
+@@ -1230,6 +1231,28 @@
+ 
+ #if !defined(BUILDING_CHROME_RENDERER)
    const bool is_browser = !command_line.HasSwitch(switches::kProcessType);
 +
 +  // clearcote: the in-browser AI agent (--agent-llm-url) drives Chrome's Actor framework, which
@@ -37,13 +37,11 @@ index c6dfce70e6..82d1a8da39 100644
 +    }
 +  }
  #if BUILDFLAG(IS_WIN)
-   const bool pipes_are_specified_explicitly =
-       command_line.HasSwitch(::switches::kRemoteDebuggingIoPipes);
-diff --git a/chrome/browser/actor/actor_keyed_service_factory.cc b/chrome/browser/actor/actor_keyed_service_factory.cc
-index e760f58316..f0230390be 100644
+   if (is_browser) {
+     CHECK(!command_line.HasSwitch(switches::kChildModuleVersion));
 --- a/chrome/browser/actor/actor_keyed_service_factory.cc
 +++ b/chrome/browser/actor/actor_keyed_service_factory.cc
-@@ -30,8 +30,11 @@ ActorKeyedServiceFactory* ActorKeyedServiceFactory::GetInstance() {
+@@ -30,8 +30,11 @@
  
  ActorKeyedServiceFactory::ActorKeyedServiceFactory(
      base::PassKey<ActorKeyedServiceFactory>)
@@ -55,10 +53,7 @@ index e760f58316..f0230390be 100644
 +                                 ProfileSelections::BuildForRegularAndIncognito()) {
    DependsOn(IdentityManagerFactory::GetInstance());
    DependsOn(origin_gating::OriginGatingServiceFactory::GetInstance());
- }
-diff --git a/chrome/browser/ai_agent/BUILD.gn b/chrome/browser/ai_agent/BUILD.gn
-new file mode 100644
-index 0000000000..41444669c1
+   DependsOn(
 --- /dev/null
 +++ b/chrome/browser/ai_agent/BUILD.gn
 @@ -0,0 +1,42 @@
@@ -104,9 +99,6 @@ index 0000000000..41444669c1
 +    "//url",
 +  ]
 +}
-diff --git a/chrome/browser/ai_agent/agent_controller.cc b/chrome/browser/ai_agent/agent_controller.cc
-new file mode 100644
-index 0000000000..c82e6e6515
 --- /dev/null
 +++ b/chrome/browser/ai_agent/agent_controller.cc
 @@ -0,0 +1,1245 @@
@@ -134,6 +126,7 @@ index 0000000000..c82e6e6515
 +#include "base/strings/utf_string_conversions.h"
 +#include "base/task/single_thread_task_runner.h"
 +#include "chrome/browser/actor/actor_keyed_service.h"
++#include "chrome/browser/actor/actor_surface_handle.h"
 +#include "chrome/browser/actor/actor_task.h"
 +#include "chrome/browser/actor/actor_task_metadata.h"
 +#include "chrome/browser/actor/enterprise_policy_checker.h"
@@ -505,7 +498,7 @@ index 0000000000..c82e6e6515
 +    *scrolled_css = dist_dip;
 +  }
 +  return std::make_unique<actor::ScrollToolRequest>(
-+      tab_handle,
++      actor::ActorSurfaceHandle::From(tab_handle),
 +      actor::PageTarget(gfx::Point(page.viewport_dip.width() / 2,
 +                                   page.viewport_dip.height() / 2)),
 +      actor::ScrollToolRequest::Direction::kDown, dist_dip);
@@ -541,7 +534,7 @@ index 0000000000..c82e6e6515
 +      *error = "navigate requires a valid url";
 +      return nullptr;
 +    }
-+    return std::make_unique<actor::NavigateToolRequest>(tab_handle, url);
++    return std::make_unique<actor::NavigateToolRequest>(actor::ActorSurfaceHandle::From(tab_handle), url);
 +  }
 +  if (verb == "type") {
 +    if (!el) {
@@ -550,7 +543,7 @@ index 0000000000..c82e6e6515
 +    }
 +    const base::Value* enter = action.Find("enter");
 +    return std::make_unique<actor::TypeToolRequest>(
-+        tab_handle, node_target(), GetString(action, "text"),
++        actor::ActorSurfaceHandle::From(tab_handle), node_target(), GetString(action, "text"),
 +        enter && enter->is_bool() && enter->GetBool(),
 +        actor::TypeToolRequest::Mode::kReplace);
 +  }
@@ -560,7 +553,7 @@ index 0000000000..c82e6e6515
 +      return nullptr;
 +    }
 +    return std::make_unique<actor::SelectToolRequest>(
-+        tab_handle, node_target(), GetString(action, "value"));
++        actor::ActorSurfaceHandle::From(tab_handle), node_target(), GetString(action, "value"));
 +  }
 +  if (verb == "click") {
 +    if (!el) {
@@ -568,7 +561,7 @@ index 0000000000..c82e6e6515
 +      return nullptr;
 +    }
 +    return std::make_unique<actor::ClickToolRequest>(
-+        tab_handle, node_target(), actor::mojom::ClickType::kLeft,
++        actor::ActorSurfaceHandle::From(tab_handle), node_target(), actor::mojom::ClickType::kLeft,
 +        actor::mojom::ClickCount::kSingle);
 +  }
 +  if (verb == "scroll") {
@@ -580,7 +573,7 @@ index 0000000000..c82e6e6515
 +                 page.viewport_dip.height() > 0 ? page.viewport_dip.height() / 2
 +                                                : 400));
 +    return std::make_unique<actor::ScrollToolRequest>(
-+        tab_handle, target, ParseDirection(GetString(action, "direction")),
++        actor::ActorSurfaceHandle::From(tab_handle), target, ParseDirection(GetString(action, "direction")),
 +        /*distance=*/600.0f);
 +  }
 +  if (verb == "wait") {
@@ -718,11 +711,10 @@ index 0000000000..c82e6e6515
 +}
 +
 +void AgentController::OnObserved(
-+    base::expected<optimization_guide::AIPageContentResult, std::string>
-+        result) {
++    optimization_guide::AIPageContentResultOrError result) {
 +  LOG(ERROR) << "[ai_agent] observe_done step=" << (step_ + 1);
 +  if (!result.has_value()) {
-+    Finish(false, base::StrCat({"could not read page: ", result.error()}));
++    Finish(false, base::StrCat({"could not read page: ", result.error().message}));
 +    return;
 +  }
 +  auto page = std::make_unique<SerializedPage>(PageSerializer::Serialize(
@@ -1355,12 +1347,9 @@ index 0000000000..c82e6e6515
 +}
 +
 +}  // namespace ai_agent
-diff --git a/chrome/browser/ai_agent/agent_controller.h b/chrome/browser/ai_agent/agent_controller.h
-new file mode 100644
-index 0000000000..c4e0ed012b
 --- /dev/null
 +++ b/chrome/browser/ai_agent/agent_controller.h
-@@ -0,0 +1,182 @@
+@@ -0,0 +1,178 @@
 +// Copyright 2026 The ChromiumFish Authors
 +// Use of this source code is governed by an MIT-style license.
 +//
@@ -1390,6 +1379,7 @@ index 0000000000..c4e0ed012b
 +#include "chrome/browser/ai_agent/llm_client.h"
 +#include "chrome/common/actor/action_result.h"
 +#include "components/actor/core/task_id.h"
++#include "components/optimization_guide/content/browser/page_content_proto_provider.h"
 +#include "chrome/browser/actor/tab_observation_strategy.h"
 +#include "ui/gfx/geometry/point_f.h"
 +
@@ -1399,9 +1389,6 @@ index 0000000000..c4e0ed012b
 +class WebContents;
 +}  // namespace content
 +
-+namespace optimization_guide {
-+struct AIPageContentResult;
-+}  // namespace optimization_guide
 +
 +namespace ai_agent {
 +
@@ -1450,9 +1437,7 @@ index 0000000000..c4e0ed012b
 +  void BeginTask();
 +  void OnTabAdded(actor::mojom::ActionResultPtr result);
 +  void Observe();
-+  void OnObserved(
-+      base::expected<optimization_guide::AIPageContentResult, std::string>
-+          result);
++  void OnObserved(optimization_guide::AIPageContentResultOrError result);
 +  void Think(std::unique_ptr<SerializedPage> page);
 +  void OnThought(std::unique_ptr<SerializedPage> page, LlmResponse resp);
 +
@@ -1543,9 +1528,6 @@ index 0000000000..c4e0ed012b
 +}  // namespace ai_agent
 +
 +#endif  // CHROME_BROWSER_AI_AGENT_AGENT_CONTROLLER_H_
-diff --git a/chrome/browser/ai_agent/agent_switches.cc b/chrome/browser/ai_agent/agent_switches.cc
-new file mode 100644
-index 0000000000..526909e1a7
 --- /dev/null
 +++ b/chrome/browser/ai_agent/agent_switches.cc
 @@ -0,0 +1,28 @@
@@ -1577,9 +1559,6 @@ index 0000000000..526909e1a7
 +}
 +
 +}  // namespace ai_agent
-diff --git a/chrome/browser/ai_agent/agent_switches.h b/chrome/browser/ai_agent/agent_switches.h
-new file mode 100644
-index 0000000000..7fdd40f891
 --- /dev/null
 +++ b/chrome/browser/ai_agent/agent_switches.h
 @@ -0,0 +1,58 @@
@@ -1641,9 +1620,6 @@ index 0000000000..7fdd40f891
 +}  // namespace ai_agent
 +
 +#endif  // CHROME_BROWSER_AI_AGENT_AGENT_SWITCHES_H_
-diff --git a/chrome/browser/ai_agent/llm_client.cc b/chrome/browser/ai_agent/llm_client.cc
-new file mode 100644
-index 0000000000..a19e452908
 --- /dev/null
 +++ b/chrome/browser/ai_agent/llm_client.cc
 @@ -0,0 +1,193 @@
@@ -1840,9 +1816,6 @@ index 0000000000..a19e452908
 +}
 +
 +}  // namespace ai_agent
-diff --git a/chrome/browser/ai_agent/llm_client.h b/chrome/browser/ai_agent/llm_client.h
-new file mode 100644
-index 0000000000..0368146caa
 --- /dev/null
 +++ b/chrome/browser/ai_agent/llm_client.h
 @@ -0,0 +1,83 @@
@@ -1929,9 +1902,6 @@ index 0000000000..0368146caa
 +}  // namespace ai_agent
 +
 +#endif  // CHROME_BROWSER_AI_AGENT_LLM_CLIENT_H_
-diff --git a/chrome/browser/ai_agent/page_serializer.cc b/chrome/browser/ai_agent/page_serializer.cc
-new file mode 100644
-index 0000000000..61de34865c
 --- /dev/null
 +++ b/chrome/browser/ai_agent/page_serializer.cc
 @@ -0,0 +1,380 @@
@@ -2315,9 +2285,6 @@ index 0000000000..61de34865c
 +}
 +
 +}  // namespace ai_agent
-diff --git a/chrome/browser/ai_agent/page_serializer.h b/chrome/browser/ai_agent/page_serializer.h
-new file mode 100644
-index 0000000000..0c7393899d
 --- /dev/null
 +++ b/chrome/browser/ai_agent/page_serializer.h
 @@ -0,0 +1,72 @@
@@ -2393,12 +2360,10 @@ index 0000000000..0c7393899d
 +}  // namespace ai_agent
 +
 +#endif  // CHROME_BROWSER_AI_AGENT_PAGE_SERIALIZER_H_
-diff --git a/chrome/browser/resources/actor_overlay/app.css b/chrome/browser/resources/actor_overlay/app.css
-index 3b47d07228..4e23be090b 100644
 --- a/chrome/browser/resources/actor_overlay/app.css
 +++ b/chrome/browser/resources/actor_overlay/app.css
-@@ -169,3 +169,42 @@ reduced motion */
- .clicking {
+@@ -186,3 +186,42 @@
+ #magicCursor.clicking #cursorImage {
    animation: cursor-click 400ms ease-out;
  }
 +
@@ -2440,23 +2405,19 @@ index 3b47d07228..4e23be090b 100644
 +    transform: scale(2.6);
 +  }
 +}
-diff --git a/chrome/browser/resources/actor_overlay/app.html.ts b/chrome/browser/resources/actor_overlay/app.html.ts
-index e749ea72e1..a08f51404a 100644
 --- a/chrome/browser/resources/actor_overlay/app.html.ts
 +++ b/chrome/browser/resources/actor_overlay/app.html.ts
-@@ -15,6 +15,7 @@ export function getHtml(this: ActorOverlayAppElement) {
+@@ -15,6 +15,7 @@
  </div>
  <div id="magicCursor">
    <div id="cursorImage"></div>
 +  <div id="clickRipple"></div>
- </div>
- <!--_html_template_end_-->`;
-   // clang-format on
-diff --git a/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn b/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
-index d4dacf5897..f131f405ad 100644
+   ${this.cursorChipText_ ? html`
+     <div id="cursorChip">${this.cursorChipText_}</div>
+   ` : ''}
 --- a/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
 +++ b/chrome/browser/ui/browser_web_contents_delegate/BUILD.gn
-@@ -17,6 +17,7 @@ if (!is_android) {
+@@ -16,6 +16,7 @@
        "//chrome/browser:file_select_helper",
        "//chrome/browser:repost_form_warning_controller",
        "//chrome/browser/actor",
@@ -2464,11 +2425,9 @@ index d4dacf5897..f131f405ad 100644
        "//chrome/browser/background",
        "//chrome/browser/content_settings",
        "//chrome/browser/content_settings:content_settings_factory",
-diff --git a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
-index 3bc40bcc91..f9b6d930fa 100644
 --- a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
 +++ b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
-@@ -10,6 +10,7 @@
+@@ -11,6 +11,7 @@
  #include "base/trace_event/trace_event.h"
  #include "chrome/app/chrome_command_ids.h"
  #include "chrome/browser/actor/actor_util.h"
@@ -2476,8 +2435,8 @@ index 3bc40bcc91..f9b6d930fa 100644
  #include "chrome/browser/background/background_contents.h"
  #include "chrome/browser/background/background_contents_service.h"
  #include "chrome/browser/background/background_contents_service_factory.h"
-@@ -1496,6 +1497,20 @@ void BrowserWebContentsDelegate::GetAIPageContent(
-       }).Then(std::move(callback)));
+@@ -1504,6 +1505,20 @@
+              : std::string();
  }
  
 +void BrowserWebContentsDelegate::RunAgentTask(
@@ -2497,14 +2456,12 @@ index 3bc40bcc91..f9b6d930fa 100644
  void BrowserWebContentsDelegate::PrintCrossProcessSubframe(
      content::WebContents* web_contents,
      const gfx::Rect& rect,
-diff --git a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h
-index 360d1abf0b..0bed7876e1 100644
 --- a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h
 +++ b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h
-@@ -255,6 +255,16 @@ class BrowserWebContentsDelegate : public content::WebContentsDelegate {
-       bool include_actionable_elements,
-       base::OnceCallback<void(base::expected<std::string, std::string>)>
-           callback) override;
+@@ -255,6 +255,16 @@
+ 
+  private:
+   const base::ElapsedTimer creation_timer_;
 +  void RunAgentTask(
 +      content::WebContents* web_contents,
 +      const std::string& goal,
@@ -2515,12 +2472,9 @@ index 360d1abf0b..0bed7876e1 100644
 +                              const std::string& final_text,
 +                              const std::string& steps_json)>
 +          callback) override;
-   void PrintCrossProcessSubframe(
-       content::WebContents* web_contents,
-       const gfx::Rect& rect,
-diff --git a/content/browser/humanized_click.cc b/content/browser/humanized_click.cc
-new file mode 100644
-index 0000000000..67cfe67266
+ 
+   const raw_ref<ExclusiveAccessManager> exclusive_access_manager_;
+   const raw_ref<chrome::BrowserCommandController> command_controller_;
 --- /dev/null
 +++ b/content/browser/humanized_click.cc
 @@ -0,0 +1,237 @@
@@ -2761,11 +2715,9 @@ index 0000000000..67cfe67266
 +}
 +
 +}  // namespace content
-diff --git a/content/public/browser/BUILD.gn b/content/public/browser/BUILD.gn
-index 790d665707..efc2715b9b 100644
 --- a/content/public/browser/BUILD.gn
 +++ b/content/public/browser/BUILD.gn
-@@ -220,6 +220,7 @@ source_set("browser_sources") {
+@@ -221,6 +221,7 @@
      "hid_delegate.h",
      "histogram_fetcher.h",
      "host_zoom_map.h",
@@ -2773,9 +2725,6 @@ index 790d665707..efc2715b9b 100644
      "immersive_playback_options.h",
      "initiator_navigation_state.cc",
      "initiator_navigation_state.h",
-diff --git a/content/public/browser/humanized_click.h b/content/public/browser/humanized_click.h
-new file mode 100644
-index 0000000000..4bec45f9b4
 --- /dev/null
 +++ b/content/public/browser/humanized_click.h
 @@ -0,0 +1,48 @@
@@ -2827,12 +2776,10 @@ index 0000000000..4bec45f9b4
 +}  // namespace content
 +
 +#endif  // CONTENT_PUBLIC_BROWSER_HUMANIZED_CLICK_H_
-diff --git a/content/public/browser/web_contents_delegate.cc b/content/public/browser/web_contents_delegate.cc
-index 2de5b3392b..156dfb3a42 100644
 --- a/content/public/browser/web_contents_delegate.cc
 +++ b/content/public/browser/web_contents_delegate.cc
-@@ -487,6 +487,19 @@ void WebContentsDelegate::GetAIPageContent(
-       "Annotated page content is not available for this browser target."));
+@@ -489,6 +489,19 @@
+   return false;
  }
  
 +void WebContentsDelegate::RunAgentTask(
@@ -2851,13 +2798,11 @@ index 2de5b3392b..156dfb3a42 100644
  bool WebContentsDelegate::IsWaitingForPointerLockPrompt(
      WebContents* web_contents) {
    return false;
-diff --git a/content/public/browser/web_contents_delegate.h b/content/public/browser/web_contents_delegate.h
-index cd03383472..2917ad7523 100644
 --- a/content/public/browser/web_contents_delegate.h
 +++ b/content/public/browser/web_contents_delegate.h
-@@ -914,6 +914,22 @@ class CONTENT_EXPORT WebContentsDelegate {
-       base::OnceCallback<void(base::expected<std::string, std::string>)>
-           callback);
+@@ -911,6 +911,22 @@
+   virtual bool MaybeCopyContentAreaAsBitmap(
+       base::OnceCallback<void(const SkBitmap&)> callback);
  
 +  // ChromiumFish: runs a native, in-browser AI agent task against
 +  // `web_contents` toward `goal` (natural language), driven by a configured

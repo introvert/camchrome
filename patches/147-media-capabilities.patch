@@ -12,7 +12,7 @@ index 1dea63eee6..37382ec77c 100644
  #include "media/base/supported_video_decoder_config.h"
  #include "media/base/video_decoder_config.h"
  #include "media/filters/stream_parser_factory.h"
-@@ -109,6 +111,28 @@ bool WebrtcEncodeForceSmoothIfPowerEfficient() {
+@@ -109,6 +111,28 @@
        kWebrtcEncodeSmoothIfPowerEfficientDefault);
  }
  
@@ -41,7 +41,7 @@ index 1dea63eee6..37382ec77c 100644
  // static
  bool UseGpuFactoriesForPowerEfficient(
      ExecutionContext* execution_context,
-@@ -1400,6 +1424,9 @@ void MediaCapabilities::GetPerfInfo(
+@@ -1445,6 +1469,9 @@
  
    const int callback_id = InsertCallbackAndScheduleTimeout(
        resolver, access, request_time, QueryType::kDecoding);
@@ -51,7 +51,7 @@ index 1dea63eee6..37382ec77c 100644
  
    media::mojom::blink::PredictionFeaturesPtr features =
        media::mojom::blink::PredictionFeatures::New(
-@@ -1534,11 +1561,26 @@ void MediaCapabilities::ResolveCallbackIfReady(int callback_id) {
+@@ -1579,11 +1606,26 @@
        info->setSupported(false);
      }
    } else {
@@ -81,7 +81,7 @@ index 1dea63eee6..37382ec77c 100644
    const base::TimeDelta process_time =
        base::TimeTicks::Now() - pending_cb->request_time;
    UMA_HISTOGRAM_TIMES("Media.Capabilities.DecodingInfo.Time.Video",
-@@ -1585,6 +1627,16 @@ void MediaCapabilities::OnGpuFactoriesSupport(int callback_id,
+@@ -1630,6 +1672,16 @@
    }
    PendingCallbackState* pending_cb = pending_cb_map_.at(callback_id);
  
@@ -98,7 +98,7 @@ index 1dea63eee6..37382ec77c 100644
    pending_cb->is_gpu_factories_supported = is_supported;
    ResolveCallbackIfReady(callback_id);
  }
-@@ -1601,6 +1653,36 @@ void MediaCapabilities::OnWebrtcSupportInfo(
+@@ -1646,6 +1698,36 @@
    }
    PendingCallbackState* pending_cb = pending_cb_map_.at(callback_id);
  
@@ -135,11 +135,9 @@ index 1dea63eee6..37382ec77c 100644
    // Special treatment if the config is not supported, or if only audio was
    // specified which is indicated by the fact that `video_pixels` equals 0,
    // or if we fail to access the WebrtcPerfHistoryService.
-diff --git a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
-index 2d9f523baa..4cef8e83af 100644
 --- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
 +++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
-@@ -157,6 +157,10 @@ class MODULES_EXPORT MediaCapabilities final
+@@ -157,6 +157,10 @@
      std::optional<bool> db_is_power_efficient;
      std::optional<bool> is_gpu_factories_supported;
      std::optional<bool> is_builtin_video_codec;

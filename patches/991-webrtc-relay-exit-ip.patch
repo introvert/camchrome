@@ -35,7 +35,7 @@ index a08f63edaa..d91a3d4e70 100644
  #include <algorithm>
  #include <atomic>
  #include <limits>
-@@ -3841,6 +3844,21 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
+@@ -3842,6 +3845,21 @@
        *base::CommandLine::ForCurrentProcess();
    PropagateBrowserCommandLineToRenderer(browser_command_line, command_line);
  
@@ -57,8 +57,6 @@ index a08f63edaa..d91a3d4e70 100644
    // Pass on the browser locale.
    const std::string locale =
        GetContentClient()->browser()->GetApplicationLocale();
-diff --git a/services/network/p2p/socket_manager.cc b/services/network/p2p/socket_manager.cc
-index 3a814c12d1..b1de7348c9 100644
 --- a/services/network/p2p/socket_manager.cc
 +++ b/services/network/p2p/socket_manager.cc
 @@ -12,6 +12,7 @@
@@ -82,7 +80,7 @@ index 3a814c12d1..b1de7348c9 100644
  #include "services/network/proxy_resolving_client_socket_factory.h"
  #include "services/network/public/cpp/p2p_param_traits.h"
  #include "third_party/webrtc/media/base/rtp_utils.h"
-@@ -392,6 +395,27 @@ void P2PSocketManager::GetHostAddress(
+@@ -392,6 +395,27 @@
      std::optional<net::AddressFamily> address_family,
      bool enable_mdns,
      mojom::P2PSocketManager::GetHostAddressCallback callback) {
@@ -110,11 +108,9 @@ index 3a814c12d1..b1de7348c9 100644
    auto request = std::make_unique<DnsRequest>(
        url_request_context_->host_resolver(), enable_mdns);
    DnsRequest* request_ptr = request.get();
-diff --git a/services/network/p2p/socket_udp.cc b/services/network/p2p/socket_udp.cc
-index cb62beebb8..c7baa04d77 100644
 --- a/services/network/p2p/socket_udp.cc
 +++ b/services/network/p2p/socket_udp.cc
-@@ -269,6 +269,10 @@ SetTosArguments GetSetTosEnumForLogging(net::DiffServCodePoint dscp,
+@@ -269,6 +269,10 @@
  
  namespace network {
  
@@ -125,11 +121,9 @@ index cb62beebb8..c7baa04d77 100644
  P2PPendingPacket::P2PPendingPacket(
      const net::IPEndPoint& to,
      base::span<const uint8_t> content,
-diff --git a/services/network/p2p/socket_udp.h b/services/network/p2p/socket_udp.h
-index 6cd46c4693..dcda2aee76 100644
 --- a/services/network/p2p/socket_udp.h
 +++ b/services/network/p2p/socket_udp.h
-@@ -54,6 +54,11 @@ struct P2PPendingPacket {
+@@ -54,6 +54,11 @@
    uint64_t id;
  };
  
@@ -141,11 +135,9 @@ index 6cd46c4693..dcda2aee76 100644
  class COMPONENT_EXPORT(NETWORK_SERVICE) P2PSocketUdp : public P2PSocket {
   public:
    friend class ThrottlingP2PNetworkInterceptor;
-diff --git a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
-index 35e9c966f2..226d6dfd7e 100644
 --- a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
 +++ b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
-@@ -1060,6 +1060,13 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
+@@ -1060,6 +1060,13 @@
        webrtc::SetForcedWebRtcSrflxIP(
            clearcoat_cmd->GetSwitchValueASCII("webrtc-ip"));
      }
@@ -159,7 +151,7 @@ index 35e9c966f2..226d6dfd7e 100644
    }
  
    // Copy the flag from Preference associated with this WebLocalFrame.
-@@ -1142,7 +1149,8 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
+@@ -1142,7 +1149,8 @@
    // a STUN server-reflexive candidate is produced (then rewritten to the proxy
    // IP in stun_port.cc). Real host candidates are suppressed in port.cc, so the
    // real LAN/public IP never leaks.
@@ -169,8 +161,6 @@ index 35e9c966f2..226d6dfd7e 100644
      port_config.enable_multiple_routes = true;
      port_config.enable_nonproxied_udp = true;
    }
-diff --git a/third_party/webrtc/p2p/base/port.cc b/third_party/webrtc/p2p/base/port.cc
-index 579693a9a8..7f4934cd75 100644
 --- a/third_party/webrtc/p2p/base/port.cc
 +++ b/third_party/webrtc/p2p/base/port.cc
 @@ -13,6 +13,7 @@
@@ -181,7 +171,7 @@ index 579693a9a8..7f4934cd75 100644
  #include <cstddef>
  #include <cstdint>
  #include <functional>
-@@ -87,6 +88,20 @@ IPAddress ForcedWebRtcSrflxIP() {
+@@ -87,6 +88,20 @@
    MutexLock lock(&ClearcoatForcedIpMutex());
    return ClearcoatForcedIpStore().value_or(IPAddress());
  }
@@ -202,7 +192,7 @@ index 579693a9a8..7f4934cd75 100644
  namespace {
  
  PacketInfoProtocolType ConvertProtocolTypeToPacketInfoProtocolType(
-@@ -251,7 +266,8 @@ void Port::AddAddress(const SocketAddress& address,
+@@ -269,7 +284,8 @@
    // clearcoat: when mocking the WebRTC IP to the proxy egress, never expose a
    // real local host candidate (it would leak the LAN/real IP). Only the srflx
    // candidate (rewritten in stun_port.cc) is emitted.
@@ -212,11 +202,9 @@ index 579693a9a8..7f4934cd75 100644
      return;
    }
  
-diff --git a/third_party/webrtc/p2p/base/port.h b/third_party/webrtc/p2p/base/port.h
-index d46037ca6b..82eaa75c08 100644
 --- a/third_party/webrtc/p2p/base/port.h
 +++ b/third_party/webrtc/p2p/base/port.h
-@@ -59,6 +59,12 @@ namespace webrtc {
+@@ -59,6 +59,12 @@
  RTC_EXPORT void SetForcedWebRtcSrflxIP(absl::string_view ip);
  RTC_EXPORT bool HasForcedWebRtcSrflxIP();
  RTC_EXPORT IPAddress ForcedWebRtcSrflxIP();
@@ -229,11 +217,9 @@ index d46037ca6b..82eaa75c08 100644
  
  enum class MdnsNameRegistrationStatus {
    // IP concealment with mDNS is not enabled or the name registration process is
-diff --git a/third_party/webrtc/p2p/base/stun_port.cc b/third_party/webrtc/p2p/base/stun_port.cc
-index a61b4081de..56533cf7da 100644
 --- a/third_party/webrtc/p2p/base/stun_port.cc
 +++ b/third_party/webrtc/p2p/base/stun_port.cc
-@@ -607,6 +607,11 @@ void UDPPort::OnStunBindingRequestSucceeded(
+@@ -607,6 +607,11 @@
      if (!MaybeSetDefaultLocalAddress(&related_address)) {
        related_address = EmptySocketAddressWithFamily(related_address.family());
      }
