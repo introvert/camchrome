@@ -20,7 +20,7 @@ while IFS= read -r line; do
   [ "$line" = "$patch_name" ] && { later=1; continue; }
   [ "$later" = 1 ] || continue
   for f in "$@"; do
-    if grep -q "^+++ b/$f\$\|^+++ b/$f[[:space:]]" "$REPO/patches/$line"; then
+    if grep -qE "^\+\+\+ b/${f}([[:space:]]|$)" "$REPO/patches/$line"; then
       echo "refusing: $line (later in the series) also touches $f"; exit 1
     fi
   done

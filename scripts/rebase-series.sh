@@ -41,7 +41,7 @@ regenerate() { # patch-name
 
 if [ "${1:-}" = --status ]; then
   while read -r p; do
-    if [ -e "$STATE/done/$p" ]; then s=done; elif [ -d "$STATE/pre/$p" ]; then s=STUCK; else s=todo; fi
+    if [ -e "$STATE/done/$p" ]; then s="done"; elif [ -d "$STATE/pre/$p" ]; then s=STUCK; else s=todo; fi
     echo "$s $p"
   done < <(series)
   exit 0
