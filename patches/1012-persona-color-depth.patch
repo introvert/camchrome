@@ -1,0 +1,52 @@
+camchrome: screen.colorDepth is 24 or 30, never 32.
+
+The persona drew colorDepth 32 for 4% of seeds. Chrome reports 24, or 30 on a 10-bit display,
+never 32, and the CSS color media feature (bits per colour channel) cannot decompose 32 (Clearcote
+audit: "screen.colorDepth decomposes into the CSS color media feature", found with a seed the
+development runs did not use). The former 32 entry of the weighted table now draws 24, so every
+other seed keeps exactly the persona it had; an imported capture's 32 reads as 24; the
+validator accepts {24, 30} only.
+
+--- a/components/ungoogled/persona_profile.cc
++++ b/components/ungoogled/persona_profile.cc
+@@ -195,10 +195,13 @@
+ // Color depth: Win11 desktops are overwhelmingly 24; HDR / multi-monitor can be
+ // 30/32. Keep 24 dominant so a Windows persona never reports the rare value too
+ // often (which is itself a tell).
++// camchrome (1012): Chrome reports screen.colorDepth 24, or 30 on a 10-bit display, never 32
++// (the CSS color media feature is bits per channel, and 32 does not divide into three). The
++// former 32 entry now draws 24, so every other seed keeps exactly the persona it had.
+ constexpr std::array<WeightedEntry<unsigned>, 3> kColorDepths = {{
+     {24u, 0.92},
+     {30u, 0.04},
+-    {32u, 0.04},
++    {24u, 0.04},
+ }};
+ 
+ // Windows consumer GPU pool (ANGLE/D3D11 strings). Index 0 (Intel UHD 770) is
+@@ -382,7 +385,10 @@
+     if (auto v = s->FindInt("height")) p->screen_height = *v;
+     if (auto v = s->FindInt("avail_width")) p->avail_screen_width = *v;
+     if (auto v = s->FindInt("avail_height")) p->avail_screen_height = *v;
+-    if (auto v = s->FindInt("color_depth")) p->color_depth = *v;
++    if (auto v = s->FindInt("color_depth")) {
++      // camchrome (1012): a capture's 32 is what Chrome reports as 24.
++      p->color_depth = *v == 32 ? 24 : *v;
++    }
+     if (auto v = num(*s, "device_pixel_ratio")) p->device_pixel_ratio = *v;
+   }
+   if (const base::DictValue* w = d.FindDictByDottedPath("webgl.webgl1")) {
+--- a/components/ungoogled/persona_validator.cc
++++ b/components/ungoogled/persona_validator.cc
+@@ -194,8 +194,9 @@
+   }
+   // 30 and 32 are real (HDR / 10-bit) but rare; whether the buckets stay is an
+   // open product decision, so only a value outside the real set is an error.
+-  if (p.color_depth != 24 && p.color_depth != 30 && p.color_depth != 32) {
+-    c.Error("screen.color_depth_real", "colorDepth " + S(p.color_depth) + " not in {24,30,32}");
++  // camchrome (1012): Chrome reports 24 or 30; 32 does not split into the CSS color feature.
++  if (p.color_depth != 24 && p.color_depth != 30) {
++    c.Error("screen.color_depth_real", "colorDepth " + S(p.color_depth) + " not in {24,30}");
+   }
+   if (p.css_color_gamut != "srgb" && p.css_color_gamut != "p3" && p.css_color_gamut != "rec2020") {
+     c.Error("screen.gamut_value", "color-gamut '" + p.css_color_gamut + "'");
