@@ -94,7 +94,49 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | Patch | Fix |
 |---|---|
 | `998-persona-heap-and-webgpu-texture-coherence` | schema-1 personas below 8 GB report a JS heap V8 could give that RAM (the fixed 4.4 GB limit was impossible on 4 GB), and WebGPU's 1D/2D texture limits never exceed the persona's WebGL `MAX_TEXTURE_SIZE` (Android GPUs). The validator's 5,000-persona sweep now has 0 warnings |
-| `999-android-persona-overlay-scrollbars` | an Android persona has overlay scrollbars (0 px), not the Linux/Windows host's 15 px classic ones |
+| `999-android-persona-overlay-scrollbars` | the scrollbar style follows the persona OS, not the host theme: overlay (0 px) for Android, classic for Windows and Linux (also on a Mac host with overlay scrollbars). Set in the browser's renderer preferences, which is what Blink actually applies |
+
+### What 1000–1002 add (no-GPU hosts, phone viewport)
+
+| Patch | Fix |
+|---|---|
+| `1000-persona-webgl-without-gpu` | a persona always has WebGL. Since Chrome 137 a host without a usable GPU (server, VM, Xvfb) gets `getContext("webgl") === null`, which no real visitor shows; a persona now opts into SwiftShader, under the persona's GPU strings, limits and extensions. With a GPU nothing changes |
+| `1001-android-persona-page-scale` | an Android persona takes Android's page-scale range (0.25 to 5), so a page without a viewport tag is zoomed out to fit (innerWidth 980, scale ~0.42) instead of scrolling sideways at scale 1; `-webkit-text-size-adjust` is honoured |
+| `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is in screen units and stays within the screen when the page is zoomed out |
+
+## Running on a Linux server without a GPU
+
+camchrome runs headful under Xvfb on a machine with no graphics card. What a site sees there,
+compared with stock Chrome on the same machine (`tools/render_compare.py`, 2026-11-19, 64-core
+Linux x64 server with only a BMC VGA adapter):
+
+| | stock Chrome 157 | camchrome persona |
+|---|---|---|
+| WebGL | none (`getContext` returns null) | the persona GPU (e.g. Intel UHD 770 on D3D11 for Windows, Mali-G710 for Android) over SwiftShader (1000) |
+| deviceandbrowserinfo.com bot test | "You are a bot" | "You are human" |
+| CreepJS "like headless" | 50% | 31–38% |
+| Mobile detection (whatismybrowser, browserleaks client hints, deviceandbrowserinfo) | — | Android persona: "Chrome on Android", `Sec-CH-UA-Mobile ?1`, phone model, `is mobile: true` |
+| Real sites (Google, YouTube, Wikipedia, GitHub, BBC, Amazon, Reddit, DuckDuckGo) | desktop layout | desktop personas: the same layout as stock; Android persona: the same mobile pages as Chrome's own phone emulation (m.youtube.com, 412 px layouts, zoom-to-fit for pages without a viewport tag) |
+
+How to look like a real browser on such a host:
+
+1. **Run headful under Xvfb**, never `--headless`: `xvfb-run -a -s "-screen 0 1920x1080x24" ./chrome --fingerprint=<seed>`.
+   Make the Xvfb screen at least as large as the persona's screen.
+2. **Use a persona** (`--fingerprint=<seed>`). It brings WebGL (1000); without one the browser
+   has no WebGL, like stock Chrome there.
+3. **Pick the persona OS for the traffic you want to blend into.** Every persona answers font
+   probes with its own OS's set, whatever the host has installed (040, 971, 992): a Windows
+   persona shows Segoe UI, Calibri, Consolas and no DejaVu/Liberation; an Android persona shows
+   Roboto and Android's `fonts.xml` aliases; a macOS persona Helvetica Neue, Menlo and Hiragino.
+   A Windows persona joins the largest crowd; a Linux persona matches the host exactly.
+4. **Match timezone, language and location to the proxy exit**: `--timezone`, `--lang`,
+   `--accept-lang`, `--fingerprint-location`. A server's own IP is a datacenter IP and its
+   clock is usually UTC: pixelscan reports "Timezone spoofed, Proxy detected" for stock Chrome
+   there too. Use a residential proxy (`--proxy-server=socks5://… --socks5-udp`).
+5. **Known limits on SwiftShader**: WebGL `MAX_TEXTURE_SIZE` stays at SwiftShader's 8192, so
+   textures the page allocates really fit (a desktop D3D11 GPU would report 16384); there is
+   no WebGPU adapter (as on a real GPU-less Windows VM); WebGL draws are CPU-speed. For
+   pixel-exact GPU output use the canvas bridge (`--canvas-bridge-url`, 065) to a host with a GPU.
 
 Every Chrome version claim comes from the engine (157.0.8103.78, the newest ungoogled-chromium
 release; Google Chrome stable is already 158) or from `--fingerprint-brand-version`.
@@ -234,6 +276,7 @@ Results are written to `build/stealth-audit.txt` / `.json` (audit) and
 | `tools/fingerprint_selftest.py` | one local check per patched surface, named after its patch | no |
 | `tools/network_selftest.py` | proxies, QUIC and WebRTC over the SOCKS5 relay, humanized input, no-farble, portable profile | no (needs `aioquic`) |
 | `tools/ua_selftest.py` | UA string, client hints and `userAgentData` agree in every identity mode (995) | no |
+| `tools/render_compare.py` | detection sites and real sites in stock Chrome (desktop, and DevTools phone emulation) next to camchrome (desktop, Windows and Android personas): every probe where camchrome differs from stock, plus screenshots side by side | yes |
 | `tools/stealth_audit.py` | the Clearcote audit (acceptance test) | yes |
 | `tools/site_checks.py` | browserleaks QUIC, Twilio WebRTC, fingerprint.com, pixelscan, browserscan, reCAPTCHA… | yes, plus a SOCKS5 proxy with UDP |
 | `tools/upstream_watch.py` | pinned upstreams vs their newest tags, Chrome stable, Clearcote patch changes, reference repos (`docs/UPSTREAM-SOURCES.md`); run weekly by `upstream-watch.yml` | yes |

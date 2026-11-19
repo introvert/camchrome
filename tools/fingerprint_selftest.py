@@ -323,7 +323,8 @@ WORKER_JS = COMMON_JS + "collectCommon().then(o => postMessage(o));"
 VIEWPORT_HTML = ('<!doctype html><meta name="viewport" content="width=device-width, '
                  'initial-scale=1"><title>vp</title><body>')
 VIEWPORT_JS = """({inner: innerWidth, client: document.documentElement.clientWidth,
-                   screen: screen.width, outer: outerWidth})"""
+                   screen: screen.width, outer: outerWidth,
+                   scale: visualViewport && visualViewport.scale})"""
 
 MOBILE_JS = r"""
 (async () => {
@@ -654,6 +655,11 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     rep.add("readpixels-sentinel-untouched", "988", rp is not None and rp["sentinelTouched"] == 0,
             rp, skip=rp is None)
     wg, gpu = m.get("webgl") or {}, m.get("webgpu")
+    # Every real visitor has WebGL. Since Chrome 137 a host without a usable GPU has none unless
+    # SwiftShader is opted into; a persona opts in (1000).
+    if not args.stock:
+        rep.add("persona-has-webgl", "1000", bool(wg.get("renderer")),
+                wg or m.get("webglError") or "getContext('webgl') returned null")
     if gpu and wg:
         ren = (wg.get("renderer") or "").lower()
         vend = (gpu.get("vendor") or "").lower()
@@ -767,6 +773,10 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
                 vp.get("inner") == vp.get("screen") == vp.get("client"), vp)
         nvp = m.get("no_meta_viewport") or {}
         rep.add("android-no-meta-layout-980", "002 997", nvp.get("client") == 980, nvp)
+        # A phone shows a page without a viewport tag zoomed out to fit: the visual viewport
+        # covers the 980 px layout (innerWidth 980, scale = screen / 980), not one screen's worth.
+        rep.add("android-no-meta-zoomed-to-fit", "1001",
+                nvp.get("inner") == 980 and (nvp.get("scale") or 1) < 1, nvp)
         f = mob.get("fonts") or {}
         rep.add("android-handset-fonts", "040 992",
                 f.get("sans-serif-condensed") and not f.get("Segoe UI")
