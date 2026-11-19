@@ -13,8 +13,8 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 |---|---|---|
 | ungoogled-chromium base (Linux, Windows) | Chromium `158.0.8127.36` | pinned in `UPSTREAM` to the head of ungoogled-chromium [PR #4050](https://github.com/ungoogled-software/ungoogled-chromium/pull/4050) ("Update to Chromium 158.0.8127.36"; not tagged yet). Move the pin to the `158.0.8127.36-1` tag when it is published |
 | ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | no 158 overlay yet; macOS stays on 157 until ungoogled-chromium-macos tags 158 |
-| Fingerprint patches (`patches/`) | 88 patches | Linux x64 and arm64 built on 158 (official ThinLTO+PGO; arm64 cross-compiled); on Linux x64 every local self-test passes for Linux, Windows, macOS and Android personas (fingerprint 52/56/54/60, UA 12, network 17) and the Clearcote audit was run (see below). macOS arm64 was built and audited on 157 |
-| Clearcote stealth audit | 365 checks | 158 Linux x64, no GPU (`tools/persona_display.py`): **Linux persona 100/100** (one finding, the same one stock Chrome 158 gets on that host), **Android persona 100/100** (207/208; the one finding is the raster-scale probe, see "A phone persona rasterises at the host's scale"), Windows persona 98/100 (four Linux-host text-rendering tells). 157 macOS arm64: 100/100 |
+| Fingerprint patches (`patches/`) | 90 patches | Linux x64 and arm64 built on 158 (official ThinLTO+PGO; arm64 cross-compiled); on Linux x64 every local self-test passes for Linux, Windows, macOS and Android personas (fingerprint 60/62/59/64, UA 12, network 17) and the Clearcote audit was run (see below). macOS arm64 was built and audited on 157 |
+| Clearcote stealth audit | 365 checks | 158 Linux x64, no GPU (`tools/persona_display.py`), 10 seeds per persona OS: **Linux 100/100** on every seed (one finding, the same one stock Chrome 158 gets on that host), **Android 100/100** on every seed (the raster-scale probe), Windows 98/100 (four Linux-host text-rendering tells). 157 macOS arm64: 100/100 |
 
 The current release is Chromium `158.0.8127.36` for Linux x64 and arm64 (Google Chrome stable on
 Linux is 158; Windows and macOS stable moved to 159 on 2026-11-18). ungoogled-chromium has not
@@ -104,7 +104,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1001-android-persona-page-scale` | an Android persona takes Android's page-scale range (0.25 to 5), so a page without a viewport tag is zoomed out to fit (innerWidth 980, scale ~0.42) instead of scrolling sideways at scale 1; `-webkit-text-size-adjust` is honoured |
 | `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is the window's height: the same in every frame, unchanged by page zoom, within the screen |
 
-### What 1003–1011 add (found by the Clearcote audit on a Linux server)
+### What 1003–1013 add (found by the Clearcote audit on a Linux server)
 
 | Patch | Fix |
 |---|---|
@@ -117,6 +117,8 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1009-persona-orientation-and-mesa-limits` | a desktop persona's `screen.orientation` follows its own screen, not the X screen's shape; Mesa uniform components and varyings match a Mesa renderer |
 | `1010-persona-fullscreen-outer-height` | a fullscreen window is as tall as the persona screen, not its work area |
 | `1011-windows-persona-drive-letter-urls` | under a Windows persona every URL parse (`new URL()`, `<a>.href`, `Request`) reads `C:/x` as `file:///C:/x`, as a Windows build does |
+| `1012-persona-color-depth` | `screen.colorDepth` is 24 or 30, never 32 (4% of personas drew 32, which the CSS `color` feature cannot decompose) |
+| `1013-canvas-noise-idempotent-and-clipped` | canvas and WebGL noise is idempotent, so a `toDataURL` PNG drawn into another canvas reads back exactly what `getImageData`/`readPixels` returned; noise stays inside the `readPixels` clip; `toBlob` carries the same per-site noise as `toDataURL` |
 
 ## Running on a Linux server without a GPU
 
