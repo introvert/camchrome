@@ -266,6 +266,13 @@ async function collectMain(workerUrl) {
   })();
   o.mediaCaps = await mediaCapsProbe();
   o.fontFamilies = fontFamilies(FOREIGN_FONTS);
+  o.apis = {eyeDropper: 'EyeDropper' in window, barcode: 'BarcodeDetector' in window,
+            bluetooth: 'bluetooth' in navigator, wco: 'windowControlsOverlay' in navigator,
+            managed: 'managed' in navigator, docPip: 'documentPictureInPicture' in window,
+            hid: 'hid' in navigator,
+            activeText: (() => { const d = document.createElement('i'); d.style.color = 'ActiveText';
+              document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; })(),
+            orientation: screen.orientation && screen.orientation.type};
   o.maxTouchPoints = navigator.maxTouchPoints;
   o.cpuPerformance = navigator.cpuPerformance;
   o.jsHeapSizeLimit = performance.memory && performance.memory.jsHeapSizeLimit;
@@ -715,7 +722,32 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     rep.add("battery-plausible", "150 979", 0 <= bat.get("level", -1) <= 1, bat,
             skip="batteryError" in m)
     kb = m.get("keyboard") or {}
-    rep.add("keyboard-layout-map", "150", kb.get("size", 0) > 0, kb, skip="keyboardError" in m)
+    apis = m.get("apis") or {}
+    if args.platform == "android" and not args.stock:
+        desktop_only = [k for k in ("eyeDropper", "wco", "managed", "docPip", "hid") if apis.get(k)]
+        rep.add("android-api-surface", "1008",
+                not desktop_only and apis.get("barcode") and apis.get("bluetooth"),
+                desktop_only or apis)
+    if args.platform in ("windows", "macos") and not args.stock:
+        rep.add("web-bluetooth-present", "1007", apis.get("bluetooth") is True, apis.get("bluetooth"))
+    if args.platform == "linux" and not args.stock:
+        rep.add("web-bluetooth-absent-on-linux", "1007", apis.get("bluetooth") is False,
+                apis.get("bluetooth"))
+    if args.platform == "windows" and not args.stock:
+        rep.add("activetext-is-windows-hotlight", "1007",
+                apis.get("activeText") == "rgb(0, 102, 204)", apis.get("activeText"))
+    if args.platform in ("windows", "linux", "macos") and not args.stock:
+        rep.add("desktop-orientation-from-persona-screen", "1009",
+                apis.get("orientation") == ("landscape-primary" if s["width"] >= s["height"]
+                                            else "portrait-primary"),
+                (apis.get("orientation"), s["width"], s["height"]))
+    if args.platform == "android" and not args.stock:
+        # Chrome for Android has no navigator.keyboard (1008).
+        rep.add("android-no-keyboard-api", "1008", "keyboardError" in m,
+                m.get("keyboardError") or kb)
+    else:
+        rep.add("keyboard-layout-map", "150", kb.get("size", 0) > 0, kb,
+                skip="keyboardError" in m)
     conn = m.get("connection") or {}
     rtt_hdr = hdr.get("rtt")
     rep.add("rtt-header-equals-connection", "989",

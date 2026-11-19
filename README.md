@@ -104,7 +104,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1001-android-persona-page-scale` | an Android persona takes Android's page-scale range (0.25 to 5), so a page without a viewport tag is zoomed out to fit (innerWidth 980, scale ~0.42) instead of scrolling sideways at scale 1; `-webkit-text-size-adjust` is honoured |
 | `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is the window's height: the same in every frame, unchanged by page zoom, within the screen |
 
-### What 1003–1008 add (found by the Clearcote audit on a Linux server)
+### What 1003–1010 add (found by the Clearcote audit on a Linux server)
 
 | Patch | Fix |
 |---|---|
@@ -114,6 +114,8 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1006-linux-persona-and-viewport-coherence` | a Linux persona sends the empty platformVersion Chromium on Linux sends, and Mesa's GL limits next to a Mesa renderer string; `MAX_VIEWPORT_DIMS` is the persona GPU's (D3D11: 32767) |
 | `1007-windows-persona-coherence` | D3D11 renderer strings carry the 8-digit device id ANGLE prints; `ActiveText` is the Windows hotlight colour; the UA stylesheet follows the persona OS; shaders translate to HLSL under a D3D11 renderer string (966 on by default); Web Bluetooth for Windows, macOS and Android personas |
 | `1008-android-persona-platform-surface` | an Android persona has Chrome for Android's API surface (no EyeDropper, `navigator.keyboard`, `windowControlsOverlay`, Document PiP, Local Font Access, WebHID; BarcodeDetector present), rasterises at its devicePixelRatio (`--force-device-scale-factor`), and claims the Google Chrome brand by default |
+| `1009-persona-orientation-and-mesa-limits` | a desktop persona's `screen.orientation` follows its own screen, not the X screen's shape; Mesa uniform components and varyings match a Mesa renderer |
+| `1010-persona-fullscreen-outer-height` | a fullscreen window is as tall as the persona screen, not its work area |
 
 ## Running on a Linux server without a GPU
 
@@ -131,8 +133,18 @@ Linux x64 server with only a BMC VGA adapter):
 
 How to look like a real browser on such a host:
 
-1. **Run headful under Xvfb**, never `--headless`: `xvfb-run -a -s "-screen 0 1920x1080x24" ./chrome --fingerprint=<seed>`.
-   Make the Xvfb screen at least as large as the persona's screen.
+1. **Run headful on a display shaped like the persona, with a window manager.**
+   `tools/persona_display.py` asks the browser for the persona's screen and devicePixelRatio,
+   starts Xvfb at exactly that size, starts a window manager (openbox, fluxbox, xfwm4, icewm…)
+   and runs the browser (or a test harness) on it:
+   ```bash
+   sudo apt-get install xvfb openbox
+   tools/persona_display.py --binary ./chrome --fingerprint=alice --fingerprint-platform=windows -- \
+     ./chrome --fingerprint=alice --fingerprint-platform=windows
+   ```
+   Never `--headless`. Without a window manager X11 windows never change state, so a page's
+   `requestFullscreen()` leaves the window at its size (stock Chrome too); with an X screen of
+   another size than the persona's, a fullscreen window does not match the screen the page sees.
 2. **Use a persona** (`--fingerprint=<seed>`). It brings WebGL (1000); without one the browser
    has no WebGL, like stock Chrome there.
 3. **Pick the persona OS for the traffic you want to blend into.** Every persona answers font
@@ -149,9 +161,7 @@ How to look like a real browser on such a host:
    flags (Segoe UI Emoji has none), localized Windows CJK family names do not resolve, and
    `C:/x` parses as a URL scheme. A Linux or Android persona has none of these on a Linux host;
    use a Windows host for Windows personas.
-6. **Fullscreen** under Xvfb does not cover the screen, for stock Chrome too (even with a window
-   manager); a page that requests fullscreen sees the window keep its size.
-7. **Known limits on SwiftShader**: WebGL `MAX_TEXTURE_SIZE` stays at SwiftShader's 8192, so
+6. **Known limits on SwiftShader**: WebGL `MAX_TEXTURE_SIZE` stays at SwiftShader's 8192, so
    textures the page allocates really fit (a desktop D3D11 GPU would report 16384); there is
    no WebGPU adapter (as on a real GPU-less Windows VM); WebGL draws are CPU-speed. For
    pixel-exact GPU output use the canvas bridge (`--canvas-bridge-url`, 065) to a host with a GPU.
