@@ -86,3 +86,5 @@
 1009-persona-orientation-and-mesa-limits.patch
 1010-persona-fullscreen-outer-height.patch
 1011-windows-persona-drive-letter-urls.patch
+1012-persona-color-depth.patch
+1013-canvas-noise-idempotent-and-clipped.patch

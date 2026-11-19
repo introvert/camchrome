@@ -1,0 +1,142 @@
+camchrome: canvas and WebGL noise is idempotent, stays in the clip, and toBlob carries it.
+
+A seed sweep of the Clearcote audit found three readback contradictions, seed-dependent:
+
+- "readPixels writes only the pixels it was asked to read": the noise loop clipped rows but not
+  columns, so a readPixels region larger than the framebuffer got noise outside it (reproduced on
+  every seed tried). Columns, and the uniformity check's rows, now stay in the clip.
+- "a canvas reads back the same through toDataURL and getImageData" and the WebGL readPixels vs
+  toDataURL row: the audit decodes the PNG by drawing it into a second canvas and reading it with
+  getImageData, which applies the noise again. The noise flipped a bit keyed on the full value,
+  so the second pass re-keyed every pixel the first one changed and moved a few again. It now keys
+  on each channel without its low bit and SETS that bit, so noise over noised pixels is a no-op
+  and every exit agrees exactly, however often pixels go round.
+- toBlob/convertToBlob: ImageDataBuffer::EncodeImage noised with seed 0 (not the per-site seed),
+  and the progressive encoder did not noise at all, so blobs disagreed with toDataURL. The blob
+  source is now noised once, per site, when the blob creator is made; EncodeImage adds nothing.
+
+--- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
++++ b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
+@@ -180,9 +180,10 @@
+   // Early-exits on the first differing pixel, so non-uniform content pays only a few comparisons.
+   {
+     const char* const cc_base = reinterpret_cast<const char*>(addr);
+-    const uint8_t* const cc_first = reinterpret_cast<const uint8_t*>(cc_base);
++    const uint8_t* const cc_first = reinterpret_cast<const uint8_t*>(
++        cc_base + static_cast<size_t>(y0) * fRowBytes + static_cast<size_t>(x0) * bpp);
+     bool cc_uniform = true;
+-    for (int y = 0; y < h && cc_uniform; ++y) {
++    for (int y = y0; y < y1 && cc_uniform; ++y) {
+       const uint8_t* r0 = reinterpret_cast<const uint8_t*>(
+           cc_base + static_cast<size_t>(y) * fRowBytes);
+       for (int px = x0; px < x1; ++px) {
+@@ -228,7 +229,9 @@
+     // exits of one drawing buffer disagree.
+     const int64_t cc_abs_y = srcY + (bottom_up ? (h - 1 - y) : y);
+     uint8_t* row = reinterpret_cast<uint8_t*>(pbase + static_cast<size_t>(y) * fRowBytes);
+-    for (int px = 0; px < w; ++px) {
++    // camchrome (1013): columns stay inside the clip too. Only rows did, so a readPixels region
++    // larger than the framebuffer got noise in pixels GL never wrote.
++    for (int px = x0; px < x1; ++px) {
+       const int64_t cc_abs_x = srcX + px;
+       uint8_t* p = row + static_cast<size_t>(px) * bpp;
+ 
+@@ -237,8 +240,15 @@
+       k = (k ^ (k >> 29)) * 0xBF58476D1CE4E5B9ULL;
+       k ^= static_cast<uint64_t>(cc_abs_y) * 0xC2B2AE3D27D4EB4FULL;
+       k = (k ^ (k >> 32)) * 0x94D049BB133111EBULL;
++      // camchrome (1013): IDEMPOTENT. The decision keys on each channel without its low bit,
++      // and the low bit is then SET to a value derived from the same key rather than flipped.
++      // Running the noise again over already-noised pixels changes nothing, so a toDataURL
++      // PNG drawn into another canvas and read back with getImageData returns exactly the
++      // pixels getImageData already returned, as on stock Chrome. Flipping keyed on the full
++      // value re-keyed every changed pixel on the second pass and moved a few of them again
++      // (Clearcote audit: "3 of 4096 channels differ" between the exits, seed-dependent).
+       for (size_t c = 0; c < bpp && c < 3; ++c) {
+-        k ^= static_cast<uint64_t>(p[c]) << (8 * c);
++        k ^= static_cast<uint64_t>(p[c] >> 1) << (8 * c);
+       }
+       k = (k ^ (k >> 31)) * 0xD6E8FEB86659FD93ULL;
+       k ^= k >> 32;
+@@ -260,13 +270,13 @@
+       // with R==G==B. Flip every colour channel with the SAME bit instead of
+       // three independent bits, so grey stays grey while non-grey content still
+       // gets the same per-site, per-pixel mask.
+-      const uint8_t flip = static_cast<uint8_t>((k >> 40) & 1u);
++      const uint8_t bit = static_cast<uint8_t>((k >> 40) & 1u);
+       if (bpp >= 3) {
+-        p[0] ^= flip;
+-        p[1] ^= flip;
+-        p[2] ^= flip;
++        p[0] = static_cast<uint8_t>((p[0] & 0xFE) | bit);
++        p[1] = static_cast<uint8_t>((p[1] & 0xFE) | bit);
++        p[2] = static_cast<uint8_t>((p[2] & 0xFE) | bit);
+       } else {
+-        p[0] ^= flip;
++        p[0] = static_cast<uint8_t>((p[0] & 0xFE) | bit);
+       }
+      }
+    }
+--- a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
++++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
+@@ -145,12 +145,9 @@
+                                   const double& quality,
+                                   Vector<unsigned char>* encoded_image,
+                                   uint64_t effective_seed) const {
+-  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+-  if ((command_line->HasSwitch(switches::kFingerprint) && !command_line->HasSwitch("cc-no-farble"))) {
+-    // shuffle subchannel color data within the pixmap, keyed by the per-site
+-    // seed threaded in from the caller (0 = global fallback).
+-    StaticBitmapImage::ShuffleSubchannelColorData(pixmap_.writable_addr(), pixmap_.info(), 0, 0, effective_seed);
+-  }
++  // camchrome (1013): no noise here. toBlob/convertToBlob noise their source once, with the
++  // per-site seed, when the blob creator is made (canvas_async_blob_creator.cc); this added a
++  // second layer keyed on seed 0, so toBlob disagreed with toDataURL of the same canvas.
+   return ImageEncoder::Encode(encoded_image, pixmap_, mime_type, quality, effective_seed);
+ }
+ 
+--- a/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
++++ b/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
+@@ -4,6 +4,13 @@
+ 
+ #include "third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.h"
+ 
++#include "base/command_line.h"
++#include "components/ungoogled/farble_seed.h"
++#include "components/ungoogled/ungoogled_switches.h"
++#include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
++#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++
+ #include "base/location.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/metrics/histogram_macros.h"
+@@ -212,6 +219,28 @@
+       skia_image_->readPixels(info, pixel, info.minRowBytes(), 0, 0);
+     }
+ 
++    // camchrome (1013): toBlob/convertToBlob carry the same per-site noise as toDataURL and
++    // getImageData, applied once here on the creating thread (the encoders may run on another
++    // thread, and the progressive path never reached ImageDataBuffer::EncodeImage, so blobs
++    // were either un-noised or noised with seed 0). Same space as toDataURL: RGBA, unpremul.
++    if (context_ && context_->GetSecurityOrigin() &&
++        base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kFingerprint) &&
++        !base::CommandLine::ForCurrentProcess()->HasSwitch("cc-no-farble") &&
++        ungoogled::CanvasNoiseEnabled() &&
++        (!skia_image_->colorSpace() || skia_image_->colorSpace()->isSRGB())) {
++      SkBitmap noised;
++      if (noised.tryAllocPixels(SkImageInfo::Make(skia_image_->dimensions(),
++                                                  kRGBA_8888_SkColorType,
++                                                  kUnpremul_SkAlphaType)) &&
++          skia_image_->readPixels(noised.pixmap(), 0, 0)) {
++        StaticBitmapImage::ShuffleSubchannelColorData(
++            noised.getPixels(), noised.info(), 0, 0,
++            ungoogled::GetFarbleSeed64(
++                context_->GetSecurityOrigin()->RegistrableDomain().Utf8()));
++        noised.setImmutable();
++        skia_image_ = noised.asImage();
++      }
++    }
+     if (skia_image_->peekPixels(&src_data_)) {
+       static_bitmap_image_loaded_ = true;
+ 
