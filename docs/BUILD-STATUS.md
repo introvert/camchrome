@@ -1,12 +1,12 @@
 # Build status per platform
 
 As of 2026-11-19, Chromium `158.0.8127.36` (ungoogled-chromium PR #4050 head `76f39e0`, Windows
-overlay `157.0.8103.78-1.1`), 90 patches.
+overlay `157.0.8103.78-1.1`), 97 patches.
 
 | Target | Patches apply | `gn gen` | Full build links | Local tests | Clearcote audit | Where verified |
 |---|---|---|---|---|---|---|
-| linux-x64 | ✅ 90/90 | ✅ | ✅ official ThinLTO+PGO | fingerprint 55/60/62/59/64 (host, Linux, Windows, macOS, Android persona), UA 12/12, network 17/17, validator 5,000 personas 0 errors 0 warnings | 10 seeds per persona: Linux 100/100 on all (the one finding stock Chrome 158 also gets), Android 100/100 on all (the raster-scale probe, a documented trade-off for an exact viewport), Windows 98/100 on all (Linux-host text rendering only) | Ubuntu 24.04 container on a 64-core x64 server, no GPU, Xvfb + openbox via `tools/persona_display.py` |
-| linux-arm64 | ✅ 90/90 | ✅ | ✅ official ThinLTO (no PGO), cross-compiled from x64 | not run (same source as x64; x64 results apply) | not run | same server |
+| linux-x64 | ✅ 97/97 | ✅ | ✅ official ThinLTO+PGO | fingerprint 55/60/65/59/65 (host, Linux, Windows, macOS, Android persona), UA 12/12, network 17/17, validator 5,000 personas 0 errors 0 warnings | 10 seeds per persona, persona fonts installed: Linux, Windows and Android 100/100 on all (Android no finding; Linux the one stock Chrome 158 also gets; Windows font-size stepping, shared by stock Chrome on Linux) | Ubuntu 24.04 container on a 64-core x64 server, no GPU, Xvfb + openbox via `tools/persona_display.py` |
+| linux-arm64 | ✅ 97/97 | ✅ | ✅ official ThinLTO (no PGO), cross-compiled from x64 | not run (same source as x64; x64 results apply) | not run | same server |
 | mac-arm64 | 157 only | — | 157 ✅ | — | 157: 100/100 | no 158 macOS overlay yet |
 | mac-x64 | 157 only | — | — | — | — | — |
 | windows-x64 | not ported | — | — | — | — | needs Clearcote's xwin setup |
