@@ -71,7 +71,7 @@ Clearcote audit, Windows persona on a Linux host (with 040's clone fonts install
  sk_sp<SkTypeface> FontCache::CreateTypefaceFromUniqueName(
      const FontFaceCreationParams& creation_params) {
    const AtomicString& unique_name = creation_params.Family();
-@@ -1045,6 +1077,18 @@
+@@ -1045,6 +1077,19 @@
    DCHECK(unique_name_lookup);
    sk_sp<SkTypeface> uniquely_identified_font =
        unique_name_lookup->MatchUniqueName(unique_name);
@@ -84,7 +84,8 @@ Clearcote audit, Windows persona on a Linux host (with 040's clone fonts install
 +    const std::string clone = PersonaCloneForLocalName(unique_name.Utf8());
 +    if (!clone.empty()) {
 +      uniquely_identified_font =
-+          unique_name_lookup->MatchUniqueName(String::FromUTF8(clone));
++          unique_name_lookup->MatchUniqueName(
++              String::FromUtf8(base::as_byte_span(clone)));
 +    }
 +  }
    if (!uniquely_identified_font) {

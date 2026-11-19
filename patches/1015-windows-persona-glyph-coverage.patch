@@ -61,7 +61,17 @@ renderer sets 16 levels under a Windows persona. Linux, macOS and Android person
  #include "components/ungoogled/ungoogled_switches.h"
  #include "ui/accessibility/accessibility_features.h"
  #include "ui/base/ui_base_features.h"
-@@ -472,6 +473,14 @@
+@@ -63,6 +64,9 @@
+ 
+ using blink::WebRuntimeFeatures;
+ 
++// camchrome (1015): defined in third_party/skia/src/ports/SkFontHost_FreeType.cpp.
++SK_API void SkFreeTypeSetCoverageLevels(int levels);
++
+ namespace {
+ 
+ enum RuntimeFeatureEnableOptions {
+@@ -472,6 +476,14 @@
          break;
      }
    }
@@ -76,13 +86,3 @@ renderer sets 16 levels under a Windows persona. Linux, macOS and Android person
    // camchrome (1008): the API surface of Chrome for Android. These desktop-only APIs are not
    // in the Android build (EyeDropper, Document Picture-in-Picture, Local Font Access, WebHID,
    // navigator.keyboard, windowControlsOverlay, navigator.managed), and BarcodeDetector is
-@@ -599,6 +608,9 @@
- 
- }  // namespace
- 
-+// camchrome (1015): defined in third_party/skia/src/ports/SkFontHost_FreeType.cpp.
-+SK_API void SkFreeTypeSetCoverageLevels(int levels);
-+
- namespace content {
- 
- void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
