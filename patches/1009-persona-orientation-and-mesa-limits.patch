@@ -1,0 +1,86 @@
+camchrome: desktop persona orientation from the persona screen; Mesa uniform components and varyings.
+
+Clearcote audit on the Linux x64 build after 1003-1008:
+
+- screen.orientation: a desktop persona reported the host display's orientation. A server's X
+  screen can have any shape; a square Xvfb gave portrait-primary under a 1680x1050 persona. It is
+  now landscape-primary (angle 0) when the persona screen is wider than tall.
+- 1006 gave a Linux persona Mesa's 1024 uniform vectors but kept the D3D11 components (16384);
+  ANGLE derives components as 4x vectors (persona validator gl.vertex_uniform_vectors_vs_components).
+- MAX_VARYING_VECTORS reports the persona GPU's value (Mesa 32) instead of clamping to
+  SwiftShader's 31; the GPU query is kept so the read still takes a round trip.
+
+--- a/third_party/blink/renderer/modules/screen_orientation/screen_orientation.cc
++++ b/third_party/blink/renderer/modules/screen_orientation/screen_orientation.cc
+@@ -22,6 +22,14 @@
+ 
+ namespace blink {
+ 
++namespace {
++bool PersonaDesktopScreen() {
++  return ungoogled::PersonaActive() && !ungoogled::CurrentPersona().mobile &&
++         ungoogled::CurrentPersona().screen_width > 0 &&
++         ungoogled::CurrentPersona().screen_height > 0;
++}
++}  // namespace
++
+ V8OrientationType::Enum ScreenOrientation::OrientationTypeToV8Enum(
+     display::mojom::blink::ScreenOrientation orientation) {
+   switch (orientation) {
+@@ -94,6 +102,15 @@
+   if (ungoogled::CurrentPersona().mobile) {
+     return V8OrientationType(V8OrientationType::Enum::kPortraitPrimary);
+   }
++  // camchrome (1009): a desktop persona's orientation follows its own screen, not the host
++  // display's: a server's X screen can have any shape (a square Xvfb reported portrait-primary
++  // under a 1680x1050 persona).
++  if (PersonaDesktopScreen()) {
++    const auto& p = ungoogled::CurrentPersona();
++    return V8OrientationType(p.screen_width >= p.screen_height
++                                 ? V8OrientationType::Enum::kLandscapePrimary
++                                 : V8OrientationType::Enum::kPortraitPrimary);
++  }
+   return V8OrientationType(OrientationTypeToV8Enum(type_));
+ }
+ 
+@@ -102,6 +119,9 @@
+   if (ungoogled::CurrentPersona().mobile) {
+     return 0;
+   }
++  // camchrome (1009): a desktop display in its natural orientation is angle 0.
++  if (PersonaDesktopScreen())
++    return 0;
+   return angle_;
+ }
+ 
+--- a/components/ungoogled/persona_profile.cc
++++ b/components/ungoogled/persona_profile.cc
+@@ -1069,6 +1069,9 @@
+       p.webgl_max_fragment_uniform_vectors = 1024;
+       p.webgl_max_varying_vectors = 32;
+       p.webgl_max_viewport_dim = 16384;
++      // camchrome (1009): ANGLE derives the components limits as 4x the vectors.
++      p.webgl_max_vertex_uniform_components = 4 * p.webgl_max_vertex_uniform_vectors;
++      p.webgl_max_fragment_uniform_components = 4 * p.webgl_max_fragment_uniform_vectors;
+     }
+     // A real Chrome-on-Linux with no speech-dispatcher reports getVoices()==[]; never Windows
+     // SAPI names. Empty is a common, coherent Linux state; drop only the Windows default.
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -360,9 +360,13 @@
+ // unspoofed components value. Only the vectors value lives on the persona;
+ // every components limit is computed as 4x THIS, so they cannot disagree.
+ GLint PersonaMaxVaryingVectors(gpu::gles2::GLES2Interface* gl) {
+-  return ClampPersonaLimit(
+-      gl, GL_MAX_VARYING_VECTORS,
+-      ungoogled::CurrentPersona().webgl_max_varying_vectors);
++  // camchrome (1009): the persona GPU's value, not clamped to the host's. SwiftShader exposes
++  // 31 varyings and Mesa 32, and a Mesa renderer string next to 31 is a pair no Mesa driver
++  // reports; a shader that needs the 32nd is rare. The GPU query stays, so the read still
++  // takes Chrome's round trip.
++  GLint real = 0;
++  gl->GetIntegerv(GL_MAX_VARYING_VECTORS, &real);
++  return static_cast<GLint>(ungoogled::CurrentPersona().webgl_max_varying_vectors);
+ }
+ 
+ }  // namespace

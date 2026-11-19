@@ -11,3 +11,10 @@
   volume keeps the patched tree; `01-apply-patches.sh` is skipped when `.camchrome-patched`
   exists, so patches added later must be applied to the tree by hand before rebuilding.
 - Patch numbering, persona design and open work: `patches/README.md`, `NOTES.md`, `COVERAGE.md`.
+- Never call `ungoogled::PersonaActive()`, `CurrentPersona()` or `GetPersonaPlatform()` from code
+  that runs in every process at startup (e.g. `ChromeMainDelegate::BasicStartupComplete`) without
+  first checking for the browser process (`!HasSwitch(switches::kProcessType)`). They cache in a
+  function-local static; the zygote has no `--fingerprint` switch, caches "no persona", and every
+  renderer forked from it inherits that, silently disabling renderer-side persona code.
+- Verify fixes with the Clearcote audit (`tools/stealth_audit.py --interact --platform <os>
+  --out build/reports/<name>.txt`), not only the self-tests: it found regressions they missed.

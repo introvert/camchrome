@@ -115,7 +115,7 @@ resolve, and "C:/x" parses as a URL scheme. Use a Linux or Android persona on a 
         UncompressResourceAsASCIIString(IDR_UASTYLE_THEME_CHROMIUM_LINUX_CSS)});
 --- a/chrome/app/chrome_main_delegate.cc
 +++ b/chrome/app/chrome_main_delegate.cc
-@@ -1227,6 +1227,17 @@
+@@ -1231,6 +1231,17 @@
    }
  #endif
  
@@ -123,7 +123,7 @@ resolve, and "C:/x" parses as a URL scheme. Use a Linux or Android persona on a 
 +  // getTranslatedShaderSource in that dialect on a non-D3D host but reads its opt-in from the
 +  // environment (the GPU process gets no fingerprint switches); set it before any child starts.
 +  // An explicit CLEARCOTE_SHADER_DIALECT is left as it is.
-+  if (ungoogled::PersonaActive() &&
++  if (persona_browser_process && ungoogled::PersonaActive() &&
 +      ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kWindows &&
 +      !ungoogled::CurrentPersona().webgl_real &&
 +      ungoogled::CurrentPersona().webgl_renderer.find("Direct3D11") != std::string::npos) {

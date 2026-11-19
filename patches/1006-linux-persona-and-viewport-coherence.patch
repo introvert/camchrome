@@ -47,20 +47,21 @@ Found by the Clearcote audit on a GPU-less Linux x64 host.
      if (!p.voices.empty() && p.voices.front().name.rfind("Microsoft", 0) == 0)
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -341,11 +341,12 @@
+@@ -341,11 +341,15 @@
  // it needs its own reader (passing a single GLint* would smash the stack).
  GLint ClampPersonaViewportDim(gpu::gles2::GLES2Interface* gl,
                                int persona_value) {
--  GLint real[2] = {0, 0};
--  gl->GetIntegerv(GL_MAX_VIEWPORT_DIMS, real);
--  const GLint cap = real[0] < real[1] ? real[0] : real[1];
--  GLint v = static_cast<GLint>(persona_value);
--  return (cap > 0 && v > cap) ? cap : v;
 +  // camchrome (1006): report the persona GPU's value, not SwiftShader's 8192. Unlike a
 +  // texture limit nothing is allocated at this size: GL clamps a larger viewport to the real
 +  // maximum, so no page breaks, while a D3D11 renderer string next to [8192, 8192] is a pair
 +  // no Direct3D 11 GPU reports (ANGLE fixes 32767 for every D3D11 device).
-+  (void)gl;
++  // Still ask the GPU: Chrome answers this query with a GPU round trip, and a spoofed value
++  // returned without one is measurably faster than its neighbours.
+   GLint real[2] = {0, 0};
+   gl->GetIntegerv(GL_MAX_VIEWPORT_DIMS, real);
+-  const GLint cap = real[0] < real[1] ? real[0] : real[1];
+-  GLint v = static_cast<GLint>(persona_value);
+-  return (cap > 0 && v > cap) ? cap : v;
 +  return static_cast<GLint>(persona_value);
  }
  
