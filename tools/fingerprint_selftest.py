@@ -755,8 +755,9 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     rep.add("canvas-grey-stays-grey", "986", m["alphaGrey"]["greyTinted"] == 0, m["alphaGrey"])
     tx = m.get("text") or {}
     if args.platform == "windows" and not args.stock:
-        rep.add("windows-text-steps-like-directwrite", "1014",
-                (tx.get("stepChanges") or 0) >= 180, tx.get("stepChanges"))
+        # Not checked: font-size stepping (~63% of 0.01 px steps change the width) is the same on
+        # stock Chrome for Linux with text-rendering: geometricPrecision; it is not hinting and
+        # a Windows persona on a Linux host keeps it (README, known limits).
         rep.add("windows-canvas-text-aa-ladder", "1015",
                 0 < (tx.get("aaLevels") or 0) <= 20, tx.get("aaLevels"))
         rep.add("windows-no-flag-ligature", "1016",

@@ -104,7 +104,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1001-android-persona-page-scale` | an Android persona takes Android's page-scale range (0.25 to 5), so a page without a viewport tag is zoomed out to fit (innerWidth 980, scale ~0.42) instead of scrolling sideways at scale 1; `-webkit-text-size-adjust` is honoured |
 | `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is the window's height: the same in every frame, unchanged by page zoom, within the screen |
 
-### What 1003–1013 add (found by the Clearcote audit on a Linux server)
+### What 1003–1020 add (found by the Clearcote audit on a Linux server)
 
 | Patch | Fix |
 |---|---|
@@ -119,6 +119,11 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1011-windows-persona-drive-letter-urls` | under a Windows persona every URL parse (`new URL()`, `<a>.href`, `Request`) reads `C:/x` as `file:///C:/x`, as a Windows build does |
 | `1012-persona-color-depth` | `screen.colorDepth` is 24 or 30, never 32 (4% of personas drew 32, which the CSS `color` feature cannot decompose) |
 | `1013-canvas-noise-idempotent-and-clipped` | canvas and WebGL noise is idempotent, so a `toDataURL` PNG drawn into another canvas reads back exactly what `getImageData`/`readPixels` returned; noise stays inside the `readPixels` clip; `toBlob` carries the same per-site noise as `toDataURL` |
+| `1014-windows-persona-font-names-and-layout` | the localized CJK family names DirectWrite answers to; `local()` finds a persona font through its clone; unhinted linear advances under a Windows or macOS persona |
+| `1015`, `1018`, `1019` | canvas text under a Windows persona carries DirectWrite's anti-aliasing ladder (16 levels) in every process, on both Skia font backends (FreeType and Fontations); `local()` by full name |
+| `1016-windows-persona-no-flag-ligatures` | regional-indicator pairs render as two letters under a Windows persona (Segoe UI Emoji has no flags); ZWJ and skin-tone sequences still form |
+| `1017-android-persona-raster-scale` | an Android persona rasterises at floor(width × dpr) / width: the viewport is exactly the phone's width and a 100 px box measures within one device pixel of 100 × dpr |
+| `1020-persona-local-fallback-latin-only` | the `local()` fallback only accepts a clone that renders Latin, so a face never loads by name while being invisible to layout |
 
 ## Running on a Linux server without a GPU
 
@@ -159,16 +164,14 @@ How to look like a real browser on such a host:
    `--accept-lang`, `--fingerprint-location`. A server's own IP is a datacenter IP and its
    clock is usually UTC: pixelscan reports "Timezone spoofed, Proxy detected" for stock Chrome
    there too. Use a residential proxy (`--proxy-server=socks5://… --socks5-udp`).
-5. **A Windows persona on a Linux host has tells the engine cannot remove**: text is rasterised
-   by FreeType (font-size stepping and anti-aliasing levels), Noto Color Emoji draws country
-   flags (Segoe UI Emoji has none), and localized Windows CJK family names do not resolve.
-   A Linux or Android persona has none of these on a Linux host;
-   use a Windows host for Windows personas.
-6. **A phone persona rasterises at the host's scale.** `devicePixelRatio`, screen and media
-   queries report the phone's (e.g. 2.625), but layout runs at 1x, which ResizeObserver's
-   `devicePixelContentBoxSize` and `srcset` selection can see. Forcing the scale instead
-   (`--force-device-scale-factor`) makes X11 round the window to whole pixels, and a 412 px phone
-   at 2.625 then lays out at 392 or 413 CSS px; the exact viewport matters to every page.
+5. **Install the persona fonts** for Windows, macOS and Android personas:
+   `scripts/install-persona-fonts.sh --system` (or `--user` without root). A cross-OS persona
+   renders each of its OS's fonts through an open metric-compatible clone (Arimo for Arial,
+   Carlito for Calibri, Selawik for Segoe UI, WenQuanYi and IPA for the CJK faces, ...); without
+   the clones those families fall back to a generic and pages can measure it.
+6. **One Windows-persona tell remains on a Linux host**: stepping the font size by 0.01 px
+   changes text width on ~63% of steps (Windows: nearly all). Stock Chrome on Linux does the same
+   even with `text-rendering: geometricPrecision`, so it is not hinting; it needs a Windows host.
 7. **Known limits on SwiftShader**: WebGL `MAX_TEXTURE_SIZE` stays at SwiftShader's 8192, so
    textures the page allocates really fit (a desktop D3D11 GPU would report 16384); there is
    no WebGPU adapter (as on a real GPU-less Windows VM); WebGL draws are CPU-speed. For
