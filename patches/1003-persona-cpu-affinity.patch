@@ -1,0 +1,64 @@
+camchrome: a persona's core count is the parallelism the machine really delivers (Linux).
+
+The Clearcote audit runs 24 workers on identical CPU-bound loops and compares the work done with
+one worker's. On a 64-core server a persona claiming 6 or 8 cores completed 11-16x the single
+worker's work: more threads in parallel than the claimed cores can run. The browser now pins
+itself to as many CPUs as the persona claims, in ChromeMainDelegate::BasicStartupComplete (the
+earliest callback, before thread pools, the zygote and any child process), so renderers and their
+workers inherit the limit. A host with no more CPUs than the claim is left alone.
+
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -4,6 +4,10 @@
+ 
+ #include "chrome/app/chrome_main_delegate.h"
+ 
++#if BUILDFLAG(IS_LINUX)
++#include <sched.h>
++#endif
++
+ #include <stddef.h>
+ 
+ #include <string>
+@@ -75,6 +79,7 @@
+ #include "base/version_info/version_info.h"
+ #include "components/version_info/channel.h"
+ #include "components/ungoogled/persona_validator.h"  // clearcote: --clearcote-validate-persona
++#include "components/ungoogled/persona_profile.h"
+ #include "content/public/app/initialize_mojo_core.h"
+ #include "content/public/common/content_client.h"
+ #include "content/public/common/content_constants.h"
+@@ -1197,6 +1202,33 @@
+ std::optional<int> ChromeMainDelegate::BasicStartupComplete() {
+   crash_reporter::InitializeCrashKeys();
+ 
++#if BUILDFLAG(IS_LINUX)
++  // camchrome (1003): make the persona's core count true. Pages measure real parallelism
++  // (N workers on CPU-bound loops), and a server with 64 cores runs ~16 threads at once under
++  // a persona that claims 6. Before any thread pool or child process exists, the browser
++  // restricts itself to as many CPUs as the persona claims; the zygote, renderers and their
++  // workers inherit it across fork and exec. A host with fewer CPUs than the claim is left
++  // alone.
++  if (ungoogled::PersonaActive()) {
++    const unsigned want = ungoogled::CurrentPersona().hardware_concurrency;
++    cpu_set_t have;
++    CPU_ZERO(&have);
++    if (want > 0 && sched_getaffinity(0, sizeof(have), &have) == 0 &&
++        static_cast<unsigned>(CPU_COUNT(&have)) > want) {
++      cpu_set_t keep;
++      CPU_ZERO(&keep);
++      unsigned n = 0;
++      for (int cpu = 0; cpu < CPU_SETSIZE && n < want; ++cpu) {
++        if (CPU_ISSET(cpu, &have)) {
++          CPU_SET(cpu, &keep);
++          ++n;
++        }
++      }
++      sched_setaffinity(0, sizeof(keep), &keep);
++    }
++  }
++#endif
++
+ #if BUILDFLAG(IS_CHROMEOS)
+   ash::BootTimesRecorder::Get()->SaveChromeMainStats();
+ #endif

@@ -1,0 +1,55 @@
+camchrome: a persona GPU does not refuse failIfMajorPerformanceCaveat.
+
+Over SwiftShader (a host without a GPU, 1000) Chrome refuses a WebGL context requested with
+failIfMajorPerformanceCaveat, which exposes software rendering under a renderer string that names
+silicon (Clearcote audit: "the GPU named by the renderer string can actually render"). Under a
+persona the request to the GPU process drops the flag; getContextAttributes() still returns what
+the page asked for. --disable-gpu-fingerprint keeps Chrome's behaviour.
+
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -210,6 +210,21 @@
+ 
+ namespace blink {
+ 
++namespace {
++// camchrome (1004): a persona GPU is a hardware GPU. failIfMajorPerformanceCaveat asks for no
++// context when rendering would be software; over SwiftShader (1000) that refusal would expose the
++// software backend the persona's renderer string names as silicon. The page still reads back the
++// attribute it asked for (getContextAttributes); only the request to the GPU process drops it.
++// --disable-gpu-fingerprint (webgl_real) keeps Chrome's behaviour.
++bool PersonaFailIfMajorPerformanceCaveat(bool requested) {
++  if (requested && ungoogled::PersonaActive() &&
++      !ungoogled::CurrentPersona().webgl_real) {
++    return false;
++  }
++  return requested;
++}
++}  // namespace
++
+ bool WebGLRenderingContextBase::webgl_context_limits_initialized_ = false;
+ unsigned WebGLRenderingContextBase::max_active_webgl_contexts_ = 0;
+ unsigned WebGLRenderingContextBase::max_active_webgl_contexts_on_worker_ = 0;
+@@ -891,7 +906,9 @@
+   const auto& url = execution_context->Url();
+   std::unique_ptr<WebGraphicsContext3DProvider> context_provider =
+       CreateWebGLGraphicsContextProvider(
+-          prefer_low_power_gpu, attributes.fail_if_major_performance_caveat,
++          prefer_low_power_gpu,
++          PersonaFailIfMajorPerformanceCaveat(
++              attributes.fail_if_major_performance_caveat),
+           context_type, context_info, url);
+   if (context_provider && !context_provider->BindToCurrentSequence()) {
+     context_provider = nullptr;
+@@ -9999,8 +10016,9 @@
+   std::unique_ptr<WebGraphicsContext3DProvider> context_provider =
+       CreateWebGLGraphicsContextProvider(
+           prefer_low_power_gpu,
+-          creation_attributes.fail_if_major_performance_caveat, context_type_,
+-          &gl_info, url);
++          PersonaFailIfMajorPerformanceCaveat(
++              creation_attributes.fail_if_major_performance_caveat),
++          context_type_, &gl_info, url);
+   scoped_refptr<DrawingBuffer> buffer;
+   if (context_provider && context_provider->BindToCurrentSequence()) {
+     // Construct a new drawing buffer with the new GL context.

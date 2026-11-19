@@ -1,0 +1,123 @@
+camchrome: an Android persona is Chrome for Android, not a desktop build saying so.
+
+Clearcote audit findings under an Android persona:
+
+- Form factor: EyeDropper, navigator.keyboard and windowControlsOverlay (and Document PiP, Local
+  Font Access, WebHID, navigator.managed) are desktop-only; Chrome for Android does not ship them
+  and does ship BarcodeDetector. The persona now has the Android surface. The three IDL attributes
+  that had no runtime flag get CamchromeDesktopOnlyNavigatorApis (stable; Android persona off).
+- devicePixelRatio is the raster scale: a persona whose DPR is not 1 runs the browser with
+  --force-device-scale-factor=<dpr> (an explicit value wins), so layout, srcset and image-set see
+  the scale the page reports. Make the X screen large enough for the persona's screen at that
+  scale (e.g. Xvfb -screen 0 1440x2560x24 for a phone at 2.625).
+- Brand: phones run Google Chrome, and a "Chromium"-only brand list next to no plugins is the
+  Chrome for Testing / headless signature. An Android persona defaults to --fingerprint-brand=chrome
+  (an explicit brand wins). Measured: audit 96 -> 97 with no new finding.
+
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -84,7 +84,10 @@
+ #include "content/public/common/content_client.h"
+ #include "content/public/common/content_constants.h"
+ #include "content/public/common/content_paths.h"
++#include "base/strings/string_number_conversions.h"
+ #include "content/public/common/content_switches.h"
++#include "components/ungoogled/ungoogled_switches.h"
++#include "ui/display/display_switches.h"
+ #include "base/base_switches.h"  // clearcote: switches::kEnableFeatures (agent feature-merge) — was IS_WIN-only
+ #include "content/public/common/main_function_params.h"
+ #include "content/public/common/profiling.h"
+@@ -1240,6 +1243,27 @@
+     setenv("CLEARCOTE_SHADER_DIALECT", "hlsl", /*overwrite=*/0);
+   }
+ 
++  // camchrome (1008): browser-process defaults that make a persona true rather than reported.
++  // Children copy both switches from the browser's command line.
++  if (ungoogled::PersonaActive()) {
++    base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
++    if (!cmd->HasSwitch(switches::kProcessType)) {
++      // The page must rasterise at the devicePixelRatio it reports: layout, srcset and
++      // image-set read the real scale, so a reported 2.625 over a 1.0 raster is readable.
++      const double dpr = ungoogled::CurrentPersona().device_pixel_ratio;
++      if (dpr > 0 && dpr != 1.0 && !cmd->HasSwitch(switches::kForceDeviceScaleFactor)) {
++        cmd->AppendSwitchASCII(switches::kForceDeviceScaleFactor,
++                               base::NumberToString(dpr));
++      }
++      // Phones run Google Chrome: a "Chromium"-only brand list with no plugins is the
++      // Chrome for Testing / headless signature on Android. An explicit brand wins.
++      if (ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kAndroid &&
++          !cmd->HasSwitch(switches::kFingerprintBrand)) {
++        cmd->AppendSwitchASCII(switches::kFingerprintBrand, "chrome");
++      }
++    }
++  }
++
+ #if BUILDFLAG(IS_CHROMEOS)
+   ash::BootTimesRecorder::Get()->SaveChromeMainStats();
+ #endif
+--- a/content/child/runtime_features.cc
++++ b/content/child/runtime_features.cc
+@@ -471,6 +471,18 @@
+         break;
+     }
+   }
++  // camchrome (1008): the API surface of Chrome for Android. These desktop-only APIs are not
++  // in the Android build (EyeDropper, Document Picture-in-Picture, Local Font Access, WebHID,
++  // navigator.keyboard, windowControlsOverlay, navigator.managed), and BarcodeDetector is
++  // (shape detection ships on Android). A phone UA next to desktop-only APIs is readable.
++  if (ungoogled::PersonaActive() &&
++      ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kAndroid) {
++    for (const char* name : {"EyeDropperAPI", "DocumentPictureInPictureAPI", "FontAccess",
++                             "WebHID", "CamchromeDesktopOnlyNavigatorApis"}) {
++      WebRuntimeFeatures::EnableFeatureFromString(name, false);
++    }
++    WebRuntimeFeatures::EnableFeatureFromString("BarcodeDetector", true);
++  }
+ #if BUILDFLAG(IS_ANDROID)
+   WebRuntimeFeatures::EnableAudioOutputDevices(
+       base::FeatureList::IsEnabled(features::kAAudioPerStreamDeviceSelection) &&
+--- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
++++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+@@ -7486,6 +7486,14 @@
+     // WebBluetooth is enabled by default on Android, ChromeOS, iOS, macOS and
+     // Windows.
+     {
++      // camchrome (1008): attributes the Android build compiles out
++      // (navigator.keyboard, windowControlsOverlay, navigator.managed); an Android
++      // persona turns this off.
++      name: "CamchromeDesktopOnlyNavigatorApis",
++      status: "stable",
++      base_feature: "none",
++    },
++    {
+       name: "WebBluetooth",
+       public: true,
+       status: {
+--- a/third_party/blink/renderer/modules/keyboard/navigator_keyboard.idl
++++ b/third_party/blink/renderer/modules/keyboard/navigator_keyboard.idl
+@@ -5,5 +5,5 @@
+ [
+     ImplementedAs=NavigatorKeyboard
+ ] partial interface Navigator {
+-    [SameObject, SecureContext] readonly attribute Keyboard keyboard;
++    [SameObject, SecureContext, RuntimeEnabled=CamchromeDesktopOnlyNavigatorApis] readonly attribute Keyboard keyboard;
+ };
+--- a/third_party/blink/renderer/modules/window_controls_overlay/navigator_window_controls_overlay.idl
++++ b/third_party/blink/renderer/modules/window_controls_overlay/navigator_window_controls_overlay.idl
+@@ -7,5 +7,5 @@
+ [
+     ImplementedAs=WindowControlsOverlay
+ ] partial interface Navigator {
+-    [SameObject] readonly attribute WindowControlsOverlay windowControlsOverlay;
++    [SameObject, RuntimeEnabled=CamchromeDesktopOnlyNavigatorApis] readonly attribute WindowControlsOverlay windowControlsOverlay;
+ };
+--- a/third_party/blink/renderer/modules/managed_device/navigator_managed.idl
++++ b/third_party/blink/renderer/modules/managed_device/navigator_managed.idl
+@@ -6,6 +6,6 @@
+   ImplementedAs=NavigatorManagedData,
+   SecureContext
+ ] partial interface Navigator {
+-  [SameObject]
++  [SameObject, RuntimeEnabled=CamchromeDesktopOnlyNavigatorApis]
+   readonly attribute NavigatorManagedData managed;
+ };
