@@ -1,0 +1,49 @@
+camchrome: two persona coherence fixes the validator sweep found.
+
+1. Schema 1 heap. Schema 1 reports the fleet-constant jsHeapSizeLimit (4,395,630,592), which is
+   what V8 gives any machine with 8 GB or more. On a persona with less deviceMemory it is a heap
+   no real machine of that class can have: V8 sizes the heap from physical memory, so 4 GB tops
+   out near 4.05 GB. 89 of 500 Windows/Linux seeds had it (validator heap.exceeds_ram). Those
+   personas now get the RAM-derived limit schema 2 already uses; everything at 8 GB and above,
+   and any plausible imported limit, is unchanged.
+
+2. WebGPU texture limits on mobile GPUs. The desktop WebGPU table (maxTextureDimension1D/2D
+   16384) was served next to an Android GPU's WebGL MAX_TEXTURE_SIZE 8192, a pair no device
+   reports (about 1 in 5 Android seeds; validator webgpu.texture2d_eq_webgl). The WebGPU 1D/2D
+   limits are clamped down to the persona's WebGL limit. Downward only, so a capture's own lower
+   value stays, and 967 still clamps against the host.
+
+Validator after the change: 500 seeds x {unset, windows, macos, linux, android} x {schema 1, 2},
+0 errors and 0 warnings (was 0 errors, 468 warnings).
+
+--- a/components/ungoogled/persona_profile.cc
++++ b/components/ungoogled/persona_profile.cc
+@@ -1378,6 +1378,28 @@
+   // sentinel and is left alone.
+   if (p.persona_schema >= 2 && p.js_heap_size_limit == 0)
+     p.js_heap_size_limit = PersonaHeapLimitBytes(p);
++  // camchrome (998): schema 1 keeps the fleet-constant heap (persona_profile.h), which is what
++  // V8 reports on any machine with 8 GB or more. Below that it is a heap no real machine of
++  // the claimed deviceMemory can have (V8 sizes the heap from physical memory; 4 GB tops out
++  // near 4.05 GB), so those personas get the RAM-derived limit schema 2 uses. Personas at 8 GB
++  // and above, and any plausible imported limit, are unchanged.
++  if (p.persona_schema < 2 && p.js_heap_size_limit != 0) {
++    uint64_t heap_lo = 0, heap_hi = 0;
++    PersonaHeapLimitBounds(p, &heap_lo, &heap_hi);
++    if (p.js_heap_size_limit > heap_hi)
++      p.js_heap_size_limit = PersonaHeapLimitBytes(p);
++  }
++  // camchrome (998): a GPU's WebGPU 1D/2D texture limit is its GL MAX_TEXTURE_SIZE; the
++  // desktop WebGPU table (16384) next to a mobile GPU's 8192 WebGL limit was a pair no device
++  // reports. Clamp downward only, so a capture's own lower value stays.
++  if (!p.webgl_real && p.webgl_max_texture_size > 0) {
++    for (const char* key : {"maxTextureDimension1D", "maxTextureDimension2D"}) {
++      auto it = p.webgpu_limits.find(key);
++      if (it != p.webgpu_limits.end() &&
++          it->second > static_cast<uint64_t>(p.webgl_max_texture_size))
++        it->second = static_cast<uint64_t>(p.webgl_max_texture_size);
++    }
++  }
+   // clearcote: WebGPU features for the model the FINAL renderer string names (seed, profile or
+   // switch), unless a capture already supplied its own list or the GPU is real. Unknown models
+   // leave the list empty and the real adapter's features are served.

@@ -104,18 +104,18 @@ review it gave PASS 37, XFAIL 8, SKIP 2, FAIL 0.
 | 995 UA / client hints | UA, `Sec-CH-UA*`, `userAgentData` in every identity mode | ✓ `tools/ua_selftest.py` (12 modes; full-build; CI runs it with `--stock` as a harness check) | HTTP vs runtime, Navigator identity | — |
 | 996 WebGL no-farble | `--cc-no-farble` covers `readPixels` | ✓ `no-farble-switch` (network_selftest) | — | — |
 | 997 Android viewport | content width = phone width | ✓ `android-device-width-equals-screen`, `android-no-meta-layout-980` | Screen & display | — |
-| (none) scrollbar geometry | classic vs overlay scrollbar width | ✓ `scrollbar-width-matches-persona-os` (with `--platform windows\|linux\|android`) | — | **No patch.** A cross-OS persona keeps the host's scrollbar; this check is expected to fail for a Windows or Linux persona on a macOS host until one exists. |
+| 999 scrollbar geometry | Android persona: overlay scrollbars (0 px) | ✓ `scrollbar-width-matches-persona-os` (with `--platform windows\|linux\|android`) | — | **Mac host not covered:** a Windows or Linux persona on a Mac with overlay scrollbars still reports 0 px; that needs a Mac-side patch (the browser's scroller-style update). |
 
 ## Persona validator sweep (2026-11-18)
 
 `persona_validator_cli --clearcote-validate-persona=500` for every platform (unset, windows,
 macos, linux, android) and both schemas, Linux x64 build: **5,000 personas, 0 errors.** Two
-warnings recur, both real coherence questions:
+warnings recurred; **998 fixes both** (0 warnings on the same sweep since 2026-11-19):
 
 | Warning | Where | Rate | What it means |
 |---|---|---|---|
-| `heap.exceeds_ram` | schema 1 (the default), Windows, Linux and unset | 89 of 500 | `jsHeapSizeLimit` 4,395,630,592 on a 4 GB `deviceMemory`. Schema 2 sizes the heap from RAM and has none. Either make schema 2 the default or cap the schema-1 heap on 4 GB personas. |
-| `webgpu.texture2d_eq_webgl` (and `textureNd`) | Android, both schemas | 96 to 105 of 500 | WebGPU `maxTextureDimension2D` 16384 next to WebGL `MAX_TEXTURE_SIZE` 8192 on the same GPU. The Android persona's WebGPU limit table claims more than its WebGL table for some GPUs (967 only clamps against the host's real limits, not against the persona's own WebGL values); derive one from the other. |
+| `heap.exceeds_ram` | schema 1 (the default), Windows, Linux and unset | 89 of 500 | `jsHeapSizeLimit` 4,395,630,592 on a 4 GB `deviceMemory`. Schema 2 sizes the heap from RAM and has none. 998: schema-1 personas below 8 GB get the RAM-derived limit. |
+| `webgpu.texture2d_eq_webgl` (and `textureNd`) | Android, both schemas | 96 to 105 of 500 | WebGPU `maxTextureDimension2D` 16384 next to WebGL `MAX_TEXTURE_SIZE` 8192 on the same GPU. The Android persona's WebGPU limit table claims more than its WebGL table for some GPUs (967 only clamps against the host's real limits, not against the persona's own WebGL values); 998 clamps the WebGPU 1D/2D limits to the persona's WebGL limit. |
 
 ## What to add next
 
@@ -123,8 +123,8 @@ Done since the first review: a local SOCKS5 server with UDP ASSOCIATE and auth
 (`tools/socks5_udp_proxy.py`, used by network_selftest), per-persona-OS runs in `full-build.yml`
 (host, Windows, macOS, Android), and the one-line checks for 960, 050, 040, 147 and 220.
 
-1. A scrollbar patch for cross-OS personas, then `scrollbar-width-matches-persona-os` passes on
-   every host.
+1. The Mac-host half of the scrollbar fix: classic scrollbars for a Windows or Linux persona when
+   macOS is set to overlay scrollbars.
 2. Pin the Windows `Math.tanh` result (965) from a real Windows Chrome and assert it.
 3. A `--fingerprint-profile` import round trip in a browser (002): capture with
    `fingerprint_library.py`, launch with the printed flags, compare.

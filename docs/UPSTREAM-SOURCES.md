@@ -14,8 +14,8 @@ and 3 (pins vs newest tags, Chrome stable, Clearcote movement, reference repos),
 | Chromium tarball (`commondatastorage.googleapis.com/chromium-browser-official`) | `157.0.8103.78-lite` | — | Follows the ungoogled tag; nothing to do separately. | — |
 | [Clearcote](https://github.com/clearcotelabs/clearcote-browser) `patches/` | `ac40bdc` | `c364b78`: 11 commits since the pin, **none in `patches/`** (last patch change 2026-10-28; their tree is still Chromium 151) | Any commit touching `patches/`. Their engine features since r51 (persona service) are in the licensed build only, so expect few public patch changes. Their SDK READMEs still announce engine switches (`--fingerprint-noise-per-profile` r60, flat-area noise, WebGL read margin r57, persona colour scheme, persona off the command line), which are useful as a feature list. | `git log ac40bdc..HEAD -- patches` |
 
-**Google Chrome stable** is 158.0.8127.36/.37 (desktop) and .42 (Android) since 2026-11-17;
-the engine is 157. A claimed major one behind stable is common and not a tell by itself, but
+**Google Chrome stable** was 158.0.8127.36/.37 (desktop) on 2026-11-17 and is 159.0.8154.13
+(Windows, macOS) / .18 (Android) on 2026-11-19, with Linux still on 158; the engine is 157. A claimed major one behind stable is common and not a tell by itself, but
 the gap widens every release: rebase as soon as ungoogled-chromium tags 158. Sources:
 [Chrome Releases blog](https://chromereleases.googleblog.com/) (security fixes per release,
 read it for each stable update) and the version history API
@@ -88,7 +88,7 @@ From BotBrowser's and Clearcote's 2026-10/11 release notes, checked against `pat
 
 | Gap | Seen in | State in camchrome | Test |
 |---|---|---|---|
-| **Scrollbar geometry per persona OS.** Windows/Linux have 15-17 px classic scrollbars; macOS (trackpad) and Android use overlay scrollbars (0 px). A cross-OS persona keeps the host's, which `innerWidth - clientWidth` shows. | BotBrowser 2026-11-13 | No patch touches scrollbars. | New `scrollbar-width-matches-persona-os` in `fingerprint_selftest.py` (runs with `--platform`). |
+| **Scrollbar geometry per persona OS.** Windows/Linux have 15-17 px classic scrollbars; macOS (trackpad) and Android use overlay scrollbars (0 px). A cross-OS persona keeps the host's, which `innerWidth - clientWidth` shows. | BotBrowser 2026-11-13 | 999 gives Android personas overlay scrollbars on Linux/Windows hosts. A desktop persona on a Mac host with overlay scrollbars is still open (Mac-side change). | `scrollbar-width-matches-persona-os` in `fingerprint_selftest.py` (runs with `--platform`). |
 | **Colour scheme from the persona.** `prefers-color-scheme`, system colours and `Sec-CH-Prefers-Color-Scheme` follow the host theme. Not incoherent (all three agree), but every persona on a light host is light. | Clearcote r32, BotBrowser 2026-11-06 | Host value. | New `color-scheme-header-equals-media` guards the coherence; a persona colour scheme would need a patch. |
 | **Persona off the command line.** `--fingerprint=…`, proxy credentials (`--socks5-credentials`) and the profile blob are readable by any local user in `/proc/<pid>/cmdline`. | Clearcote r32 (`CLEARCOTE_PERSONA_ARGS`) | On the command line. | — |
 | **Window focus across synced windows.** Followers in `camauto.py sync` are background windows: `document.hasFocus()` false and `visibilitychange` events a real user would not produce. | BotBrowser 2026-11-17 | Not handled. | — |

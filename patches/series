@@ -72,3 +72,5 @@
 995-ua-client-hints-coherence.patch
 996-webgl-readback-no-farble.patch
 997-android-persona-viewport.patch
+998-persona-heap-and-webgpu-texture-coherence.patch
+999-android-persona-overlay-scrollbars.patch

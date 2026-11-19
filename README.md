@@ -13,7 +13,7 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 |---|---|---|
 | ungoogled-chromium base (Linux, Windows) | `157.0.8103.78-1` | pinned in `UPSTREAM` |
 | ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | pinned, built and audited on macOS arm64 |
-| Fingerprint patches (`patches/`) | 74 patches | verified against 157: built and audited on macOS arm64; built on Linux arm64 with the local self-tests passing; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
+| Fingerprint patches (`patches/`) | 76 patches | verified against 157: built and audited on macOS arm64; built on Linux arm64 with the local self-tests passing; applied, `gn gen` and every patched file compiled on Linux x64 (see `docs/BUILD-STATUS.md`) |
 | Clearcote stealth audit | 365 checks | **100/100 · 236/236 scored checks agree · 0 findings** |
 
 The shipped and audited binary is Chromium `157.0.8103.78` — the latest ungoogled-chromium
@@ -88,6 +88,13 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `995-ua-client-hints-coherence` | the UA string, `Sec-CH-UA`, the full-version list and `navigator.userAgentData` (page and workers) always agree: with a persona, with `--fingerprint-brand`, with `--user-agent`, and with CDP `Emulation.setUserAgentOverride` with or without `userAgentMetadata` (explicit metadata is kept exactly as given). No Chrome version is hard-coded any more |
 | `996-webgl-readback-no-farble` | `--cc-no-farble` also turns off the WebGL `readPixels` perturbation |
 | `997-android-persona-viewport` | an Android persona's content area is the phone's width (no 500 px desktop minimum), and viewport meta tags stay off under a desktop-site override, as on Android |
+
+### What 998–999 add (persona coherence)
+
+| Patch | Fix |
+|---|---|
+| `998-persona-heap-and-webgpu-texture-coherence` | schema-1 personas below 8 GB report a JS heap V8 could give that RAM (the fixed 4.4 GB limit was impossible on 4 GB), and WebGPU's 1D/2D texture limits never exceed the persona's WebGL `MAX_TEXTURE_SIZE` (Android GPUs). The validator's 5,000-persona sweep now has 0 warnings |
+| `999-android-persona-overlay-scrollbars` | an Android persona has overlay scrollbars (0 px), not the Linux/Windows host's 15 px classic ones |
 
 Every Chrome version claim comes from the engine (157.0.8103.78, the newest ungoogled-chromium
 release; Google Chrome stable is already 158) or from `--fingerprint-brand-version`.

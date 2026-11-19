@@ -21,7 +21,7 @@ parts instead.
 
 Vendored from Clearcote commit `ac40bdcaeba73d71984c83656a899246a25cb5ba`. `patches/` started as
 a byte-for-byte copy of its `patches/` directory; every patch has since been rebased to 157 and
-patches were added (987–997), so 74 patches are in `patches/series` now.
+patches were added (987–999), so 76 patches are in `patches/series` now.
 
 ## Upstream versions (checked 2026-11-17)
 

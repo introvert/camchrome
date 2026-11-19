@@ -625,7 +625,7 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     sb = m.get("scrollbar")
     if args.platform in ("windows", "linux", "android") and not args.stock:
         want_sb = (lambda w: w == 0) if args.platform == "android" else (lambda w: (w or 0) > 0)
-        rep.add("scrollbar-width-matches-persona-os", "(none yet)",
+        rep.add("scrollbar-width-matches-persona-os", "999",
                 sb is not None and want_sb(sb), f"{sb}px for a {args.platform} persona")
     touch = m.get("maxTouchPoints", 0)
     if touch == 0:

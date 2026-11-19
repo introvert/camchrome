@@ -5,7 +5,7 @@ As of 2026-11-17, Chromium `157.0.8103.78`, ungoogled `157.0.8103.78-1`.
 | Target | Patches apply | `gn gen` | Patched files compile | Full build links | Audit | Where verified |
 |---|---|---|---|---|---|---|
 | mac-arm64 | ✅ 64/64 (900/905 skipped) | ✅ | ✅ | ✅ `Chromium.app` | ✅ 100/100 | macOS 26.1, 10-core M-series, 24 GB (NOTES.md) |
-| linux-x64 | ✅ 74/74 | ✅ | ✅ 113/113 (7,817 steps, 2026-11-18) | not attempted | not run; persona validator 40/40 and 5,000 personas with 0 errors, relay self-test 15/15 | Ubuntu 24.04 container, 4 cores, 15 GB RAM |
+| linux-x64 | ✅ 76/76 | ✅ | ✅ 113/113 (7,817 steps, 2026-11-18); 998/999 files rebuilt 2026-11-19 | not attempted | not run; persona validator 40/40 and 5,000 personas with 0 errors and (since 998) 0 warnings, relay self-test 15/15 | Ubuntu 24.04 container, 4 cores, 15 GB RAM |
 | linux-arm64 | ✅ | ✅ | ✅ | ✅ official ThinLTO+PGO | not run (self-tests: fingerprint 49/49 Linux, 51/51 Windows, 55/55 Android persona; UA 12/12; network 17/17) | native arm64 container, 2026-11-18 (commit `fa445b6`) |
 | mac-x64 | same source as arm64 | CI | CI | CI (`mode=full`) | — | `.github/workflows/build.yml`, cross-compiled from arm64 |
 | windows-x64 | not ported | — | — | — | — | needs Clearcote's xwin setup |
@@ -57,8 +57,8 @@ before turning that on:
 
 | File | Warning | Patch |
 |---|---|---|
-| `components/ungoogled/persona_profile.cc:640-641` | declaration shadows a local variable (gone on 2026-11-18) | 002/987 series |
-| `net/socket/socks5_client_socket.cc:310` | exit-time destructor (gone on 2026-11-18) | 984 |
+| `components/ungoogled/persona_profile.cc:640-641` | declaration shadows a local variable | 002/987 series |
+| `net/socket/socks5_client_socket.cc:310` | exit-time destructor | 984 |
 | `net/socket/socks5_udp_smoke.cc:90` | unused function `PumpUntil` | 973 |
 | `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc:6054` | `cb_substituted` set but not used | 070 (canvas bridge) |
 | `content/browser/devtools/protocol/browser_handler.cc:780` | unused function `EaseInOut` (2026-11-18) | 130 |
