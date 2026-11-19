@@ -305,6 +305,18 @@ async function textProbe() {
     prev = w;
   }
   out.stepChanges = changed;
+  // The audit's text-scaler probe: a DOM span, font-size 20.01..22.00 px in 0.01 px steps.
+  {
+    const e = document.createElement('span');
+    e.textContent = 'The quick brown fox jumps over the lazy dog 0123456789';
+    e.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:nowrap;font-family:sans-serif';
+    document.body.appendChild(e);
+    const m = t => { e.style.fontSize = t + 'px'; return e.getBoundingClientRect().width; };
+    let n = 0, o = m(20);
+    for (let a = 2001; a <= 2200; a++) { const t = m(a / 100); if (t !== o) n++; o = t; }
+    e.remove();
+    out.domStepChanges = n;
+  }
   const t = document.createElement('canvas'); t.width = 300; t.height = 60;
   const g = t.getContext('2d', {willReadFrequently: true});
   g.fillStyle = '#000'; g.font = '28px Arial'; g.fillText('Hamburgefonstiv 0123', 4, 40);
@@ -755,9 +767,10 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     rep.add("canvas-grey-stays-grey", "986", m["alphaGrey"]["greyTinted"] == 0, m["alphaGrey"])
     tx = m.get("text") or {}
     if args.platform == "windows" and not args.stock:
-        # Not checked: font-size stepping (~63% of 0.01 px steps change the width) is the same on
-        # stock Chrome for Linux with text-rendering: geometricPrecision; it is not hinting and
-        # a Windows persona on a Linux host keeps it (README, known limits).
+        # DirectWrite changes the width on nearly every 0.01 px size step (FreeType/Fontations
+        # at a 1/64 px size grid: ~64%); the audit reads >= 90% as Windows (1021).
+        rep.add("windows-text-steps-like-directwrite", "1014 1021",
+                (tx.get("domStepChanges") or 0) >= 180, tx.get("domStepChanges"))
         rep.add("windows-canvas-text-aa-ladder", "1015",
                 0 < (tx.get("aaLevels") or 0) <= 20, tx.get("aaLevels"))
         rep.add("windows-no-flag-ligature", "1016",
@@ -765,6 +778,9 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
         # Needs the clone fonts (scripts/install-persona-fonts.sh); skipped without Carlito.
         rep.add("windows-local-font-loads", "1014", tx.get("localCalibri") is True,
                 tx.get("localCalibri"), skip=not args.persona_fonts)
+    if args.platform == "linux" and not args.stock:
+        rep.add("linux-text-steps-like-freetype", "1021",
+                100 <= (tx.get("domStepChanges") or 0) <= 160, tx.get("domStepChanges"))
     if args.platform == "android" and not args.stock and tx.get("devicePixelBox"):
         rep.add("android-raster-scale-is-dpr", "1017",
                 abs(tx["devicePixelBox"] - 100 * tx["dpr"]) <= 1, tx)

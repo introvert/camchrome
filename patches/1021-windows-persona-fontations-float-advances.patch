@@ -1,0 +1,47 @@
+camchrome: Windows persona advances in float on the Fontations backend.
+
+The audit's text-scaler row steps the font size by 0.01 px from 20.01 to 22.00 and counts width
+changes: ~63% on Linux (a 1/64 px size grid changes on 64% of such steps), nearly all on Windows.
+Linux system fonts go through Fontations, whose advance at a size goes through that grid. Under a
+Windows persona (CAMCHROME_FT_FLOAT_ADVANCES, set by the browser in 1018) the advance is read at
+ppem == unitsPerEm, a scale of exactly 1, and scaled to the size in float. Unhinted metrics only.
+
+--- a/third_party/skia/src/ports/SkTypeface_fontations.cpp
++++ b/third_party/skia/src/ports/SkTypeface_fontations.cpp
+@@ -36,6 +36,14 @@
+     }();
+     return kLevels;
+ }
++// camchrome (1021): float design-unit advances (CAMCHROME_FT_FLOAT_ADVANCES=1).
++bool CamchromeFloatAdvances() {
++    static const bool kOn = [] {
++        const char* v = getenv("CAMCHROME_FT_FLOAT_ADVANCES");
++        return v && v[0] == '1';
++    }();
++    return kOn;
++}
+ }  // namespace
+ 
+ namespace {
+@@ -599,6 +607,21 @@
+         float x_advance = 0.0f;
+         x_advance = fontations_ffi::unhinted_advance_width_or_zero(
+                 fBridgeFontRef, fScale.y(), fBridgeNormalizedCoords, glyph.getGlyphID());
++        // camchrome (1021): advances as DirectWrite computes them, from design units scaled by
++        // the exact float size. Read at ppem == unitsPerEm (a scale of exactly 1) and scaled
++        // here, so the font size reaches the advance without passing through a fixed-point
++        // size grid: stepping the size by 0.01 px then changes a text's width on nearly every
++        // step, as on Windows. Set by the browser for a Windows persona
++        // (CAMCHROME_FT_FLOAT_ADVANCES); unhinted metrics only.
++        if (doLinearMetrics && CamchromeFloatAdvances()) {
++            const uint16_t upem = fontations_ffi::units_per_em_or_zero(fBridgeFontRef);
++            if (upem > 0) {
++                x_advance = fontations_ffi::unhinted_advance_width_or_zero(
++                                    fBridgeFontRef, static_cast<float>(upem),
++                                    fBridgeNormalizedCoords, glyph.getGlyphID()) *
++                            (fScale.y() / static_cast<float>(upem));
++            }
++        }
+         if (!doLinearMetrics) {
+             fontations_ffi::BridgeScalerMetrics scalerMetrics;
+             if (auto generatedPath = generatePathImpl(glyph.getGlyphID(),
