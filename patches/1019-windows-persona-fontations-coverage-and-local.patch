@@ -1,0 +1,83 @@
+camchrome: the Windows anti-aliasing ladder on the Fontations backend; local() by full name.
+
+Chrome renders Linux system fonts through Fontations (sktypeface_factory.cc makes them with
+SkFontMgr_New_Fontations_Empty), not FreeType, so the coverage quantization of 1015/1018 never ran
+for them. The Fontations scaler context now applies the same ladder (CAMCHROME_FT_COVERAGE_LEVELS,
+which the browser sets for a Windows persona) to 8-bit glyph masks, in every process.
+
+local(): under a cross-OS persona 040 substitutes the clone family ("Carlito") before the
+unique-name lookup, and unique names are full and PostScript names. On a miss the lookup now tries
+"<name> Regular", "<Name>-Regular" and the compact name.
+
+Font-size stepping (the audit's text-scaler row) is not changed: stock Chrome on Linux shows the
+same coarse stepping with text-rendering: geometricPrecision, so it does not come from hinting.
+
+--- a/third_party/skia/src/ports/SkTypeface_fontations.cpp
++++ b/third_party/skia/src/ports/SkTypeface_fontations.cpp
+@@ -25,6 +25,18 @@
+ 
+ #include <optional>
+ #include <utility>
++#include <cstdlib>
++
++namespace {
++// camchrome (1019): glyph coverage levels for 8-bit masks from the environment (0 = Skia's own).
++int CamchromeCoverageLevels() {
++    static const int kLevels = [] {
++        const char* v = getenv("CAMCHROME_FT_COVERAGE_LEVELS");
++        return v ? atoi(v) : 0;
++    }();
++    return kLevels;
++}
++}  // namespace
+ 
+ namespace {
+ 
+@@ -814,6 +826,20 @@
+         ScalerContextBits::value_type format = glyph.extraBits();
+         if (format == ScalerContextBits::PATH) {
+             this->generateImageFromPath(glyph, imageBuffer);
++            // camchrome (1019): Chrome renders Linux system fonts through Fontations, not
++            // FreeType, so the coverage ladder (CAMCHROME_FT_COVERAGE_LEVELS, set by the browser
++            // for a Windows persona, read in every process) is applied here too.
++            const int levels = CamchromeCoverageLevels();
++            if (levels >= 2 && levels < 256 && glyph.maskFormat() == SkMask::kA8_Format) {
++                const int step = 255 / (levels - 1);
++                uint8_t* row = static_cast<uint8_t*>(imageBuffer);
++                for (int y = 0; y < glyph.height(); ++y, row += glyph.rowBytes()) {
++                    for (int x = 0; x < glyph.width(); ++x) {
++                        const int q = ((row[x] + step / 2) / step) * step;
++                        row[x] = static_cast<uint8_t>(q > 255 ? 255 : q);
++                    }
++                }
++            }
+         } else if (format == ScalerContextBits::COLRv1 || format == ScalerContextBits::COLRv0) {
+             SkASSERT(glyph.maskFormat() == SkMask::kARGB32_Format);
+             SkBitmap dstBitmap;
+--- a/third_party/blink/renderer/platform/fonts/font_cache.cc
++++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
+@@ -990,6 +990,24 @@
+   // only, so a font that measured as present could not be loaded by name (on Windows both
+   // come from one DirectWrite collection). Only names on the persona OS's font list map;
+   // any other name still misses, as it would on that OS.
++  // camchrome (1019): under a cross-OS persona 040 has usually substituted the clone's family
++  // ("Carlito") before this lookup, and a font's unique names are its full and PostScript
++  // names ("Carlito Regular", "Carlito-Regular"): try those forms of the name that arrived.
++  if (!uniquely_identified_font && !unique_name.empty()) {
++    const char* persona = ungoogled::PersonaPlatformName(ungoogled::GetPersonaPlatform());
++    if (persona && persona[0] && std::string_view(persona) != "linux") {
++      const std::string name = unique_name.Utf8();
++      std::string compact = name;
++      compact.erase(std::remove(compact.begin(), compact.end(), ' '), compact.end());
++      for (const std::string& candidate :
++           {name + " Regular", compact + "-Regular", compact}) {
++        uniquely_identified_font = unique_name_lookup->MatchUniqueName(
++            String::FromUtf8(base::as_byte_span(candidate)));
++        if (uniquely_identified_font)
++          break;
++      }
++    }
++  }
+   if (!uniquely_identified_font && !unique_name.empty()) {
+     const std::string clone = PersonaCloneForLocalName(unique_name.Utf8());
+     if (!clone.empty()) {

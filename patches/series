@@ -88,3 +88,10 @@
 1011-windows-persona-drive-letter-urls.patch
 1012-persona-color-depth.patch
 1013-canvas-noise-idempotent-and-clipped.patch
+1014-windows-persona-font-names-and-layout.patch
+1015-windows-persona-glyph-coverage.patch
+1016-windows-persona-no-flag-ligatures.patch
+1017-android-persona-raster-scale.patch
+1018-windows-persona-text-every-process.patch
+1019-windows-persona-fontations-coverage-and-local.patch
+1020-persona-local-fallback-latin-only.patch

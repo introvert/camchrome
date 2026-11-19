@@ -1,0 +1,41 @@
+camchrome: a persona's local() fallback only accepts a clone that renders Latin.
+
+1019 made local() find clones by full name, which also loaded the complex-script Windows faces
+(Javanese Text, Leelawadee UI, MV Boli, Sylfaen, ...) through Noto clones that have no Latin
+glyphs. Requested as a font-family they cannot change Latin text, so the face loaded by name but
+was invisible to layout (Clearcote audit: "a Windows face that loads by name is also visible to
+text layout"). The fallback now rejects a clone without a glyph for "a"; those faces are absent
+both ways, as before 1019, while Calibri/Cambria and the other Latin clones still load.
+
+--- a/third_party/blink/renderer/platform/fonts/font_cache.cc
++++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
+@@ -1003,6 +1003,14 @@
+            {name + " Regular", compact + "-Regular", compact}) {
+         uniquely_identified_font = unique_name_lookup->MatchUniqueName(
+             String::FromUtf8(base::as_byte_span(candidate)));
++        // camchrome (1020): only a clone that renders basic Latin. A script-only clone (Noto
++        // Sans Javanese for Javanese Text) loading through local() while the same face as a
++        // font-family cannot change Latin text is a contradiction Windows never shows; such
++        // faces stay absent both ways.
++        if (uniquely_identified_font &&
++            uniquely_identified_font->unicharToGlyph('a') == 0) {
++          uniquely_identified_font = nullptr;
++        }
+         if (uniquely_identified_font)
+           break;
+       }
+@@ -1019,6 +1027,14 @@
+            {clone, clone + " Regular", compact + "-Regular", compact}) {
+         uniquely_identified_font = unique_name_lookup->MatchUniqueName(
+             String::FromUtf8(base::as_byte_span(candidate)));
++        // camchrome (1020): only a clone that renders basic Latin. A script-only clone (Noto
++        // Sans Javanese for Javanese Text) loading through local() while the same face as a
++        // font-family cannot change Latin text is a contradiction Windows never shows; such
++        // faces stay absent both ways.
++        if (uniquely_identified_font &&
++            uniquely_identified_font->unicharToGlyph('a') == 0) {
++          uniquely_identified_font = nullptr;
++        }
+         if (uniquely_identified_font)
+           break;
+       }
