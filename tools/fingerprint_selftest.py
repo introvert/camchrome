@@ -240,6 +240,57 @@ function nativeCheck() {
   return bad;
 }
 
+// Readback round trips the way detectors run them (Clearcote audit 2026-11): a canvas exported
+// with toDataURL, decoded by drawing it into a second canvas and read with getImageData, must
+// return exactly what getImageData returned; WebGL readPixels likewise. 256x256 non-uniform
+// content so that noise which is not idempotent shows on any seed (1013).
+async function readbackRoundTrip() {
+  const N = 256;
+  const decode = async (url) => {
+    const img = new Image();
+    await new Promise((r, j) => { img.onload = r; img.onerror = j; img.src = url; });
+    const c = document.createElement('canvas'); c.width = N; c.height = N;
+    const g = c.getContext('2d', {willReadFrequently: true});
+    g.drawImage(img, 0, 0);
+    return g.getImageData(0, 0, N, N).data;
+  };
+  const count = (a, b) => { let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++; return n; };
+  const out = {};
+  const c = document.createElement('canvas'); c.width = N; c.height = N;
+  const g = c.getContext('2d', {willReadFrequently: true});
+  const gr = g.createLinearGradient(0, 0, N, N);
+  gr.addColorStop(0, '#f60'); gr.addColorStop(1, '#09c');
+  g.fillStyle = gr; g.fillRect(0, 0, N, N);
+  g.fillStyle = '#123'; g.font = '30px sans-serif'; g.fillText('Cwm fjord bank', 4, 120);
+  out.canvasDiffs = count(g.getImageData(0, 0, N, N).data, await decode(c.toDataURL()));
+  const w = document.createElement('canvas'); w.width = N; w.height = N;
+  const gl = w.getContext('webgl', {preserveDrawingBuffer: true});
+  if (gl) {
+    const sh = (t, src) => { const x = gl.createShader(t); gl.shaderSource(x, src); gl.compileShader(x); return x; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER, 'attribute vec2 p;varying vec2 v;void main(){v=p;gl_Position=vec4(p,0,1);}'));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, 'precision mediump float;varying vec2 v;void main(){gl_FragColor=vec4(fract(v.x*7.3),fract(v.y*3.1+v.x),0.4+0.5*sin(v.x*9.0),1);}'));
+    gl.linkProgram(pr); gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    const rp = new Uint8Array(N * N * 4); gl.readPixels(0, 0, N, N, gl.RGBA, gl.UNSIGNED_BYTE, rp);
+    const top = new Uint8Array(rp.length);
+    for (let y = 0; y < N; y++) top.set(rp.subarray((N - 1 - y) * N * 4, (N - y) * N * 4), y * N * 4);
+    out.webglDiffs = count(top, await decode(w.toDataURL()));
+    const M = N + 32, big = new Uint8Array(M * M * 4).fill(7);
+    gl.readPixels(-16, -16, M, M, gl.RGBA, gl.UNSIGNED_BYTE, big);
+    let outside = 0;
+    for (let y = 0; y < M; y++) for (let x = 0; x < M; x++) {
+      if (x >= 16 && x < N + 16 && y >= 16 && y < N + 16) continue;
+      for (let k = 0; k < 4; k++) if (big[(y * M + x) * 4 + k] !== 7) { outside++; break; }
+    }
+    out.readPixelsOutside = outside;
+  }
+  return out;
+}
+
 async function collectMain(workerUrl) {
   const o = await collectCommon();
   o.screen = {width: screen.width, height: screen.height, availWidth: screen.availWidth,
@@ -281,6 +332,7 @@ async function collectMain(workerUrl) {
   o.canvasAgain = canvasProbe();
   o.alphaGrey = alphaGreyProbe();
   o.readPixels = readPixelsSentinel();
+  try { o.roundTrip = await readbackRoundTrip(); } catch (e) { o.roundTripError = String(e); }
   o.audio = await audioProbe();
   try {
     if (navigator.gpu) {
@@ -658,6 +710,13 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     rep.add("canvas-alpha-zero-reads-black", "986", m["alphaGrey"]["alphaZeroNotBlack"] == 0,
             m["alphaGrey"])
     rep.add("canvas-grey-stays-grey", "986", m["alphaGrey"]["greyTinted"] == 0, m["alphaGrey"])
+    rt = m.get("roundTrip") or {}
+    rep.add("canvas-todataurl-roundtrip-equals-getimagedata", "1013",
+            rt.get("canvasDiffs") == 0, rt, skip=not rt)
+    rep.add("webgl-readpixels-equals-todataurl-roundtrip", "1013",
+            rt.get("webglDiffs") == 0, rt, skip="webglDiffs" not in rt)
+    rep.add("readpixels-oversize-leaves-outside-untouched", "1013",
+            rt.get("readPixelsOutside") == 0, rt, skip="readPixelsOutside" not in rt)
     rp = m.get("readPixels")
     rep.add("readpixels-sentinel-untouched", "988", rp is not None and rp["sentinelTouched"] == 0,
             rp, skip=rp is None)

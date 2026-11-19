@@ -102,17 +102,27 @@ def main() -> int:
     if not shutil.which("Xvfb"):
         raise SystemExit("Xvfb not found; install the xvfb package")
 
-    n = free_display()
-    display = f":{n}"
-    xvfb = subprocess.Popen(["Xvfb", display, "-screen", "0", f"{pw}x{ph}x{args.depth}",
-                             "-nolisten", "tcp"], stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL)
-    procs = [xvfb]
-    try:
+    # Several instances may start at once and pick the same free number: Xvfb then exits at
+    # once (display in use), and the next number is tried.
+    xvfb, n = None, None
+    for _ in range(20):
+        n = free_display()
+        cand = subprocess.Popen(["Xvfb", f":{n}", "-screen", "0", f"{pw}x{ph}x{args.depth}",
+                                 "-nolisten", "tcp"], stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
         for _ in range(100):
-            if Path(f"/tmp/.X11-unix/X{n}").exists():
+            if cand.poll() is not None or Path(f"/tmp/.X11-unix/X{n}").exists():
                 break
             time.sleep(0.05)
+        time.sleep(0.2)
+        if cand.poll() is None:
+            xvfb = cand
+            break
+    if xvfb is None:
+        raise SystemExit("could not start Xvfb")
+    display = f":{n}"
+    procs = [xvfb]
+    try:
         env = dict(os.environ, DISPLAY=display)
         if "openbox" in wm:
             rc = tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False)
