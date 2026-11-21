@@ -191,7 +191,13 @@ def main() -> int:
     for key, repo in PINNED.items():
         latest = newest_tag(repo)
         cur = pins.get(key)
-        is_behind = bool(latest and cur and ver_key(latest) > ver_key(cur))
+        # A pin can be a commit (an update PR's head before its tag exists); only a
+        # version-shaped pin can be compared with the newest tag.
+        versioned = bool(cur and re.match(r"v?\d{1,4}([.\-_]|$)", cur))
+        try:
+            is_behind = bool(latest and versioned and ver_key(latest) > ver_key(cur))
+        except TypeError:
+            is_behind = False
         if is_behind:
             behind.append(key)
         result["pins"][key] = {"repo": repo, "pinned": cur, "latest": latest,
