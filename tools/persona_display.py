@@ -99,7 +99,9 @@ def main() -> int:
     import math
     scale = args.scale
     if scale is None:
-        scale = (math.floor(w * dpr) / w) if (mobile and dpr > 1) else 1.0
+        # A phone (1017) and a macOS persona (1025, Retina) rasterise at their ratio.
+        mac = any(a == "--fingerprint-platform=macos" for a in persona)
+        scale = (math.floor(w * dpr) / w) if ((mobile or mac) and dpr > 1) else 1.0
     pw, ph = math.ceil(w * scale), math.ceil(h * scale)
     wm = args.wm or next((x for x in WMS if shutil.which(x)), None)
     if not wm:

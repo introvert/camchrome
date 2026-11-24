@@ -104,7 +104,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1001-android-persona-page-scale` | an Android persona takes Android's page-scale range (0.25 to 5), so a page without a viewport tag is zoomed out to fit (innerWidth 980, scale ~0.42) instead of scrolling sideways at scale 1; `-webkit-text-size-adjust` is honoured |
 | `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is the window's height: the same in every frame, unchanged by page zoom, within the screen |
 
-### What 1003–1022 add (found by the Clearcote audit on a Linux server)
+### What 1003–1025 add (found by the Clearcote audit on a Linux server)
 
 | Patch | Fix |
 |---|---|
@@ -126,6 +126,9 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1020-persona-local-fallback-latin-only` | the `local()` fallback only accepts a clone that renders Latin, so a face never loads by name while being invisible to layout |
 | `1021-windows-persona-fontations-float-advances` | a Windows persona's advances are read in design units and scaled in float, so stepping the font size by 0.01 px changes text width on nearly every step, as on Windows (Linux: ~64%, a 1/64 px size grid) |
 | `1022-persona-cpu-blocks-per-instance` | each browser pins itself to its own block of CPUs, so several personas on one server do not slow each other's single-thread baseline (which read as more parallelism than claimed) |
+| `1023-chrome-seed-feature-defaults` | the web surface Google's variations seed gives every Chrome: no Topics, Fenced Frames or Attribution Reporting names, and `navigator.globalPrivacyControl` and `<a hrefTranslate>` present; a Linux persona's 10588 global and prototype names equal Chrome for Testing 158's |
+| `1024-blob-native-endings-follow-persona` | `new Blob(..., {endings: "native"})` writes CRLF for a Windows persona, LF otherwise |
+| `1025-macos-persona-text-raster-webgpu` | a macOS persona steps text like CoreText, rasterises at its 2x ratio and prefers `bgra8unorm` in WebGPU. Still open: `Math.tanh` (Apple's libm bits) and, on an x86 host, the CPU architecture an Apple Silicon claim contradicts |
 
 ## Running on a Linux server without a GPU
 

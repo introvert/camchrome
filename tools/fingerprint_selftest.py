@@ -377,7 +377,16 @@ async function collectMain(workerUrl) {
             hid: 'hid' in navigator,
             activeText: (() => { const d = document.createElement('i'); d.style.color = 'ActiveText';
               document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; })(),
-            orientation: screen.orientation && screen.orientation.type};
+            orientation: screen.orientation && screen.orientation.type,
+            // 1023: the surface Google's variations seed gives every Chrome.
+            seedRetired: ['browsingTopics' in document, 'fence' in window,
+                          typeof HTMLFencedFrameElement !== 'undefined',
+                          'attributionSrc' in HTMLAnchorElement.prototype,
+                          'setAttributionReporting' in XMLHttpRequest.prototype].filter(Boolean).length,
+            gpc: navigator.globalPrivacyControl,
+            hrefTranslate: typeof document.createElement('a').hrefTranslate};
+  // 1024: "native" Blob line endings are the claimed OS's.
+  o.blobNative = await new Blob(['a\nb\rc\r\nd'], {endings: 'native'}).text();
   o.maxTouchPoints = navigator.maxTouchPoints;
   o.cpuPerformance = navigator.cpuPerformance;
   o.jsHeapSizeLimit = performance.memory && performance.memory.jsHeapSizeLimit;
@@ -781,6 +790,11 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     if args.platform == "linux" and not args.stock:
         rep.add("linux-text-steps-like-freetype", "1021",
                 100 <= (tx.get("domStepChanges") or 0) <= 160, tx.get("domStepChanges"))
+    if args.platform == "macos" and not args.stock and tx.get("devicePixelBox"):
+        rep.add("macos-raster-scale-is-dpr", "1025",
+                abs(tx["devicePixelBox"] - 100 * tx["dpr"]) <= 1, tx)
+        rep.add("macos-text-steps-like-coretext", "1025",
+                (tx.get("domStepChanges") or 0) >= 180, tx.get("domStepChanges"))
     if args.platform == "android" and not args.stock and tx.get("devicePixelBox"):
         rep.add("android-raster-scale-is-dpr", "1017",
                 abs(tx["devicePixelBox"] - 100 * tx["dpr"]) <= 1, tx)
@@ -869,6 +883,13 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     if args.platform == "windows" and not args.stock:
         rep.add("activetext-is-windows-hotlight", "1007",
                 apis.get("activeText") == "rgb(0, 102, 204)", apis.get("activeText"))
+    rep.add("no-seed-retired-ad-apis", "1023", apis.get("seedRetired") == 0, apis.get("seedRetired"))
+    rep.add("global-privacy-control-exposed", "1023", apis.get("gpc") is False, apis.get("gpc"))
+    rep.add("href-translate-exposed", "1023", apis.get("hrefTranslate") == "string",
+            apis.get("hrefTranslate"))
+    want_eol = "\r\n" if args.platform == "windows" and not args.stock else "\n"
+    rep.add("blob-native-endings-follow-os", "1024",
+            m.get("blobNative") == want_eol.join("abcd"), m.get("blobNative"))
     if args.platform in ("windows", "linux", "macos") and not args.stock:
         rep.add("desktop-orientation-from-persona-screen", "1009",
                 apis.get("orientation") == ("landscape-primary" if s["width"] >= s["height"]

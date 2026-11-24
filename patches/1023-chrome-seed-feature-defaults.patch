@@ -1,0 +1,109 @@
+camchrome: the web surface Google's variations seed gives every Chrome.
+
+A build that never fetches the seed keeps the field-trial defaults of the source. Diffing every
+global and prototype name against Chrome for Testing 158 found 23 names no Chrome 158 has
+(document.browsingTopics, window.fence, Fence, FencedFrameConfig, HTMLFencedFrameElement,
+attributionSrc on a/area/img/script, XMLHttpRequest.setAttributionReporting, browsingTopics on
+img/iframe) and 3 it lacked (navigator.globalPrivacyControl, HTMLAnchorElement.hrefTranslate).
+The seed's TopicsDeprecation, AttributionReportingDeprecation and FencedFramesDeprecation studies
+switch the first group off and UniversalOptOutSettings turns GlobalPrivacyControlApi on
+(testing/variations/fieldtrial_testing_config.json), so the defaults here follow them. The seed disables by override, and
+SetRuntimeFeatureFromChromiumFeature() applies a disabled feature only when it is overridden, so
+TopicsAPI and AttributionReporting also leave "stable" in runtime_enabled_features.json5, and
+GlobalPrivacyControlApi gets an enabled base feature, which is what the runtime state follows.
+hrefTranslate exists while the translate service is available; without Google API keys
+TranslateManager::IsAvailable() is false and inox turns "offer to translate" off by default, so it
+is exposed unless the user turned translation off, as in Chrome.
+
+--- a/services/network/public/cpp/features.cc
++++ b/services/network/public/cpp/features.cc
+@@ -416,7 +416,8 @@
+ 
+ // https://github.com/patcg-individual-drafts/topics
+ // Kill switch for the Topics API.
+-BASE_FEATURE(kBrowsingTopics, base::FEATURE_ENABLED_BY_DEFAULT);
++// camchrome (1023): off, as Google's variations seed sets it in every Chrome.
++BASE_FEATURE(kBrowsingTopics, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ 
+ BASE_FEATURE(kIncreaseCookieAccessCacheSize, base::FEATURE_ENABLED_BY_DEFAULT);
+--- a/components/attribution_reporting/features.cc
++++ b/components/attribution_reporting/features.cc
+@@ -9,6 +9,7 @@
+ namespace attribution_reporting::features {
+ 
+ // Controls whether the Conversion Measurement API infrastructure is enabled.
+-BASE_FEATURE(kConversionMeasurement, base::FEATURE_ENABLED_BY_DEFAULT);
++// camchrome (1023): off, as Google's variations seed sets it in every Chrome.
++BASE_FEATURE(kConversionMeasurement, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ }  // namespace attribution_reporting::features
+--- a/third_party/blink/common/features.cc
++++ b/third_party/blink/common/features.cc
+@@ -682,7 +682,8 @@
+ // this feature does not automatically expose this element to the web, it only
+ // allows the element to be enabled by the runtime enabled feature, for origin
+ // trials.
+-BASE_FEATURE(kFencedFrames, base::FEATURE_ENABLED_BY_DEFAULT);
++// camchrome (1023): off, as Google's variations seed sets it in every Chrome.
++BASE_FEATURE(kFencedFrames, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ // Enable sending event-level reports through reportEvent() in cross-origin
+ // subframes. This requires opt-in both from the cross-origin subframe that is
+--- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
++++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+@@ -769,7 +769,7 @@
+     },
+     {
+       name: "AttributionReporting",
+-      status: "stable",
++      // camchrome (1023): off, as Google's variations seed sets it in every Chrome.
+       base_feature: "none",
+       public: true,
+     },
+@@ -3673,7 +3673,10 @@
+     },
+     {
+       // Gates the navigator.globalPrivacyControl JavaScript API.
++      // camchrome (1023): on, as Google's variations seed (UniversalOptOutSettings) sets it.
+       name: "GlobalPrivacyControlApi",
++      status: "stable",
++      base_feature_status: "enabled",
+       status: "experimental",
+     },
+     {
+@@ -6943,7 +6946,7 @@
+       name: "TopicsAPI",
+       base_feature: "none",
+       public: true,
+-      status: "stable",
++      // camchrome (1023): off, as Google's variations seed sets it in every Chrome.
+     },
+     // This feature allows touch dragging and a context menu to occur
+     // simultaneously, with the assumption that the menu is non-modal.  Without
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -205,6 +205,7 @@
+ #include "chrome/browser/task_manager/task_manager_interface.h"
+ #include "chrome/browser/tracing/chrome_tracing_delegate.h"
+ #include "chrome/browser/translate/translate_service.h"
++#include "components/translate/core/browser/translate_pref_names.h"  // camchrome (1023)
+ #include "chrome/browser/ui/blocked_content/blocked_window_params.h"
+ #include "chrome/browser/ui/blocked_content/chrome_popup_navigation_delegate.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
+@@ -5088,7 +5089,14 @@
+   web_prefs->root_scrollbar_theme_color =
+       GetRootScrollbarThemeColor(web_contents);
+ 
+-  web_prefs->translate_service_available = TranslateService::IsAvailable(prefs);
++  // camchrome (1023): Chrome exposes <a hrefTranslate> unless the user turned translation
++  // off; neither the missing Google API key nor inox's default-off pref may remove it.
++  const PrefService::Preference* camchrome_offer_translate =
++      prefs->FindPreference(translate::prefs::kOfferTranslateEnabled);
++  web_prefs->translate_service_available =
++      TranslateService::IsAvailable(prefs) || !camchrome_offer_translate ||
++      !camchrome_offer_translate->HasUserSetting() ||
++      camchrome_offer_translate->GetValue()->GetBool();
+ 
+   std::optional<ui::CaptionStyle> style =
+       captions::GetCaptionStyleFromUserSettings(prefs,
