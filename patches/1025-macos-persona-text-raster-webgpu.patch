@@ -1,0 +1,55 @@
+camchrome: a macOS persona's text scaler, raster scale and WebGPU canvas format.
+
+The macOS persona's first Clearcote audit flagged five signals. Three are fixed here:
+  * text: a 0.01 px font-size step changed the width on 126 of 200 steps, FreeType's 26.6 grid;
+    CoreText advances continuously, so the float advances of 1018/1021 now apply to macOS too
+    (without DirectWrite's 16-level coverage ladder);
+  * raster scale: devicePixelRatio 2 rasterised at 1x (a 100 px box measured 100 device pixels,
+    srcset picked the 1x image); 1017's forced scale now covers a macOS persona, exactly 2.
+    tools/persona_display.py sizes the X screen at that scale;
+  * WebGPU: getPreferredCanvasFormat() said rgba8unorm, the Linux answer; Chrome on macOS
+    prefers bgra8unorm, as 970 already reports for Windows.
+Still open, and not guessed: Math.tanh (Apple's libm bits are not public, and a third value
+matches no real OS) and the CPU architecture (an x86 host's quiet-NaN sign bit beside an Apple
+Silicon "arm" claim). Both need a real Mac to record from.
+
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -1268,6 +1268,12 @@
+     setenv("CAMCHROME_FT_FLOAT_ADVANCES", "1", /*overwrite=*/0);
+     setenv("CAMCHROME_FT_COVERAGE_LEVELS", "16", /*overwrite=*/0);
+   }
++  // camchrome (1025): and as CoreText advances them for a macOS persona (continuous advances;
++  // the coverage ladder is DirectWrite's alone).
++  if (persona_browser_process && ungoogled::PersonaActive() &&
++      ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kMacOS) {
++    setenv("CAMCHROME_FT_FLOAT_ADVANCES", "1", /*overwrite=*/0);
++  }
+ 
+   // camchrome (1008): browser-process defaults that make a persona true rather than reported.
+   // Children copy both switches from the browser's command line.
+@@ -1294,7 +1300,10 @@
+       // device pixel of 100 x dpr (as a fractional-ratio display rounds), and the reported
+       // devicePixelRatio stays the persona's. Needs an X screen of the phone's size at that
+       // scale; tools/persona_display.py starts one. An explicit scale factor wins.
+-      if (persona.mobile && persona.screen_width > 0 &&
++      // camchrome (1025): a macOS persona's Retina ratio too (whole, so exactly 2).
++      const bool camchrome_mac_persona =
++          ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kMacOS;
++      if ((persona.mobile || camchrome_mac_persona) && persona.screen_width > 0 &&
+           persona.device_pixel_ratio > 1.0 &&
+           !cmd->HasSwitch(switches::kForceDeviceScaleFactor)) {
+         const double physical =
+--- a/third_party/blink/renderer/modules/webgpu/gpu.cc
++++ b/third_party/blink/renderer/modules/webgpu/gpu.cc
+@@ -409,7 +409,9 @@
+   // swap_texture_descriptor_.format, so changing it would reconfigure the real swapchain
+   // rather than the reported string, which is a rendering bug rather than a coherence fix.
+ #if BUILDFLAG(IS_LINUX)
+-  if (ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kWindows) {
++  // camchrome (1025): and Chrome on macOS prefers it too.
++  if (ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kWindows ||
++      ungoogled::GetPersonaPlatform() == ungoogled::PersonaPlatform::kMacOS) {
+     return FromDawnEnum(wgpu::TextureFormat::BGRA8Unorm);
+   }
+ #endif

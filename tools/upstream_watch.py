@@ -68,7 +68,9 @@ def git(*args: str, cwd: str | None = None, timeout: int = 120) -> str:
 
 
 def ver_key(tag: str) -> list:
-    return [int(x) if x.isdigit() else x for x in re.split(r"[.\-_]", tag.lstrip("v"))]
+    # (0, n) for a number and (1, s) for a word, so "1" and "beta" compare
+    # instead of raising, and a numbered part sorts before a named one.
+    return [(0, int(x)) if x.isdigit() else (1, x) for x in re.split(r"[.\-_]", tag.lstrip("v"))]
 
 
 def newest_tag(repo: str) -> str | None:

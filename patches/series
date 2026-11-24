@@ -97,3 +97,6 @@
 1020-persona-local-fallback-latin-only.patch
 1021-windows-persona-fontations-float-advances.patch
 1022-persona-cpu-blocks-per-instance.patch
+1023-chrome-seed-feature-defaults.patch
+1024-blob-native-endings-follow-persona.patch
+1025-macos-persona-text-raster-webgpu.patch
