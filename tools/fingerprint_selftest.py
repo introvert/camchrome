@@ -883,10 +883,14 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     if args.platform == "windows" and not args.stock:
         rep.add("activetext-is-windows-hotlight", "1007",
                 apis.get("activeText") == "rgb(0, 102, 204)", apis.get("activeText"))
-    rep.add("no-seed-retired-ad-apis", "1023", apis.get("seedRetired") == 0, apis.get("seedRetired"))
-    rep.add("global-privacy-control-exposed", "1023", apis.get("gpc") is False, apis.get("gpc"))
+    # A Chromium without Google's variations seed (the stock binary CI runs) shows all three;
+    # only the patch fixes them, so they are expected failures under --stock.
+    rep.add("no-seed-retired-ad-apis", "1023", apis.get("seedRetired") == 0, apis.get("seedRetired"),
+            persona=True)
+    rep.add("global-privacy-control-exposed", "1023", apis.get("gpc") is False, apis.get("gpc"),
+            persona=True)
     rep.add("href-translate-exposed", "1023", apis.get("hrefTranslate") == "string",
-            apis.get("hrefTranslate"))
+            apis.get("hrefTranslate"), persona=True)
     want_eol = "\r\n" if args.platform == "windows" and not args.stock else "\n"
     rep.add("blob-native-endings-follow-os", "1024",
             m.get("blobNative") == want_eol.join("abcd"), m.get("blobNative"))
