@@ -11,14 +11,14 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 
 | Piece | Version | State |
 |---|---|---|
-| ungoogled-chromium base (Linux, Windows) | Chromium `158.0.8127.36` | pinned in `UPSTREAM` to the head of ungoogled-chromium [PR #4050](https://github.com/ungoogled-software/ungoogled-chromium/pull/4050) ("Update to Chromium 158.0.8127.36"; not tagged yet). Move the pin to the `158.0.8127.36-1` tag when it is published |
+| ungoogled-chromium base (Linux, Windows) | Chromium `158.0.8127.88` | pinned in `UPSTREAM` to the `158.0.8127.88-1` tag (Windows overlay `158.0.8127.88-1.1`) |
 | ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | no 158 overlay yet; macOS stays on 157 until ungoogled-chromium-macos tags 158 |
-| Fingerprint patches (`patches/`) | 99 patches | Linux x64 and arm64 built on 158 (official ThinLTO+PGO; arm64 cross-compiled); on Linux x64 every local self-test passes for Linux, Windows, macOS and Android personas (fingerprint 61/66/59/65, UA 12, network 17) and the Clearcote audit was run (see below). macOS arm64 was built and audited on 157 |
-| Clearcote stealth audit | 365 checks | 158 Linux x64, no GPU (`tools/persona_display.py`, persona fonts installed), 10 seeds per persona OS, three browsers at a time: **Windows 249/249 and Android 206/206 with no finding**; **Linux 100/100** with one finding (empty platformVersion), which stock Chrome 158 shows identically on the same host. 157 macOS arm64: 100/100 |
+| Fingerprint patches (`patches/`) | 103 patches | Linux x64 and arm64 built on 158.0.8127.88 (official ThinLTO+PGO; arm64 cross-compiled); on Linux x64 every local self-test passes for Linux, Windows, macOS and Android personas (fingerprint 66/71/66/70, UA 12) and the Clearcote audit was run (see below). macOS arm64 was built and audited on 157 |
+| Clearcote stealth audit | 368 checks | 158.0.8127.88 Linux x64, no GPU (`tools/persona_display.py`, persona fonts installed): **Windows 251/251 and Android 208/208 with no finding**; **Linux 230/231** with one finding (empty platformVersion), which stock Chrome 158 shows identically on the same host; **macOS 234/236**, where `Math.tanh` (Apple libm bits) and the CPU architecture check cannot be met from an x86-64 host |
 
-The current release is Chromium `158.0.8127.36` for Linux x64 and arm64 (Google Chrome stable on
-Linux is 158; Windows and macOS stable moved to 159 on 2026-11-18). ungoogled-chromium has not
-tagged 158 yet, so the base patches come from its open update PR (#4050), whose checks pass. The
+The current release is Chromium `158.0.8127.88` for Linux x64 and arm64, the version of Google Chrome
+stable on Linux (Windows and macOS stable are on 159). The base is the ungoogled-chromium
+`158.0.8127.88-1` tag. The
 last macOS build is `v157.0.8103.78-camchrome.2`; the 156 macOS build is preserved at tag
 `v156-audit100`. Windows is not ported.
 
@@ -104,7 +104,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1001-android-persona-page-scale` | an Android persona takes Android's page-scale range (0.25 to 5), so a page without a viewport tag is zoomed out to fit (innerWidth 980, scale ~0.42) instead of scrolling sideways at scale 1; `-webkit-text-size-adjust` is honoured |
 | `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is the window's height: the same in every frame, unchanged by page zoom, within the screen |
 
-### What 1003–1025 add (found by the Clearcote audit on a Linux server)
+### What 1003–1026 add (found by the Clearcote audit on a Linux server)
 
 | Patch | Fix |
 |---|---|
@@ -129,6 +129,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1023-chrome-seed-feature-defaults` | the web surface Google's variations seed gives every Chrome: no Topics, Fenced Frames or Attribution Reporting names, and `navigator.globalPrivacyControl` and `<a hrefTranslate>` present; a Linux persona's 10588 global and prototype names equal Chrome for Testing 158's |
 | `1024-blob-native-endings-follow-persona` | `new Blob(..., {endings: "native"})` writes CRLF for a Windows persona, LF otherwise |
 | `1025-macos-persona-text-raster-webgpu` | a macOS persona steps text like CoreText, rasterises at its 2x ratio and prefers `bgra8unorm` in WebGPU. Still open: `Math.tanh` (Apple's libm bits) and, on an x86 host, the CPU architecture an Apple Silicon claim contradicts |
+| `1026-gzip-os-byte-follows-persona` | `CompressionStream("gzip")` writes the claimed OS in the header's OS byte (10 Windows, 19 macOS, 3 Linux and Android), as Chrome's zlib on that OS does |
 
 ## Running on a Linux server without a GPU
 
@@ -180,7 +181,7 @@ How to look like a real browser on such a host:
    no WebGPU adapter (as on a real GPU-less Windows VM); WebGL draws are CPU-speed. For
    pixel-exact GPU output use the canvas bridge (`--canvas-bridge-url`, 065) to a host with a GPU.
 
-Every Chrome version claim comes from the engine (158.0.8127.36) or from
+Every Chrome version claim comes from the engine (158.0.8127.88) or from
 `--fingerprint-brand-version`. `--fingerprint-brand=edge` reports the Edge stable build for the
 engine's Chromium major from 995's table; Edge has not shipped 158 yet (stable is 157.0.4341.60),
 so on 158 it reports `158.0.0.0` until a row is added (`tools/upstream_watch.py` shows Edge stable).

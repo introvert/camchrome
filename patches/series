@@ -100,3 +100,4 @@
 1023-chrome-seed-feature-defaults.patch
 1024-blob-native-endings-follow-persona.patch
 1025-macos-persona-text-raster-webgpu.patch
+1026-gzip-os-byte-follows-persona.patch

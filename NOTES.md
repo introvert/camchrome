@@ -23,15 +23,13 @@ Vendored from Clearcote commit `ac40bdcaeba73d71984c83656a899246a25cb5ba`. `patc
 a byte-for-byte copy of its `patches/` directory; every patch has since been rebased to 157 and
 patches were added (987–999), so 76 patches are in `patches/series` now.
 
-## Upstream versions (checked 2026-11-19)
+## Upstream versions (checked 2026-11-25)
 
-- Google Chrome stable: 158.0.8127.36 (Linux), 159.0.8154.13 (Windows, macOS), 159.0.8154.18
-  (Android).
-- ungoogled-chromium: newest tag `157.0.8103.78-1`; 158 is in PR #4050 (head `76f39e0`, checks
-  green), which `UPSTREAM` pins. Move to the `158.0.8127.36-1` tag when it appears and check the
-  diff against `76f39e0` (reviewers mentioned the link-drag patch needing an update after #4040).
-- ungoogled-chromium-windows / -macos: `157.0.8103.78-1.1`, no 158 work yet. Linux uses the
-  Windows overlay only for 900/905's source changes, and the 157 overlay applies to 158.
+- Google Chrome stable: 158.0.8127.88 (Linux), 159.0.8154.34 (Windows, macOS).
+- ungoogled-chromium: `158.0.8127.88-1`, which `UPSTREAM` pins; it changed only one patch
+  (hyphenation patterns) since `158.0.8127.36-1`, and all of camchrome's patches apply unchanged.
+- ungoogled-chromium-windows: `158.0.8127.88-1.1`. ungoogled-chromium-macos: still
+  `157.0.8103.78`, no 158 tag yet.
 - Edge stable: 157.0.4341.60; add the Edge 158 build to 995's table when it ships.
 - `tools/upstream_watch.py --no-reference` prints all of this (docs/UPSTREAM-SOURCES.md
   section 0).

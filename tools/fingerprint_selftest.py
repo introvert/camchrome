@@ -387,6 +387,11 @@ async function collectMain(workerUrl) {
             hrefTranslate: typeof document.createElement('a').hrefTranslate};
   // 1024: "native" Blob line endings are the claimed OS's.
   o.blobNative = await new Blob(['a\nb\rc\r\nd'], {endings: 'native'}).text();
+  // 1026: the gzip header's OS byte (RFC 1952) is the claimed OS's zlib's.
+  try {
+    const gz = new Blob(['x']).stream().pipeThrough(new CompressionStream('gzip'));
+    o.gzipOs = new Uint8Array(await new Response(gz).arrayBuffer())[9];
+  } catch (e) { o.gzipOs = String(e); }
   o.maxTouchPoints = navigator.maxTouchPoints;
   o.cpuPerformance = navigator.cpuPerformance;
   o.jsHeapSizeLimit = performance.memory && performance.memory.jsHeapSizeLimit;
@@ -894,6 +899,9 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     want_eol = "\r\n" if args.platform == "windows" and not args.stock else "\n"
     rep.add("blob-native-endings-follow-os", "1024",
             m.get("blobNative") == want_eol.join("abcd"), m.get("blobNative"))
+    want_gzip_os = 3 if args.stock else {"windows": 10, "macos": 19}.get(args.platform, 3)
+    rep.add("gzip-header-os-byte-follows-os", "1026", m.get("gzipOs") == want_gzip_os,
+            m.get("gzipOs"))
     if args.platform in ("windows", "linux", "macos") and not args.stock:
         rep.add("desktop-orientation-from-persona-screen", "1009",
                 apis.get("orientation") == ("landscape-primary" if s["width"] >= s["height"]
