@@ -36,10 +36,10 @@ the matching Chrome for Testing binary.
 
 | Source | Pinned | Newest on 2026-11-18 | Watch for | How |
 |---|---|---|---|---|
-| [ungoogled-chromium](https://github.com/ungoogled-software/ungoogled-chromium) | `157.0.8103.78-1` | `157.0.8103.78-1` | A new tag. It pins the Chromium tarball for Linux and Windows, so every security release arrives through it. | Tags; `tools/upstream_watch.py` |
-| [ungoogled-chromium-windows](https://github.com/ungoogled-software/ungoogled-chromium-windows) | `157.0.8103.78-1.1` | same | Tag matching the base; changes to the Windows-host tooling patches that `01-apply-patches.sh` skips on Linux. | Tags |
+| [ungoogled-chromium](https://github.com/ungoogled-software/ungoogled-chromium) | `158.0.8127.88-1` | `158.0.8127.88-1` (2026-11-25) | A new tag. It pins the Chromium tarball for Linux and Windows, so every security release arrives through it. | Tags; `tools/upstream_watch.py` |
+| [ungoogled-chromium-windows](https://github.com/ungoogled-software/ungoogled-chromium-windows) | `158.0.8127.88-1.1` | same | Tag matching the base; changes to the Windows-host tooling patches that `01-apply-patches.sh` skips on Linux. | Tags |
 | [ungoogled-chromium-macos](https://github.com/ungoogled-software/ungoogled-chromium-macos) | `157.0.8103.78-1.1` | same | Tag matching the base; new build prerequisites (157 added rustc-dev and Crubit). | Tags |
-| Chromium tarball (`commondatastorage.googleapis.com/chromium-browser-official`) | `157.0.8103.78-lite` | — | Follows the ungoogled tag; nothing to do separately. | — |
+| Chromium tarball (`commondatastorage.googleapis.com/chromium-browser-official`) | `158.0.8127.88-lite` | — | Follows the ungoogled tag; nothing to do separately. | — |
 | [Clearcote](https://github.com/clearcotelabs/clearcote-browser) `patches/` | `ac40bdc` | `c364b78`: 11 commits since the pin, **none in `patches/`** (last patch change 2026-10-28; their tree is still Chromium 151) | Any commit touching `patches/`. Their engine features since r51 (persona service) are in the licensed build only, so expect few public patch changes. Their SDK READMEs still announce engine switches (`--fingerprint-noise-per-profile` r60, flat-area noise, WebGL read margin r57, persona colour scheme, persona off the command line), which are useful as a feature list. | `git log ac40bdc..HEAD -- patches` |
 
 **Google Chrome stable** is 158.0.8127.88 on Linux and 159.0.8154.34 on Windows and macOS
