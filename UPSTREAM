@@ -1,14 +1,13 @@
 # Pinned upstreams. Scripts read these KEY=VALUE lines; edit here to move versions.
 
 # ungoogled-chromium tag or commit -> pins the Chromium source tarball (Linux + Windows).
-# 158.0.8127.36-1 is the commit the 158 rebase was built on (PR #4050's head), now tagged.
-UG_TAG=158.0.8127.36-1
+UG_TAG=158.0.8127.88-1
 # Platform overlays.
-UGW_TAG=158.0.8127.36-1.1
+UGW_TAG=158.0.8127.88-1.1
 UGM_TAG=157.0.8103.78-1.1
 
 # Fingerprint patch set vendored into patches/, from clearcotelabs/clearcote-browser
 # (BSD-3-Clause). Written against Chromium 151.0.7922.108; rebased to 157.0.8103.78
 # here, with 987-989 added.
 CLEARCOTE_COMMIT=ac40bdcaeba73d71984c83656a899246a25cb5ba
-PATCHES_BASE=158.0.8127.36
+PATCHES_BASE=158.0.8127.88

@@ -1,0 +1,56 @@
+camchrome: CompressionStream("gzip") writes the claimed OS in the gzip header.
+
+Byte 9 of a gzip header names the OS whose zlib wrote it (RFC 1952): Chrome writes 10 on Windows,
+19 on macOS and 3 on Linux and Android. A Windows or macOS persona on a Linux build wrote 3, which
+page script reads in one line (Clearcote audit: "the OS byte in a gzip header is the claimed
+platform's"). With a Windows or macOS persona, CompressionStream gives zlib a header whose OS byte
+is that platform's; every other header byte stays as zlib writes it by default.
+
+--- a/third_party/blink/renderer/modules/compression/deflate_transformer.cc
++++ b/third_party/blink/renderer/modules/compression/deflate_transformer.cc
+@@ -21,6 +21,7 @@
+ #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer_util.h"
+ #include "third_party/blink/renderer/modules/compression/compression_format.h"
+ #include "third_party/blink/renderer/modules/compression/zlib_partition_alloc.h"
++#include "components/ungoogled/persona_profile.h"  // camchrome (1026)
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+ #include "v8/include/v8.h"
+ 
+@@ -44,6 +45,26 @@
+     case CompressionFormat::kGzip:
+       err = deflateInit2(&stream_, level, Z_DEFLATED, kWindowBits + kUseGzip, 8,
+                          Z_DEFAULT_STRATEGY);
++      // camchrome (1026): the header's OS byte is the claimed platform's, as the zlib in
++      // Chrome for that OS writes it (zutil.h OS_CODE).
++      if (err == Z_OK && ungoogled::PersonaActive()) {
++        int os_code = 0;
++        switch (ungoogled::GetPersonaPlatform()) {
++          case ungoogled::PersonaPlatform::kWindows:
++            os_code = 10;
++            break;
++          case ungoogled::PersonaPlatform::kMacOS:
++            os_code = 19;
++            break;
++          default:
++            break;
++        }
++        if (os_code) {
++          UNSAFE_TODO(memset(&gzip_header_, 0, sizeof(gzip_header_)));
++          gzip_header_.os = os_code;
++          err = deflateSetHeader(&stream_, &gzip_header_);
++        }
++      }
+       break;
+     case CompressionFormat::kDeflateRaw:
+       err = deflateInit2(&stream_, level, Z_DEFLATED, -kWindowBits, 8,
+--- a/third_party/blink/renderer/modules/compression/deflate_transformer.h
++++ b/third_party/blink/renderer/modules/compression/deflate_transformer.h
+@@ -49,6 +49,8 @@
+   Vector<uint8_t> out_buffer_;
+ 
+   z_stream stream_;
++  // camchrome (1026): the gzip header zlib writes; it must outlive the first deflate().
++  gz_header gzip_header_;
+ 
+   bool was_flush_called_ = false;
+ 
