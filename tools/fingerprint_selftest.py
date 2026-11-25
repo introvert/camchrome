@@ -392,6 +392,8 @@ async function collectMain(workerUrl) {
     const gz = new Blob(['x']).stream().pipeThrough(new CompressionStream('gzip'));
     o.gzipOs = new Uint8Array(await new Response(gz).arrayBuffer())[9];
   } catch (e) { o.gzipOs = String(e); }
+  // 965/1027: tanh's last bit is the claimed OS's libm's (Scrapfly's inputs).
+  o.tanhOs = [0.7, 0.8, 0.9].map(Math.tanh);
   o.maxTouchPoints = navigator.maxTouchPoints;
   o.cpuPerformance = navigator.cpuPerformance;
   o.jsHeapSizeLimit = performance.memory && performance.memory.jsHeapSizeLimit;
@@ -902,6 +904,14 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     want_gzip_os = 3 if args.stock else {"windows": 10, "macos": 19}.get(args.platform, 3)
     rep.add("gzip-header-os-byte-follows-os", "1026", m.get("gzipOs") == want_gzip_os,
             m.get("gzipOs"))
+    # Chrome 150 per OS (Scrapfly): UCRT, Apple libsystem_m (correctly rounded), glibc.
+    tanh_by_os = {"windows": [0.6043677771171635, 0.6640367702678489, 0.7162978701990244],
+                  "macos": [0.6043677771171635, 0.664036770267849, 0.7162978701990245],
+                  "linux": [0.6043677771171636, 0.6640367702678491, 0.7162978701990245]}
+    tanh_os = "linux" if args.stock else args.platform
+    if tanh_os in tanh_by_os:
+        rep.add("tanh-last-bit-follows-os", "965/1027", m.get("tanhOs") == tanh_by_os[tanh_os],
+                m.get("tanhOs"))
     if args.platform in ("windows", "linux", "macos") and not args.stock:
         rep.add("desktop-orientation-from-persona-screen", "1009",
                 apis.get("orientation") == ("landscape-primary" if s["width"] >= s["height"]

@@ -1,7 +1,7 @@
 # Build status per platform
 
 As of 2026-11-25, Chromium `158.0.8127.88` (ungoogled-chromium tag `158.0.8127.88-1`, Windows
-overlay `158.0.8127.88-1.1`), 103 patches.
+overlay `158.0.8127.88-1.1`), 104 patches.
 
 | Target | Patches apply | `gn gen` | Full build links | Local tests | Clearcote audit | Where verified |
 |---|---|---|---|---|---|---|

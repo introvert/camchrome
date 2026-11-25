@@ -1,0 +1,50 @@
+camchrome: Math.tanh for a macOS persona rounds as Apple's libm does.
+
+Since Chrome 148 Math.tanh is the host libm's, so its last bit names the OS (965 covers Windows
+with a UCRT reproduction). A macOS persona on a Linux host returned glibc bits, which the Clearcote
+audit reads as "Math.tanh rounds the way the claimed OS's libm rounds" failing.
+
+Scrapfly measured Chrome 150 on macOS: tanh(0.5, 0.7, 0.8, 0.9) = 0.46211715726000974,
+0.6043677771171635, 0.664036770267849, 0.7162978701990245. Each is the correctly rounded value
+(checked with mpmath at 300 bits); glibc is 1 ULP off on 0.7 and 0.8. Apple's libm is not public,
+so a macOS persona returns the correctly rounded result: tanhl, rounded once to double. Against
+mpmath on 200,001 inputs in [0, 20] that disagrees with correct rounding 50 times (0.025%), where
+glibc's tanh disagrees 49,023 times. On arm64 long double is quad precision.
+
+Same chokepoint and persona read as 965, so the runtime and TurboFan constant folding agree.
+
+--- a/v8/src/base/ieee754.cc
++++ b/v8/src/base/ieee754.cc
+@@ -525,7 +525,9 @@
+       if (std::memcmp(buf + i, kKey, kLen) != 0) continue;
+       const char* v = buf + i + kLen;
+       if (std::strncmp(v, "windows", 7) == 0 && (v[7] == ' ' || v[7] == '\0')) return 1;
+-      return 0;  // linux / macos / android / anything else -> host libm
++      // camchrome (1027): 2 for a macOS persona.
++      if (std::strncmp(v, "macos", 5) == 0 && (v[5] == ' ' || v[5] == '\0')) return 2;
++      return 0;  // linux / android / anything else -> host libm
+     }
+   }
+   return 0;  // switch absent -> host libm
+@@ -553,8 +555,20 @@
+ }  // namespace
+ // --------------------------------------------------------------------------
+ 
++// camchrome (1027): a macOS persona returns what Apple's libsystem_m returns. Scrapfly's
++// measurements of Chrome 150 on macOS (tanh 0.5, 0.7, 0.8, 0.9) are the correctly rounded
++// values on every input, including the two where glibc is 1 ULP off. Apple's libm is not
++// public, so the correctly rounded result is the closest reproduction: tanhl, then one
++// rounding to double. On x86-64 (64-bit mantissa) that disagrees with correct rounding on
++// 0.025% of inputs (glibc's tanh: 24.5%); on arm64 long double is quad precision.
++static double CcCorrectlyRoundedTanh(double x) {
++  return static_cast<double>(std::tanh(static_cast<long double>(x)));
++}
++
+ double tanh(double x) {
+-  if (CcTanhIsWindows()) return cc_ucrt_tanh(x);
++  const int persona = CcTanhIsWindows();
++  if (persona == 1) return cc_ucrt_tanh(x);
++  if (persona == 2) return CcCorrectlyRoundedTanh(x);
+   return std::tanh(x);
+ }
+ 
