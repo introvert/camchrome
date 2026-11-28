@@ -102,3 +102,4 @@
 1025-macos-persona-text-raster-webgpu.patch
 1026-gzip-os-byte-follows-persona.patch
 1027-macos-persona-tanh.patch
+1028-arm-persona-nan-sign.patch

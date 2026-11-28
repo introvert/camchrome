@@ -394,6 +394,29 @@ async function collectMain(workerUrl) {
   } catch (e) { o.gzipOs = String(e); }
   // 965/1027: tanh's last bit is the claimed OS's libm's (Scrapfly's inputs).
   o.tanhOs = [0.7, 0.8, 0.9].map(Math.tanh);
+  // 1028: the sign of a runtime NaN, read back through each store path, in the interpreter
+  // and in a loop hot enough for the optimizing tiers. 1 = sign set (x86), 0 = clear (ARM).
+  {
+    const nan = () => (Math.random() * 0) / (Math.random() * 0);
+    const f64 = new Float64Array(1), f32 = new Float32Array(1), dv = new DataView(new ArrayBuffer(8));
+    const u8 = new Uint8Array(f64.buffer), u8f = new Uint8Array(f32.buffer);
+    const read = () => {
+      const r = {};
+      f64[0] = nan(); r.f64 = u8[7] >> 7;
+      f32[0] = nan(); r.f32 = u8f[3] >> 7;
+      dv.setFloat64(0, nan(), true); r.dv = dv.getUint8(7) >> 7;
+      r.ctor = new Uint8Array(new Float64Array([nan()]).buffer)[7] >> 7;
+      r.fill = new Uint8Array(new Float64Array(1).fill(nan()).buffer)[7] >> 7;
+      return r;
+    };
+    const signs = new Set();
+    o.nanSign = read();
+    for (let i = 0; i < 200000; i++) {
+      const r = read();
+      for (const k in r) signs.add(r[k]);
+    }
+    o.nanSignHot = [...signs].sort();
+  }
   o.maxTouchPoints = navigator.maxTouchPoints;
   o.cpuPerformance = navigator.cpuPerformance;
   o.jsHeapSizeLimit = performance.memory && performance.memory.jsHeapSizeLimit;
@@ -912,6 +935,17 @@ def evaluate(a: dict, a_again: dict, b: dict, args, validator: tuple[int, str] |
     if tanh_os in tanh_by_os:
         rep.add("tanh-last-bit-follows-os", "965/1027", m.get("tanhOs") == tanh_by_os[tanh_os],
                 m.get("tanhOs"))
+    # An ARM persona (Apple Silicon Mac, Android phone) stores a runtime NaN with the sign bit
+    # clear, as ARM makes it; x86 sets it. The host here is x86-64.
+    want_sign = 0 if (not args.stock and args.platform in ("macos", "android")) else 1
+    ns = m.get("nanSign") or {}
+    # Optimized code on x86 also makes sign-clear NaNs (stock Chrome 158: [0, 1]), so x86 only
+    # needs the interpreter's reading; ARM is clear on every path and tier.
+    hot = m.get("nanSignHot") or []
+    rep.add("nan-sign-follows-persona-cpu", "1028",
+            bool(ns) and set(ns.values()) == {want_sign}
+            and (hot == [0] if want_sign == 0 else 1 in hot),
+            (ns, hot))
     if args.platform in ("windows", "linux", "macos") and not args.stock:
         rep.add("desktop-orientation-from-persona-screen", "1009",
                 apis.get("orientation") == ("landscape-primary" if s["width"] >= s["height"]
