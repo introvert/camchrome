@@ -1,0 +1,382 @@
+camchrome: a macOS or Android persona stores NaNs as an ARM CPU makes them.
+
+IEEE 754 leaves the sign of the NaN an invalid operation makes to the hardware: 0/0 is
+0xFFF8000000000000 on x86 and 0x7FF8000000000000 on ARM, and a page reads that bit back through a
+typed array or a DataView. The Clearcote audit (cpu-arch-nan-vs-uach) compares it with
+userAgentData.architecture, so a macOS persona (Apple Silicon, "arm") on an x86 host failed; an
+Android persona on x86 is the emulator tell. With such a persona, a NaN stored into a Float16,
+Float32 or Float64 array or through a DataView setter loses its sign bit, as camoufox does for an
+ARM identity on x86 (cpu-vendor-estimates.patch).
+
+Where it applies: TypedElementsAccessor::FromScalar (the runtime), CSA StoreElementTypedArray and
+the Float16 narrowing (the builtins and ICs), DataViewSet (Torque), Turboshaft StoreTypedElement
+and StoreDataViewElement (TurboFan). Maglev leaves float typed-array and DataView stores to the
+builtins under such a persona. The flag is read from the command line as 965 reads it, once per
+isolate, and the builtins load it through an external reference. mksnapshot warns about, and skips,
+the builtins PGO profile of the store builtins this changes instead of aborting.
+
+Not covered: a NaN WebAssembly stores into its own memory.
+--- a/v8/src/base/ieee754.cc
++++ b/v8/src/base/ieee754.cc
+@@ -527,6 +527,8 @@
+       if (std::strncmp(v, "windows", 7) == 0 && (v[7] == ' ' || v[7] == '\0')) return 1;
+       // camchrome (1027): 2 for a macOS persona.
+       if (std::strncmp(v, "macos", 5) == 0 && (v[5] == ' ' || v[5] == '\0')) return 2;
++      // camchrome (1028): 3 for an Android persona (tanh stays the host's).
++      if (std::strncmp(v, "android", 7) == 0 && (v[7] == ' ' || v[7] == '\0')) return 3;
+       return 0;  // linux / android / anything else -> host libm
+     }
+   }
+@@ -565,6 +567,10 @@
+   return static_cast<double>(std::tanh(static_cast<long double>(x)));
+ }
+ 
++// camchrome (1028)
++uint8_t cc_arm_nan_flag = 0;
++int persona_platform_code() { return CcTanhIsWindows(); }
++
+ double tanh(double x) {
+   const int persona = CcTanhIsWindows();
+   if (persona == 1) return cc_ucrt_tanh(x);
+--- a/v8/src/base/ieee754.h
++++ b/v8/src/base/ieee754.h
+@@ -6,6 +6,7 @@
+ #define V8_BASE_IEEE754_H_
+ 
+ #include <cmath>
++#include <cstdint>  // camchrome (1028)
+ 
+ #include "src/base/base-export.h"
+ 
+@@ -89,6 +90,18 @@
+ // Returns the hyperbolic tangent of |x|, where |x| is given radians.
+ V8_BASE_EXPORT double tanh(double x);
+ 
++// camchrome (1028): the --fingerprint-platform this process runs under, as 965 reads it:
++// 1 windows, 2 macos, 3 android, 0 anything else (re-read after a fork).
++V8_BASE_EXPORT int persona_platform_code();
++
++// camchrome (1028): nonzero when the persona's CPU is ARM (an Apple Silicon Mac, an Android
++// phone). IEEE 754 leaves the sign of a NaN an invalid operation makes to the hardware: x86
++// makes 0xFFF8000000000000 for 0/0, ARM 0x7FF8000000000000, and a page reads that bit back
++// through a typed array or a DataView. With the flag set, a NaN stored into a float typed
++// array or a DataView loses its sign bit, as camoufox does for an ARM identity on x86. Set
++// once per isolate (Isolate::Init); read by the runtime, the builtins and both JIT tiers.
++V8_BASE_EXPORT extern uint8_t cc_arm_nan_flag;
++
+ }  // namespace ieee754
+ }  // namespace base
+ }  // namespace v8
+--- a/v8/src/execution/isolate.cc
++++ b/v8/src/execution/isolate.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "src/execution/isolate.h"
+ 
++#include "src/base/ieee754.h"  // camchrome (1028)
++
+ #include <stdlib.h>
+ 
+ #include <algorithm>
+@@ -6197,6 +6199,12 @@
+                    SnapshotData* shared_heap_snapshot_data, bool can_rehash) {
+   TRACE_ISOLATE(init);
+ 
++  // camchrome (1028): a macOS (Apple Silicon) or Android persona stores NaNs as ARM does.
++  {
++    const int persona = base::ieee754::persona_platform_code();
++    base::ieee754::cc_arm_nan_flag = (persona == 2 || persona == 3) ? 1 : 0;
++  }
++
+ #ifdef V8_COMPRESS_POINTERS_IN_SHARED_CAGE
+   CHECK_EQ(V8HeapCompressionScheme::base(), cage_base());
+ #endif  // V8_COMPRESS_POINTERS_IN_SHARED_CAGE
+--- a/v8/src/codegen/external-reference.h
++++ b/v8/src/codegen/external-reference.h
+@@ -82,6 +82,7 @@
+   V(abort_with_sandbox_violation, "abort_with_sandbox_violation")              \
+   V(address_of_log_or_trace_osr, "v8_flags.log_or_trace_osr")                  \
+   V(address_of_builtin_subclassing_flag, "v8_flags.builtin_subclassing")       \
++  V(cc_arm_nan_flag, "camchrome.cc_arm_nan_flag")                              \
+   V(address_of_double_abs_constant, "double_absolute_constant")                \
+   V(address_of_double_neg_constant, "double_negate_constant")                  \
+   V(address_of_enable_experimental_regexp_engine,                              \
+--- a/v8/src/codegen/external-reference.cc
++++ b/v8/src/codegen/external-reference.cc
+@@ -814,6 +814,11 @@
+   return ExternalReference(&v8_flags.log_or_trace_osr);
+ }
+ 
++// camchrome (1028)
++ExternalReference ExternalReference::cc_arm_nan_flag() {
++  return ExternalReference(&base::ieee754::cc_arm_nan_flag);
++}
++
+ ExternalReference ExternalReference::address_of_builtin_subclassing_flag() {
+   return ExternalReference(&v8_flags.builtin_subclassing);
+ }
+--- a/v8/src/objects/elements.cc
++++ b/v8/src/objects/elements.cc
+@@ -5,6 +5,7 @@
+ #include "src/objects/elements.h"
+ 
+ #include "src/base/atomicops.h"
++#include "src/base/ieee754.h"  // camchrome (1028)
+ #include "src/base/numerics/safe_conversions.h"
+ #include "src/common/globals.h"
+ #include "src/common/message-template.h"
+@@ -4724,16 +4725,22 @@
+   return isolate->factory()->NewNumberFromUint(value);
+ }
+ 
++// camchrome (1028): a NaN loses its sign bit under an ARM persona.
++inline double CcArmNaN(double value) {
++  if (base::ieee754::cc_arm_nan_flag && std::isnan(value)) return std::fabs(value);
++  return value;
++}
++
+ // static
+ template <>
+ uint16_t TypedElementsAccessor<FLOAT16_ELEMENTS>::FromScalar(double value) {
+-  return DoubleToFloat16(value);
++  return DoubleToFloat16(CcArmNaN(value));
+ }
+ 
+ // static
+ template <>
+ float TypedElementsAccessor<FLOAT32_ELEMENTS>::FromScalar(double value) {
+-  return DoubleToFloat32(value);
++  return DoubleToFloat32(CcArmNaN(value));
+ }
+ 
+ // static
+@@ -4765,7 +4772,7 @@
+ // static
+ template <>
+ double TypedElementsAccessor<FLOAT64_ELEMENTS>::FromScalar(double value) {
+-  return value;
++  return CcArmNaN(value);
+ }
+ 
+ // static
+--- a/v8/src/codegen/code-stub-assembler.h
++++ b/v8/src/codegen/code-stub-assembler.h
+@@ -3991,6 +3991,10 @@
+   TNode<Uint8T> Int32ToUint8Clamped(TNode<Int32T> int32_value);
+   TNode<Uint8T> Float64ToUint8Clamped(TNode<Float64T> float64_value);
+ 
++  // camchrome (1028): clear a NaN's sign bit when the persona's CPU is ARM.
++  TNode<Float64T> CcArmNaNFloat64(TNode<Float64T> value);
++  TNode<Float32T> CcArmNaNFloat32(TNode<Float32T> value);
++
+   template <typename T>
+   TNode<T> PrepareValueForWriteToTypedArray(TNode<Object> input,
+                                             ElementsKind elements_kind,
+--- a/v8/src/codegen/code-stub-assembler.cc
++++ b/v8/src/codegen/code-stub-assembler.cc
+@@ -14421,6 +14421,12 @@
+       "Only Int32T, Float32T, Float64T or object value "
+       "types are allowed");
+   DCHECK(IsTypedArrayElementsKind(kind));
++  // camchrome (1028)
++  if constexpr (std::is_same_v<TValue, Float64T>) {
++    value = CcArmNaNFloat64(value);
++  } else if constexpr (std::is_same_v<TValue, Float32T>) {
++    value = CcArmNaNFloat32(value);
++  }
+   TNode<IntPtrT> offset = ComputeTypedArrayAccessOffset(
+       ElementOffsetFromIndex(index, kind, 0), kind);
+   // TODO(cbruni): Add OOB check once typed.
+@@ -14428,6 +14434,35 @@
+   StoreNoWriteBarrier(rep, elements, offset, value);
+ }
+ 
++// camchrome (1028)
++TNode<Float64T> CodeStubAssembler::CcArmNaNFloat64(TNode<Float64T> value) {
++  TVARIABLE(Float64T, var_result, value);
++  Label done(this);
++  GotoIf(Word32Equal(Load<Uint8T>(ExternalConstant(
++                         ExternalReference::cc_arm_nan_flag())),
++                     Int32Constant(0)),
++         &done);
++  GotoIf(Float64Equal(value, value), &done);
++  var_result = Float64Abs(value);
++  Goto(&done);
++  BIND(&done);
++  return var_result.value();
++}
++
++TNode<Float32T> CodeStubAssembler::CcArmNaNFloat32(TNode<Float32T> value) {
++  TVARIABLE(Float32T, var_result, value);
++  Label done(this);
++  GotoIf(Word32Equal(Load<Uint8T>(ExternalConstant(
++                         ExternalReference::cc_arm_nan_flag())),
++                     Int32Constant(0)),
++         &done);
++  GotoIf(Float32Equal(value, value), &done);
++  var_result = Float32Abs(value);
++  Goto(&done);
++  BIND(&done);
++  return var_result.value();
++}
++
+ template <typename TIndex>
+ void CodeStubAssembler::StoreElement(TNode<FixedArrayBase> elements,
+                                      ElementsKind kind, TNode<TIndex> index,
+@@ -14623,7 +14658,7 @@
+   {
+     TNode<Float64T> value =
+         LoadObjectField<Float64T>(heap_object, offsetof(HeapNumber, value_));
+-    var_result = TruncateFloat64ToFloat16(value);
++    var_result = TruncateFloat64ToFloat16(CcArmNaNFloat64(value));  // camchrome (1028)
+     Goto(&done);
+   }
+ 
+--- a/v8/src/builtins/builtins-typed-array-gen.cc
++++ b/v8/src/builtins/builtins-typed-array-gen.cc
+@@ -540,7 +540,8 @@
+       break;
+     case FLOAT16_ELEMENTS:
+       StoreElement(data_ptr, elements_kind, index,
+-                   TruncateFloat64ToFloat16(LoadHeapNumberValue(CAST(value))));
++                   TruncateFloat64ToFloat16(
++                       CcArmNaNFloat64(LoadHeapNumberValue(CAST(value)))));
+       break;
+     case FLOAT32_ELEMENTS:
+       StoreElement(data_ptr, elements_kind, index,
+--- a/v8/src/builtins/data-view.tq
++++ b/v8/src/builtins/data-view.tq
+@@ -720,6 +720,9 @@
+ 
+ // SetViewValue ( view, requestIndex, isLittleEndian, type, value )
+ // https://tc39.es/ecma262/#sec-setviewvalue
++// camchrome (1028)
++extern macro CcArmNaNFloat64(float64): float64;
++
+ transitioning macro DataViewSet(
+     context: Context, receiver: JSAny, requestIndex: JSAny, value: JSAny,
+     requestedLittleEndian: JSAny, kind: constexpr ElementsKind): JSAny {
+@@ -805,7 +808,8 @@
+     } else {
+       // For these elements kinds numberValue is Number.
+       const numValue: Number = %RawDownCast<Number>(numberValue);
+-      const doubleValue: float64 = ChangeNumberToFloat64(numValue);
++      const doubleValue: float64 =
++          CcArmNaNFloat64(ChangeNumberToFloat64(numValue));  // camchrome (1028)
+ 
+       if constexpr (
+           kind == ElementsKind::UINT8_ELEMENTS ||
+--- a/v8/src/compiler/turboshaft/machine-lowering-reducer-inl.h
++++ b/v8/src/compiler/turboshaft/machine-lowering-reducer-inl.h
+@@ -7,6 +7,7 @@
+ 
+ #include <optional>
+ 
++#include "src/base/ieee754.h"  // camchrome (1028)
+ #include "src/base/logging.h"
+ #include "src/base/strong-alias.h"
+ #include "src/codegen/external-reference.h"
+@@ -3277,6 +3278,17 @@
+                                     ExternalArrayType array_type) {
+     V<WordPtr> data_ptr = BuildTypedArrayDataPointer(base, external);
+ 
++    // camchrome (1028): a NaN loses its sign bit under an ARM persona.
++    if (base::ieee754::cc_arm_nan_flag) {
++      if (array_type == kExternalFloat64Array) {
++        V<Float64> v = V<Float64>::Cast(value);
++        value = __ Float64Select(__ Float64Equal(v, v), v, __ Float64Abs(v));
++      } else if (array_type == kExternalFloat32Array) {
++        V<Float32> v = V<Float32>::Cast(value);
++        value = __ Float32Select(__ Float32Equal(v, v), v, __ Float32Abs(v));
++      }
++    }
++
+     // Perform the actual typed element access.
+     __ StoreArrayBufferElement(
+         data_ptr, AccessBuilder::ForTypedArrayElement(array_type, true), index,
+--- a/v8/src/compiler/turboshaft/dataview-lowering-reducer.h
++++ b/v8/src/compiler/turboshaft/dataview-lowering-reducer.h
+@@ -5,6 +5,7 @@
+ #ifndef V8_COMPILER_TURBOSHAFT_DATAVIEW_LOWERING_REDUCER_H_
+ #define V8_COMPILER_TURBOSHAFT_DATAVIEW_LOWERING_REDUCER_H_
+ 
++#include "src/base/ieee754.h"  // camchrome (1028)
+ #include "src/compiler/turboshaft/assembler.h"
+ 
+ namespace v8::internal::compiler::turboshaft {
+@@ -100,6 +101,17 @@
+     const MachineType machine_type =
+         AccessBuilder::ForTypedArrayElement(element_type, true).machine_type;
+ 
++    // camchrome (1028): a NaN loses its sign bit under an ARM persona.
++    if (base::ieee754::cc_arm_nan_flag) {
++      if (element_type == kExternalFloat64Array) {
++        V<Float64> v = V<Float64>::Cast(value);
++        value = __ Float64Select(__ Float64Equal(v, v), v, __ Float64Abs(v));
++      } else if (element_type == kExternalFloat32Array) {
++        V<Float32> v = V<Float32>::Cast(value);
++        value = __ Float32Select(__ Float32Equal(v, v), v, __ Float32Abs(v));
++      }
++    }
++
+     Variable value_to_store = Asm().NewLoopInvariantVariable(
+         RegisterRepresentationForArrayType(element_type));
+     IF (is_little_endian) {
+--- a/v8/src/maglev/maglev-graph-builder.cc
++++ b/v8/src/maglev/maglev-graph-builder.cc
+@@ -5238,6 +5238,13 @@
+       elements_kind == BIGINT64_ELEMENTS) {
+     return {};
+   }
++  // camchrome (1028): under an ARM persona a float store must clear a NaN's sign bit, which
++  // the store builtins do; Maglev's own store nodes would not.
++  if (base::ieee754::cc_arm_nan_flag &&
++      (elements_kind == FLOAT32_ELEMENTS || elements_kind == FLOAT64_ELEMENTS) &&
++      compiler::IsAnyStore(keyed_mode.access_mode())) {
++    return {};
++  }
+   // No point in optimizing access to detached typed arrays.
+   for (compiler::MapRef map : access_info.lookup_start_object_maps()) {
+     if (map.IsJSDetachedTypedArrayMap()) return {};
+--- a/v8/src/maglev/maglev-reducer-inl.h
++++ b/v8/src/maglev/maglev-reducer-inl.h
+@@ -6,6 +6,8 @@
+ #define V8_MAGLEV_MAGLEV_REDUCER_INL_H_
+ 
+ #include "src/maglev/maglev-reducer.h"
++
++#include "src/base/ieee754.h"  // camchrome (1028)
+ // Include the non-inl header before the rest of the headers.
+ #include <cmath>
+ 
+@@ -5479,6 +5481,7 @@
+ template <typename BaseT>
+ MaybeReduceResult MaglevReducer<BaseT>::TryReduceDataViewPrototypeSetFloat32(
+     ValueNode* context, compiler::JSFunctionRef target, CallArguments& args) {
++  if (base::ieee754::cc_arm_nan_flag) return {};  // camchrome (1028)
+   return TryBuildStoreDataView<StoreDoubleDataViewElement>(
+       args, ExternalArrayType::kExternalFloat32Array, [&](ValueNode* value) {
+ #ifdef V8_ENABLE_UNDEFINED_DOUBLE
+@@ -5501,6 +5504,7 @@
+ template <typename BaseT>
+ MaybeReduceResult MaglevReducer<BaseT>::TryReduceDataViewPrototypeSetFloat64(
+     ValueNode* context, compiler::JSFunctionRef target, CallArguments& args) {
++  if (base::ieee754::cc_arm_nan_flag) return {};  // camchrome (1028)
+   return TryBuildStoreDataView<StoreDoubleDataViewElement>(
+       args, ExternalArrayType::kExternalFloat64Array, [&](ValueNode* value) {
+ #ifdef V8_ENABLE_UNDEFINED_DOUBLE
+--- a/v8/BUILD.gn
++++ b/v8/BUILD.gn
+@@ -3339,9 +3339,9 @@
+         "--turbo-profiling-input",
+         rebase_path(v8_builtins_profiling_log_file, root_build_dir),
+ 
+-        # Replace this with --warn-about-builtin-profile-data to see the full
+-        # list of builtins with incompatible profiles.
+-        "--abort-on-bad-builtin-profile-data",
++        # camchrome (1028): the typed-array store builtins changed, so their
++        # profile no longer matches; warn and skip it for those builtins only.
++        "--warn-about-builtin-profile-data",
+       ]
+ 
+       if (!v8_enable_builtins_profiling && v8_enable_builtins_reordering) {

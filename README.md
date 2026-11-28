@@ -13,8 +13,8 @@ This repo holds patches, build configuration and scripts. The Chromium source it
 |---|---|---|
 | ungoogled-chromium base (Linux, Windows) | Chromium `158.0.8127.88` | pinned in `UPSTREAM` to the `158.0.8127.88-1` tag (Windows overlay `158.0.8127.88-1.1`) |
 | ungoogled-chromium-macos overlay | `157.0.8103.78-1.1` | no 158 overlay yet; macOS stays on 157 until ungoogled-chromium-macos tags 158 |
-| Fingerprint patches (`patches/`) | 104 patches | Linux x64 and arm64 built on 158.0.8127.88 (official ThinLTO+PGO; arm64 cross-compiled); on Linux x64 every local self-test passes for Linux, Windows, macOS and Android personas (fingerprint 67/72/67/70, UA 12) and the Clearcote audit was run (see below). macOS arm64 was built and audited on 157 |
-| Clearcote stealth audit | 368 checks | 158.0.8127.88 Linux x64, no GPU (`tools/persona_display.py`, persona fonts installed): **Windows 251/251 and Android 209/209 with no finding**; **Linux 230/231** with one finding (empty platformVersion), which Chromium leaves empty on Linux by design (`GetPlatformVersion()`), so every real Chrome on Linux shows it; **macOS 235/236**, where the CPU architecture check needs an arm64 host |
+| Fingerprint patches (`patches/`) | 105 patches | Linux x64 and arm64 built on 158.0.8127.88 (official ThinLTO+PGO; arm64 cross-compiled); on Linux x64 every local self-test passes for Linux, Windows, macOS and Android personas (fingerprint 68/73/68/71, UA 12) and the Clearcote audit was run (see below). macOS arm64 was built and audited on 157 |
+| Clearcote stealth audit | 368 checks | 158.0.8127.88 Linux x64, no GPU (`tools/persona_display.py`, persona fonts installed): **Windows 254/254, Android 211/211 and macOS 239/239 with no finding**; **Linux 234/235** with one finding (empty platformVersion), which Chromium leaves empty on Linux by design (`GetPlatformVersion()`), so every real Chrome on Linux shows it |
 
 The current release is Chromium `158.0.8127.88` for Linux x64 and arm64, the version of Google Chrome
 stable on Linux (Windows and macOS stable are on 159). The base is the ungoogled-chromium
@@ -104,7 +104,7 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1001-android-persona-page-scale` | an Android persona takes Android's page-scale range (0.25 to 5), so a page without a viewport tag is zoomed out to fit (innerWidth 980, scale ~0.42) instead of scrolling sideways at scale 1; `-webkit-text-size-adjust` is honoured |
 | `1002-android-persona-outer-height-unzoomed` | an Android persona's `outerHeight` is the window's height: the same in every frame, unchanged by page zoom, within the screen |
 
-### What 1003–1027 add (found by the Clearcote audit on a Linux server)
+### What 1003–1028 add (found by the Clearcote audit on a Linux server)
 
 | Patch | Fix |
 |---|---|
@@ -130,7 +130,8 @@ browser.call("Browser.humanizedScroll", {"targetId": tid, "deltaY": 900})
 | `1024-blob-native-endings-follow-persona` | `new Blob(..., {endings: "native"})` writes CRLF for a Windows persona, LF otherwise |
 | `1025-macos-persona-text-raster-webgpu` | a macOS persona steps text like CoreText, rasterises at its 2x ratio and prefers `bgra8unorm` in WebGPU. |
 | `1026-gzip-os-byte-follows-persona` | `CompressionStream("gzip")` writes the claimed OS in the header's OS byte (10 Windows, 19 macOS, 3 Linux and Android), as Chrome's zlib on that OS does |
-| `1027-macos-persona-tanh` | a macOS persona's `Math.tanh` returns the correctly rounded value, which is what Apple's libm returned on every input Scrapfly measured (glibc is 1 ULP off on a quarter of inputs). On an x86-64 host a macOS persona still fails the CPU-architecture check: the NaN sign bit comes from the processor, so run macOS personas on arm64 hosts |
+| `1027-macos-persona-tanh` | a macOS persona's `Math.tanh` returns the correctly rounded value, which is what Apple's libm returned on every input Scrapfly measured (glibc is 1 ULP off on a quarter of inputs). |
+| `1028-arm-persona-nan-sign` | a macOS (Apple Silicon) or Android persona stores a NaN into a float typed array or a DataView with the sign bit clear, as an ARM CPU makes it (x86 sets it), in the runtime, the builtins and both JIT tiers; the Clearcote CPU-architecture check passes for a macOS persona on an x86-64 host. A NaN WebAssembly writes to its own memory keeps the host's sign |
 
 ## Running on a Linux server without a GPU
 
